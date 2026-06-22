@@ -1,0 +1,124 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: dark --default, dim, night;
+}
+
+:root {
+  font-size: 16px;
+
+  /* Design tokens — spacing/radius/color */
+  --radius-card: 1rem;           /* 16px — 카드 라운드 */
+  --radius-pill: 9999px;         /* 버튼/배지 pill */
+  --glass-bg: rgba(15, 23, 42, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --accent-indigo: #6366f1;
+  --accent-indigo-glow: rgba(99, 102, 241, 0.25);
+  --color-up-kr: #f43f5e;        /* 한국 상승(빨강) */
+  --color-down-kr: #38bdf8;      /* 한국 하락(파랑) */
+  --color-up-us: #10b981;        /* 미국 상승(초록) */
+  --color-down-us: #f43f5e;      /* 미국 하락(빨강) */
+}
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+/* ── 글래스모피즘 카드 ─────────────────────────── */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+}
+
+/* ── 글로우 클래스 ────────────────────────────── */
+.glow-active {
+  box-shadow: 0 0 18px var(--accent-indigo-glow);
+}
+.glow-indigo {
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25), 0 4px 24px rgba(99, 102, 241, 0.12);
+}
+
+/* ── 공통 스크롤바 ────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.10);
+  border-radius: var(--radius-pill);
+  transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.45);
+}
+
+/* ── 마이크로 인터랙션 ────────────────────────── */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.animate-fade-slide-in {
+  animation: fadeSlideIn 0.2s ease-out forwards;
+}
+.animate-fade-in {
+  animation: fadeIn 0.15s ease-out forwards;
+}
+.animate-slide-in-left {
+  animation: slideInLeft 0.18s ease-out forwards;
+}
+
+/* 사이드바 접힘 토글 버튼: 투명도는 유지하고 링/그림자만 은은히 맥동(주목 유도) */
+@keyframes pulseSoft {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.45), 0 8px 24px rgba(99, 102, 241, 0.40); }
+  50%      { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0.0),  0 8px 24px rgba(99, 102, 241, 0.40); }
+}
+.animate-pulse-soft {
+  animation: pulseSoft 1.8s ease-out infinite;
+}
+
+/* ── 카드 공통 hover 리프트 ──────────────────── */
+.card-hover {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+/* ── Vue <Transition> 전용 ───────────────────── */
+/* fade-slide: App.vue 헤더 코스피 인디케이터 등 */
+.fade-slide-enter-active { transition: opacity 0.25s ease, transform 0.25s ease; }
+.fade-slide-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.fade-slide-enter-from   { opacity: 0; transform: translateY(-4px); }
+.fade-slide-leave-to     { opacity: 0; transform: translateY(-4px); }
+
+/* fade: StockChart 모달 */
+.fade-enter-active { transition: opacity 0.18s ease; }
+.fade-leave-active { transition: opacity 0.12s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* ── 접근성: 포커스 링 ───────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent-indigo);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── 숫자 배지 공통 (한국 상승/하락 색) ─────── */
+.badge-kr-up   { color: var(--color-up-kr);   background: rgba(244, 63, 94,  0.08); }
+.badge-kr-down { color: var(--color-down-kr); background: rgba(56, 189, 248, 0.08); }
+.badge-us-up   { color: var(--color-up-us);   background: rgba(16, 185, 129, 0.08); }
+.badge-us-down { color: var(--color-down-us); background: rgba(244, 63, 94,  0.08); }

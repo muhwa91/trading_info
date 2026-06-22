@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BUILD SPEC — 주식·ETF 포트폴리오 트래커 (KIS · Laravel · Vue)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0e14;--bg2:#0f131b;--panel:#141a24;--panel2:#1a2230;
+  --line:#283341;--line-soft:#1c2531;
+  --up:#34d9a6;--up-dim:#1d8f6f;--down:#ff5d6c;
+  --kr:#6cb8ff;--us:#f5b54a;--gray:#909cb2;
+  --ink:#eef2f8;--mute:#909cb2;--mute2:#5c6678;
+  --grad:linear-gradient(135deg,var(--up),var(--kr) 60%,var(--us));
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,sans-serif;line-height:1.65;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+.bgfx{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(900px 520px at 82% -8%,rgba(52,217,166,.09),transparent 60%),
+    radial-gradient(820px 520px at 6% 4%,rgba(108,184,255,.08),transparent 58%),var(--bg)}
+.bgfx::before{content:"";position:absolute;inset:0;opacity:.3;
+  background-image:linear-gradient(rgba(120,140,170,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(120,140,170,.05) 1px,transparent 1px);
+  background-size:44px 44px;mask-image:radial-gradient(circle at 50% 18%,#000,transparent 90%)}
+.wrap{position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:0 22px}
+
+.hero{padding:54px 0 28px;border-bottom:1px solid var(--line-soft)}
+.eyebrow{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--up);display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.eyebrow::before{content:"";width:28px;height:1px;background:var(--up-dim)}
+h1{font-family:'Space Grotesk',sans-serif;font-weight:700;line-height:1.08;font-size:clamp(27px,4.4vw,44px);letter-spacing:-.02em;margin-bottom:14px}
+h1 .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{font-size:clamp(14px,1.7vw,16px);color:var(--mute);max-width:680px;margin-bottom:20px}
+.facts{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:22px}
+.fact{font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+.fact b{color:var(--up)}
+/* TOC */
+.toc{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 16px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+@media(max-width:680px){.toc{grid-template-columns:repeat(2,1fr)}}
+.toc a{font-size:12.5px;color:var(--mute);text-decoration:none;font-family:'JetBrains Mono',monospace;padding:3px 0;display:block;transition:color .15s}
+.toc a:hover{color:var(--up)}
+.toc a .i{color:var(--mute2);margin-right:7px}
+
+section{padding:44px 0;border-bottom:1px solid var(--line-soft)}
+.sh{display:flex;align-items:baseline;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+.snum{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--up);border:1px solid var(--up-dim);border-radius:7px;padding:3px 9px}
+h2{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:clamp(20px,3vw,28px);letter-spacing:-.01em}
+.ssub{color:var(--mute);max-width:760px;margin-top:8px;font-size:14.5px}
+h3{font-family:'Space Grotesk',sans-serif;font-size:16px;margin:22px 0 10px;color:var(--ink)}
+p.body{font-size:14px;color:var(--mute);margin:8px 0;max-width:780px}
+p.body b{color:var(--ink)}
+code{font-family:'JetBrains Mono',monospace;font-size:.88em;background:var(--bg2);border:1px solid var(--line-soft);border-radius:5px;padding:1px 6px;color:var(--kr)}
+
+/* scope in/out */
+.scope{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}
+@media(max-width:680px){.scope{grid-template-columns:1fr}}
+.scol{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+.scol.in{border-top:2px solid var(--up)}.scol.out{border-top:2px solid var(--down)}
+.scol h4{font-family:'Space Grotesk',sans-serif;font-size:15px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.scol.in h4{color:var(--up)}.scol.out h4{color:var(--down)}
+.scol li{font-size:13px;color:var(--mute);padding:5px 0 5px 18px;position:relative;line-height:1.45;list-style:none}
+.scol.in li::before{content:"✓";position:absolute;left:0;color:var(--up)}
+.scol.out li::before{content:"✕";position:absolute;left:0;color:var(--down)}
+.scol li b{color:var(--ink)}
+
+/* stack grid */
+.stack{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:16px}
+.st{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.st .role{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute2);text-transform:uppercase;letter-spacing:.06em}
+.st .name{font-family:'Space Grotesk',sans-serif;font-size:14.5px;color:var(--ink);margin:5px 0 3px}
+.st p{font-size:11.5px;color:var(--mute);line-height:1.45}
+
+/* schema */
+.legend{display:flex;flex-wrap:wrap;gap:9px;margin:16px 0}
+.lg{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--mute);background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:6px 11px}
+.sb{font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.sb.api{color:#0a1f17;background:var(--up)}
+.sb.file{color:var(--up);background:rgba(52,217,166,.13);border:1px solid var(--up-dim)}
+.sb.fx{color:var(--kr);background:rgba(108,184,255,.13)}
+.sb.manual{color:var(--gray);background:rgba(144,156,178,.13)}
+.sb.auth{color:var(--mute2);background:rgba(92,102,120,.13)}
+.tables{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:6px}
+@media(max-width:760px){.tables{grid-template-columns:1fr}}
+.tbl{background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden;display:flex;flex-direction:column}
+.tbl .th{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 15px;background:var(--panel2);border-bottom:1px solid var(--line)}
+.tbl .th h4{font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--ink);font-weight:700}
+.tbl .th .tag{font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:3px 7px;border-radius:6px}
+.tag.core{color:var(--up);background:rgba(52,217,166,.12)}
+.tag.cache{color:var(--kr);background:rgba(108,184,255,.12)}
+.tag.opt{color:var(--us);background:rgba(245,181,74,.12)}
+.tag.auth{color:var(--mute);background:rgba(144,156,178,.12)}
+.tbl .srcrow{display:flex;flex-wrap:wrap;gap:5px;padding:10px 15px 3px}
+.tbl .tdesc{font-size:11.5px;color:var(--mute);padding:7px 15px 9px;border-bottom:1px solid var(--line-soft);line-height:1.45}
+.col{display:grid;grid-template-columns:1fr auto;gap:8px;padding:6px 15px;align-items:baseline;border-top:1px solid var(--line-soft)}
+.col .cn{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink)}
+.col .cn .pk{color:var(--up);font-size:9px;border:1px solid var(--up-dim);border-radius:4px;padding:0 4px;margin-left:4px}
+.col .cn .fk{color:var(--kr);font-size:9px;border:1px solid var(--kr);border-radius:4px;padding:0 4px;margin-left:4px}
+.col .cn .nw{color:var(--us);font-size:9px;border:1px solid var(--us);border-radius:4px;padding:0 4px;margin-left:4px}
+.col .ct{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute2);text-align:right;white-space:nowrap}
+.col .note{grid-column:1/-1;font-size:10.5px;color:var(--mute);margin-top:1px;line-height:1.35}
+.keynote{font-size:11px;color:#bcd6cb;background:rgba(52,217,166,.06);border-left:2px solid var(--up);padding:7px 11px;margin:0 11px 11px;border-radius:0 7px 7px 0;line-height:1.4}
+
+/* code block */
+pre{background:#0a0d13;border:1px solid var(--line);border-radius:12px;padding:16px 18px;overflow-x:auto;margin:14px 0;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.6;color:#cdd6e6}
+pre .c{color:var(--mute2)}
+pre .k{color:var(--us)}
+pre .s{color:var(--up)}
+pre .v{color:var(--kr)}
+.codecap{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute2);margin:-6px 0 0}
+
+/* radio mock */
+.radiomock{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}
+.rm{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13px;color:var(--ink)}
+.rm .ring{width:14px;height:14px;border-radius:50%;border:2px solid var(--mute2)}
+.rm.on{border-color:var(--up)}.rm.on .ring{border-color:var(--up);background:radial-gradient(circle,var(--up) 40%,transparent 45%)}
+.rm.off{opacity:.5}
+.rm .mini{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute2)}
+
+/* flow */
+.flow{margin-top:16px;display:flex;flex-direction:column}
+.step{display:grid;grid-template-columns:34px 1fr;gap:13px;align-items:start;position:relative;padding-bottom:15px}
+.step:not(:last-child)::before{content:"";position:absolute;left:16px;top:30px;bottom:-2px;width:2px;background:var(--line)}
+.step .dot{width:34px;height:34px;border-radius:9px;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--up);font-weight:700;z-index:1}
+.step .body{padding-top:4px}
+.step .body h4{font-family:'Space Grotesk',sans-serif;font-size:14px;margin-bottom:2px}
+.step .body p{font-size:12.5px;color:var(--mute);line-height:1.5}
+
+/* screen mock */
+.screen{margin-top:16px;background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:18px}
+.screen .bar{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line-soft);padding-bottom:12px;margin-bottom:12px}
+.screen .bar .ttl{font-family:'Space Grotesk',sans-serif;font-size:14px}
+.screen .sect{border:1px dashed var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+.screen .sect .lab{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--up);letter-spacing:.05em;text-transform:uppercase}
+.screen .sect .lab.w{color:var(--kr)}
+.screen .row{display:flex;justify-content:space-between;font-size:12px;color:var(--mute);padding:5px 0;font-family:'JetBrains Mono',monospace}
+.screen .row .up{color:var(--up)}.screen .row .down{color:var(--down)}
+.screen .sub{font-size:11px;color:var(--mute2);margin-top:6px}
+
+/* roadmap */
+.road{margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.rcard{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);border-radius:13px;padding:16px;position:relative}
+.rcard .ph{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--up);letter-spacing:.06em}
+.rcard h4{font-family:'Space Grotesk',sans-serif;font-size:14.5px;margin:5px 0 7px;line-height:1.3}
+.rcard p{font-size:12px;color:var(--mute);line-height:1.45}
+.rcard.opt{border-style:dashed}.rcard.opt .ph{color:var(--us)}
+.rcard .badge{position:absolute;top:13px;right:13px;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--us);border:1px solid rgba(245,181,74,.4);border-radius:5px;padding:1px 6px}
+
+/* constraints */
+.cons{margin-top:14px;border:1px solid rgba(255,93,108,.28);background:rgba(255,93,108,.05);border-radius:13px;padding:18px}
+.cons li{font-size:13px;color:var(--mute);padding:6px 0 6px 20px;position:relative;line-height:1.5;list-style:none}
+.cons li::before{content:"!";position:absolute;left:0;color:var(--down);font-family:'JetBrains Mono',monospace;font-weight:700}
+.cons b{color:var(--ink)}
+
+/* decisions */
+.dec{margin-top:14px;border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.drow{display:grid;grid-template-columns:160px 1fr;gap:14px;padding:10px 16px;border-top:1px solid var(--line-soft);font-size:13px}
+.drow:first-child{border-top:none;background:var(--panel2);font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);text-transform:uppercase}
+.drow .q{color:var(--ink);font-weight:600}
+.drow .a{color:var(--mute)}
+.drow .a b{color:var(--up)}
+@media(max-width:560px){.drow{grid-template-columns:1fr;gap:3px}}
+
+footer{padding:38px 0 56px;text-align:center}
+footer p{font-size:11.5px;color:var(--mute2);font-family:'JetBrains Mono',monospace;line-height:1.7}
+
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="bgfx"></div>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow"><span>BUILD SPEC v1.1</span><span>· 구현 핸드오프 문서</span></div>
+    <h1>주식 · ETF 통합<br><span class="g">포트폴리오 트래커</span> — 빌드 스펙</h1>
+    <p class="lede">미장 + 한국장 보유·관심 종목을 원화로 한 화면에서 확인하는 <b>읽기 전용</b> 트래커.
+      한국투자증권(KIS) OpenAPI 시세 + 폴링 기반 준실시간 손익. 이 문서 하나로 구현 가능하도록 모든 결정을 정리했습니다.</p>
+    <div class="facts">
+      <span class="fact">Backend <b>Laravel</b></span>
+      <span class="fact">Front <b>Inertia + Vue</b></span>
+      <span class="fact">Local DB <b>SQLite</b></span>
+      <span class="fact">시세 <b>KIS OpenAPI (조회 전용)</b></span>
+      <span class="fact">환율 <b>전용 소스·장중폴링</b></span>
+      <span class="fact">차트 <b>Lightweight Charts</b></span>
+      <span class="fact">갱신 <b>폴링 5~15s</b></span>
+      <span class="fact">로그인 <b>나중</b></span>
+    </div>
+    <nav class="toc">
+      <a href="#overview"><span class="i">01</span>개요 &amp; 목표</a>
+      <a href="#scope"><span class="i">02</span>범위 (In/Out)</a>
+      <a href="#stack"><span class="i">03</span>기술 스택</a>
+      <a href="#schema"><span class="i">04</span>DB 스키마</a>
+      <a href="#sources"><span class="i">05</span>데이터 출처</a>
+      <a href="#pnl"><span class="i">06</span>손익 계산</a>
+      <a href="#session"><span class="i">07</span>세션 &amp; 기준 선택</a>
+      <a href="#polling"><span class="i">08</span>폴링 전략</a>
+      <a href="#flow"><span class="i">09</span>데이터 흐름</a>
+      <a href="#screen"><span class="i">10</span>화면 구성</a>
+      <a href="#kis"><span class="i">11</span>KIS API 노트</a>
+      <a href="#roadmap"><span class="i">12</span>제작 순서</a>
+      <a href="#constraints"><span class="i">13</span>제약 · 비목표</a>
+      <a href="#decisions"><span class="i">14</span>결정 로그</a>
+    </nav>
+  </header>
+
+  <!-- 01 -->
+  <section id="overview">
+    <div class="sh"><span class="snum">01</span><h2>개요 &amp; 목표</h2></div>
+    <p class="body"><b>무엇:</b> 한국 주식·미국 주식·ETF를 한 곳에 모아, 보유 종목의 평가손익과 즐겨찾기 종목 시세를
+      <b>원화 기준</b>으로 한 화면에서 확인하는 개인용 웹앱.</p>
+    <p class="body"><b>목적:</b> ① 개발자 본인이 미장+한국장 투자 현황을 통합 확인 ② 취업 포트폴리오(기획→배포까지 1인 완주).</p>
+    <p class="body"><b>1차 사용자:</b> 개발자 본인 1명. 처음엔 로컬에서 본인만 사용 → 완성 후 배포(이때 멀티유저·로그인 추가).</p>
+    <p class="body"><b>핵심 가치:</b> 흩어진 미장/한국장을 <b>원화로 통합 + 환율 변동까지 반영한 실손익</b>을 폴링으로 준실시간 표시.</p>
+  </section>
+
+  <!-- 02 -->
+  <section id="scope">
+    <div class="sh"><span class="snum">02</span><h2>범위 (In / Out)</h2></div>
+    <p class="ssub">가장 중요한 결정: <b>이 앱은 주문(매수/매도)을 절대 하지 않는다.</b> KIS API는 조회(읽기) 권한만 사용.</p>
+    <div class="scope">
+      <div class="scol in">
+        <h4>In Scope (이번에 만든다)</h4>
+        <ul>
+          <li>보유 종목 <b>평가손익</b> (원화 환산, 환율 손익 포함)</li>
+          <li>미장 + 한국장 + <b>ETF</b> 통합 (한 테이블 <code>type</code>으로 구분)</li>
+          <li><b>즐겨찾기(watchlist)</b> + 종목 검색</li>
+          <li><b>폴링 기반 준실시간</b> 시세·손익 갱신 (5~15초)</li>
+          <li><b>프리마켓</b> 포함 + 기준 선택 라디오 (전일종가/프리/정규장)</li>
+          <li>시세 <b>캐싱</b> (호출 한도 절약)</li>
+          <li>차트 (Lightweight Charts, 보유는 평단선)</li>
+          <li>(선택) 배당 기록·세금 정리</li>
+        </ul>
+      </div>
+      <div class="scol out">
+        <h4>Out of Scope (만들지 않는다)</h4>
+        <ul>
+          <li><b>주문/매매 실행</b> — 읽기 전용, 절대 주문 안 함</li>
+          <li><b>거래내역(trades) 테이블</b> — 확인용엔 불필요, 제외</li>
+          <li><b>실현손익</b> 계산 (거래내역 없으므로)</li>
+          <li><b>투자 추천·조언·신호</b> — 자문업 회피, 계산·표시만</li>
+          <li><b>로그인/회원가입</b> — 배포 단계까지 보류</li>
+          <li><b>자동 잔고 동기화</b> — 1차는 수동 입력 (나중 옵션)</li>
+          <li>WebSocket 틱 실시간 — 1차 제외 (나중 종목상세 옵션)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 -->
+  <section id="stack">
+    <div class="sh"><span class="snum">03</span><h2>기술 스택</h2></div>
+    <div class="stack">
+      <div class="st"><div class="role">Backend</div><div class="name">Laravel (PHP)</div><p>토큰·캐싱·손익 계산 로직.</p></div>
+      <div class="st"><div class="role">Front 연결</div><div class="name">Inertia</div><p>별도 REST 없이 컨트롤러→Vue.</p></div>
+      <div class="st"><div class="role">UI</div><div class="name">Vue</div><p>대시보드·라디오·위젯·폴링.</p></div>
+      <div class="st"><div class="role">차트</div><div class="name">Lightweight Charts</div><p>TradingView 무료 금융 차트.</p></div>
+      <div class="st"><div class="role">Local DB</div><div class="name">SQLite</div><p>파일 1개. 배포 시 MySQL/PG.</p></div>
+      <div class="st"><div class="role">시세 데이터</div><div class="name">KIS OpenAPI</div><p>국내·해외 현재가/잔고 (조회만).</p></div>
+      <div class="st"><div class="role">환율 데이터</div><div class="name">환율 전용 소스</div><p>한국은행 오픈API 등.</p></div>
+      <div class="st"><div class="role">Local 환경</div><div class="name">Laravel Herd</div><p>PHP·서버·DB 원클릭.</p></div>
+    </div>
+  </section>
+
+  <!-- 04 -->
+  <section id="schema">
+    <div class="sh"><span class="snum">04</span><h2>DB 스키마 (마이그레이션 기준)</h2></div>
+    <p class="ssub">초록=핵심 자산 · 파랑=외부 캐시 · 노랑=선택 · 회색=인증(나중). 모든 금액은 <b>종목 원래 통화</b> 기준 저장.</p>
+    <div class="legend">
+      <div class="lg"><span class="sb api">KIS API</span> 시세·잔고</div>
+      <div class="lg"><span class="sb file">KIS 종목파일</span> 시딩</div>
+      <div class="lg"><span class="sb fx">환율 소스</span> 전용</div>
+      <div class="lg"><span class="sb manual">직접입력</span> 내 데이터</div>
+      <div class="lg"><span class="sb auth">인증(나중)</span></div>
+    </div>
+    <div class="tables">
+
+      <div class="tbl">
+        <div class="th"><h4>stocks</h4><span class="tag core">종목 마스터</span></div>
+        <div class="srcrow"><span class="sb file">KIS 종목파일</span></div>
+        <div class="tdesc">주식·ETF를 한 테이블에. 미장/한국장·주식/ETF를 같은 구조로.</div>
+        <div class="col"><span class="cn">id<span class="pk">PK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">symbol</span><span class="ct">string</span><span class="note">005930, AAPL, SPY</span></div>
+        <div class="col"><span class="cn">name</span><span class="ct">string</span></div>
+        <div class="col"><span class="cn">type<span class="nw">enum</span></span><span class="ct">stock/etf</span></div>
+        <div class="col"><span class="cn">market</span><span class="ct">enum KR/US</span></div>
+        <div class="col"><span class="cn">exchange</span><span class="ct">string</span><span class="note">KOSPI/NAS/NYS · KIS 해외호출용</span></div>
+        <div class="col"><span class="cn">currency</span><span class="ct">enum KRW/USD</span></div>
+        <div class="keynote">UNIQUE(symbol, market) · 검색은 name/symbol LIKE</div>
+      </div>
+
+      <div class="tbl">
+        <div class="th"><h4>accounts</h4><span class="tag core">증권계좌</span></div>
+        <div class="srcrow"><span class="sb manual">직접입력</span></div>
+        <div class="tdesc">계좌 메타. API 키는 DB 금지 → .env.</div>
+        <div class="col"><span class="cn">id<span class="pk">PK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">user_id<span class="fk">FK</span></span><span class="ct">bigint</span><span class="note">지금 1 고정</span></div>
+        <div class="col"><span class="cn">name</span><span class="ct">string</span><span class="note">"한투 실계좌"</span></div>
+        <div class="col"><span class="cn">account_type</span><span class="ct">enum real/demo</span></div>
+        <div class="col"><span class="cn">broker</span><span class="ct">string 'KIS'</span></div>
+        <div class="keynote">⚠ API 키 평문 DB 저장 금지</div>
+      </div>
+
+      <div class="tbl">
+        <div class="th"><h4>portfolio</h4><span class="tag core">보유 종목</span></div>
+        <div class="srcrow"><span class="sb manual">직접입력</span><span class="sb api">(나중) KIS 잔고</span></div>
+        <div class="tdesc">현재 보유. 매입환율까지 저장해 주가손익·환율손익을 분리 계산.</div>
+        <div class="col"><span class="cn">id<span class="pk">PK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">account_id<span class="fk">FK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">stock_id<span class="fk">FK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">quantity</span><span class="ct">decimal(18,6)</span></div>
+        <div class="col"><span class="cn">average_price</span><span class="ct">decimal(18,4)</span><span class="note">★ 종목 원래 통화</span></div>
+        <div class="col"><span class="cn">avg_fx_rate<span class="nw">신규</span></span><span class="ct">decimal(12,4)</span><span class="note">★ 매입 시 USD→KRW (KR=1) · 환율손익 분리용</span></div>
+        <div class="col"><span class="cn">source</span><span class="ct">enum</span><span class="note">manual/synced ← 안전장치</span></div>
+        <div class="keynote">원화 매입원가 = average_price × quantity × avg_fx_rate (고정) → 주가손익·환율손익 분해 가능</div>
+      </div>
+
+      <div class="tbl">
+        <div class="th"><h4>watchlist</h4><span class="tag cache">즐겨찾기</span></div>
+        <div class="srcrow"><span class="sb manual">직접입력</span></div>
+        <div class="tdesc">100% 내 데이터. 검색 후 stock 연결.</div>
+        <div class="col"><span class="cn">id<span class="pk">PK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">user_id<span class="fk">FK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">stock_id<span class="fk">FK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">sort_order</span><span class="ct">int</span></div>
+        <div class="col"><span class="cn">created_at</span><span class="ct">timestamp</span></div>
+        <div class="keynote">UNIQUE(user_id, stock_id)</div>
+      </div>
+
+      <div class="tbl">
+        <div class="th"><h4>prices</h4><span class="tag cache">시세 캐시</span></div>
+        <div class="srcrow"><span class="sb api">KIS API</span></div>
+        <div class="tdesc">보유·관심 공용. 세션별 가격 저장(정규/프리/애프터). 과거치는 차트 시계열.</div>
+        <div class="col"><span class="cn">id<span class="pk">PK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">stock_id<span class="fk">FK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">price</span><span class="ct">decimal(18,4)</span><span class="note">통화 기준</span></div>
+        <div class="col"><span class="cn">session<span class="nw">enum</span></span><span class="ct">regular/pre/after</span><span class="note">★ 기준 선택 라디오에 사용</span></div>
+        <div class="col"><span class="cn">recorded_at</span><span class="ct">timestamp</span><span class="note">가격 기준 시각</span></div>
+        <div class="col"><span class="cn">updated_at</span><span class="ct">timestamp</span><span class="note">받아온 시각(신선도)</span></div>
+        <div class="keynote">INDEX(stock_id, session, recorded_at) · 전일종가 = 가장 최근 regular(어제)</div>
+      </div>
+
+      <div class="tbl">
+        <div class="th"><h4>exchange_rates</h4><span class="tag cache">환율 캐시</span></div>
+        <div class="srcrow"><span class="sb fx">환율 소스</span></div>
+        <div class="tdesc">미장 원화 환산 핵심. <b>장중 폴링</b>으로 갱신(수 분 캐시) → 환율 변동을 손익에 반영.</div>
+        <div class="col"><span class="cn">id<span class="pk">PK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">from_currency</span><span class="ct">enum USD</span></div>
+        <div class="col"><span class="cn">to_currency</span><span class="ct">enum KRW</span></div>
+        <div class="col"><span class="cn">rate</span><span class="ct">decimal(12,4)</span><span class="note">1 USD = ? KRW</span></div>
+        <div class="col"><span class="cn">recorded_at<span class="nw">변경</span></span><span class="ct">timestamp</span><span class="note">장중 스냅샷 시각(일자→시각)</span></div>
+        <div class="keynote">INDEX(from_currency, to_currency, recorded_at) · 최신 환율 = 가장 최근 recorded_at</div>
+      </div>
+
+      <div class="tbl">
+        <div class="th"><h4>dividends</h4><span class="tag opt">배당 · 선택</span></div>
+        <div class="srcrow"><span class="sb api">KIS 일정</span><span class="sb manual">+ 직접입력</span></div>
+        <div class="tdesc">ETF 분배금 동일. 실수령·세금은 직접 보완.</div>
+        <div class="col"><span class="cn">id<span class="pk">PK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">account_id<span class="fk">FK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">stock_id<span class="fk">FK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">amount</span><span class="ct">decimal(18,4)</span><span class="note">세전</span></div>
+        <div class="col"><span class="cn">tax</span><span class="ct">decimal(18,4)</span><span class="note">미장 원천 15%</span></div>
+        <div class="col"><span class="cn">paid_at</span><span class="ct">date</span></div>
+      </div>
+
+      <div class="tbl">
+        <div class="th"><h4>users</h4><span class="tag auth">인증 · 나중</span></div>
+        <div class="srcrow"><span class="sb auth">배포 시 추가</span></div>
+        <div class="tdesc">지금은 id=1 한 행만. 로그인은 배포 단계에서.</div>
+        <div class="col"><span class="cn">id<span class="pk">PK</span></span><span class="ct">bigint</span></div>
+        <div class="col"><span class="cn">name / email / password</span><span class="ct">Laravel 기본</span></div>
+        <div class="keynote">모든 테이블의 user_id가 이미 준비됨 → 확장만</div>
+      </div>
+
+    </div>
+    <p class="codecap">참고: 예시 마이그레이션 (stocks · prices)</p>
+    <pre><span class="c">// database/migrations/..._create_stocks_table.php</span>
+Schema::create(<span class="s">'stocks'</span>, <span class="k">function</span> (Blueprint $t) {
+    $t->id();
+    $t->string(<span class="s">'symbol'</span>);
+    $t->string(<span class="s">'name'</span>);
+    $t->enum(<span class="s">'type'</span>, [<span class="s">'stock'</span>,<span class="s">'etf'</span>])->default(<span class="s">'stock'</span>);
+    $t->enum(<span class="s">'market'</span>, [<span class="s">'KR'</span>,<span class="s">'US'</span>]);
+    $t->string(<span class="s">'exchange'</span>)->nullable();
+    $t->enum(<span class="s">'currency'</span>, [<span class="s">'KRW'</span>,<span class="s">'USD'</span>]);
+    $t->timestamps();
+    $t->unique([<span class="s">'symbol'</span>,<span class="s">'market'</span>]);
+});
+
+<span class="c">// ..._create_prices_table.php</span>
+Schema::create(<span class="s">'prices'</span>, <span class="k">function</span> (Blueprint $t) {
+    $t->id();
+    $t->foreignId(<span class="s">'stock_id'</span>)->constrained();
+    $t->decimal(<span class="s">'price'</span>, 18, 4);
+    $t->enum(<span class="s">'session'</span>, [<span class="s">'regular'</span>,<span class="s">'pre'</span>,<span class="s">'after'</span>])->default(<span class="s">'regular'</span>);
+    $t->timestamp(<span class="s">'recorded_at'</span>);
+    $t->timestamp(<span class="s">'updated_at'</span>);
+    $t->index([<span class="s">'stock_id'</span>,<span class="s">'session'</span>,<span class="s">'recorded_at'</span>]);
+});</pre>
+  </section>
+
+  <!-- 05 -->
+  <section id="sources">
+    <div class="sh"><span class="snum">05</span><h2>데이터 출처 매트릭스</h2></div>
+    <p class="ssub">원칙: <b>API를 맹신하지 말 것.</b> 점검·장애·토큰만료에 대비해 모든 자동 테이블에 직접입력 안전장치(<code>source</code>)를 둔다.</p>
+    <div class="dec">
+      <div class="drow"><span>테이블</span><span>출처 / 채우는 방법</span></div>
+      <div class="drow"><span class="q">stocks</span><span class="a"><b>KIS 종목파일</b> 1회 시딩 (국내/해외 마스터). 검색·즐겨찾기 토대.</span></div>
+      <div class="drow"><span class="q">prices</span><span class="a"><b>KIS API</b> 현재가 조회(정규+시간외). 폴링으로 갱신, 캐싱.</span></div>
+      <div class="drow"><span class="q">portfolio</span><span class="a"><b>직접입력</b>(1차). 나중에 KIS 잔고 자동 동기화 옵션. <code>source</code>로 구분.</span></div>
+      <div class="drow"><span class="q">exchange_rates</span><span class="a"><b>환율 전용 소스</b>(한국은행 등). 장중 시세와 함께 <b>폴링</b>(수 분 캐시) → 환율손익 반영. KIS 비주력.</span></div>
+      <div class="drow"><span class="q">watchlist / accounts</span><span class="a"><b>직접입력</b> — 순수 내 데이터.</span></div>
+      <div class="drow"><span class="q">dividends</span><span class="a"><b>KIS 일정 + 직접 보완</b> — 실수령·세금은 손입력.</span></div>
+    </div>
+  </section>
+
+  <!-- 06 -->
+  <section id="pnl">
+    <div class="sh"><span class="snum">06</span><h2>손익 계산 로직</h2></div>
+    <p class="body"><b>한국장</b>은 원화 그대로, <b>미장</b>은 환율을 곱해 원화 환산. 미장의 진짜 원화 손익은 <b>주가 손익 + 환율 손익</b>이 합쳐진 값 —
+      이 앱은 둘을 <b>분리해서</b> 보여준다. 그래서 <b>현재 환율(<code>fxNow</code>, 장중 폴링)</b>과 <b>매입 환율(<code>avg_fx_rate</code>, portfolio에 저장)</b> 두 개를 쓴다.</p>
+    <pre><span class="c">// 종목 1개의 원화 평가/손익 (선택된 session 가격 + 장중 환율)</span>
+<span class="k">function</span> evaluate(holding, price, fxNow) {
+  <span class="v">const</span> isUSD = holding.stock.currency === <span class="s">'USD'</span>;
+  <span class="v">const</span> fxBuy = isUSD ? holding.avg_fx_rate : <span class="v">1</span>;  <span class="c">// 매입 시 환율(KR=1)</span>
+  <span class="v">const</span> fxCur = isUSD ? fxNow              : <span class="v">1</span>;  <span class="c">// 현재 환율(장중 폴링)</span>
+  <span class="v">const</span> qty = holding.quantity, avg = holding.average_price;
+
+  <span class="v">const</span> marketValueKRW = price * qty * fxCur;     <span class="c">// 평가액(원화)</span>
+  <span class="v">const</span> costKRW        = avg   * qty * fxBuy;     <span class="c">// 원화 매입원가(고정)</span>
+  <span class="v">const</span> profitKRW      = marketValueKRW - costKRW; <span class="c">// 총 평가손익(원화)</span>
+
+  <span class="c">// ── 손익 분리 (priceProfit + fxProfit = profitKRW, 교차항 없음) ──</span>
+  <span class="v">const</span> priceProfitKRW = (price - avg)  * qty * fxCur; <span class="c">// 주가손익(현재환율 환산)</span>
+  <span class="v">const</span> fxProfitKRW    = (fxCur - fxBuy) * avg * qty;  <span class="c">// 환율손익(매입원가 기준)</span>
+
+  <span class="v">const</span> profitRate = (price - avg) / avg;          <span class="c">// 수익률(통화무관)</span>
+  <span class="k">return</span> { marketValueKRW, profitKRW, priceProfitKRW, fxProfitKRW, profitRate };
+}
+<span class="c">// 포트폴리오 합계 = 모든 보유 종목 evaluate() 합산 (각 항목별로 합산)</span></pre>
+    <p class="body"><b>분해 검증:</b> <code>priceProfitKRW + fxProfitKRW = profitKRW</code> 가 항상 성립(교차항 없음). 한국장은 <code>fxBuy=fxCur=1</code>이라 환율손익=0, 주가손익=총손익.</p>
+    <p class="body"><b>주의:</b> <code>average_price</code>와 <code>price</code>는 <b>같은 통화</b>(종목 원래 통화)여야 한다. 수익률(%)은 통화 무관(환율 약분)하지만, 원화 평가액·손익은 환율을 곱한다.</p>
+  </section>
+
+  <!-- 07 -->
+  <section id="session">
+    <div class="sh"><span class="snum">07</span><h2>세션 &amp; 기준 선택 라디오</h2></div>
+    <p class="ssub">자동 판단 대신 <b>사용자가 라디오로 손익 기준을 직접 선택</b>한다. 손익 공식은 동일하고 "현재가"에 어느 세션 가격을 넣느냐만 바뀐다.</p>
+    <div class="radiomock">
+      <div class="rm on"><span class="ring"></span>전일 종가 기준 <span class="mini">prev close</span></div>
+      <div class="rm"><span class="ring"></span>프리마켓 기준 <span class="mini">session=pre</span></div>
+      <div class="rm off"><span class="ring"></span>정규장 기준 <span class="mini">session=regular · 장중에만</span></div>
+    </div>
+    <p class="body">각 선택지 → 사용할 가격:</p>
+    <p class="body">· <b>전일 종가</b> = <code>prices</code>에서 어제(직전 거래일) <code>session=regular</code>의 마지막 가격. 고정값(프리마켓 변동 제외하고 보고 싶을 때).</p>
+    <p class="body">· <b>프리마켓</b> = 오늘 <code>session=pre</code> 최신 가격. 폴링으로 갱신.</p>
+    <p class="body">· <b>정규장</b> = 오늘 <code>session=regular</code> 최신 가격. 장중에만 활성, 그 외 비활성(회색).</p>
+    <p class="body"><b>혼합 표시:</b> 미장/한국장 거래시간이 다르므로 각 종목 옆에 현재 적용된 세션 배지(예: <code>PRE</code>/<code>REG</code>/<code>전일</code>)를 표시해 헷갈림 방지. 프리마켓은 거래량이 적어 변동이 크니 "참고용" 안내 표기.</p>
+  </section>
+
+  <!-- 08 -->
+  <section id="polling">
+    <div class="sh"><span class="snum">08</span><h2>폴링 전략</h2></div>
+    <p class="body"><b>구조:</b> Vue가 일정 간격(5~15초)으로 백엔드에 "최신 시세 줘" 요청 → Laravel이 <b>캐시 신선하면 캐시, 오래됐으면 KIS 호출 후 갱신</b>해 응답 → 화면 손익 숫자만 갱신.</p>
+    <pre><span class="c">// Vue (대시보드)</span>
+onMounted(() => { timer = setInterval(fetchPrices, <span class="v">10000</span>); }); <span class="c">// 10초</span>
+onUnmounted(() => clearInterval(timer));
+document.addEventListener(<span class="s">'visibilitychange'</span>, () => {
+  document.hidden ? clearInterval(timer) : start(); <span class="c">// 백그라운드면 멈춤</span>
+});
+
+<span class="c">// Laravel (시세 엔드포인트)</span>
+$ids = union(portfolioStockIds, watchlistStockIds); <span class="c">// 합집합·중복제거</span>
+<span class="k">foreach</span> ($ids <span class="k">as</span> $id) {
+  <span class="k">if</span> (cacheStale($id, $session)) $this->kis->fetchPrice($id, $session); <span class="c">// 부족분만</span>
+}
+<span class="k">if</span> (cacheStale(<span class="s">'fx:USDKRW'</span>, <span class="v">minutes:5</span>)) $this->fx->fetchUsdKrw(); <span class="c">// 환율도 폴링, 단 긴 캐시</span>
+<span class="k">return</span> latestPrices($ids, $session) + latestFxRate();</pre>
+    <p class="body"><b>규칙:</b> ① 표시 종목 = 보유 ∪ 관심 합집합으로 한 번에. ② 시장 닫혀 있으면 폴링 멈추고 마지막 가격 유지(헛호출 방지). ③ 보유 종목 묶어서 호출, KIS rate limit 준수. ④ 탭이 백그라운드면 폴링 정지. ⑤ <b>환율도 같은 폴링 응답에 포함</b>하되 시세보다 <b>긴 캐시(수 분)</b>로 — 환율은 천천히 움직이고 소스 한도를 아끼되, 미장 원화 손익이 종일 고정되지 않게.</p>
+  </section>
+
+  <!-- 09 -->
+  <section id="flow">
+    <div class="sh"><span class="snum">09</span><h2>화면 로드 데이터 흐름</h2></div>
+    <div class="flow">
+      <div class="step"><div class="dot">1</div><div class="body"><h4>표시 종목 합집합</h4><p>portfolio ∪ watchlist 의 stock_id, 중복 제거.</p></div></div>
+      <div class="step"><div class="dot">2</div><div class="body"><h4>캐시 신선도 확인</h4><p>선택된 session의 최신 prices 확인. updated_at 최근이면 사용.</p></div></div>
+      <div class="step"><div class="dot">3</div><div class="body"><h4>부족분만 KIS 호출</h4><p>오래/없는 종목만 조회 → prices 갱신. 한도 절약 핵심.</p></div></div>
+      <div class="step"><div class="dot">4</div><div class="body"><h4>환율 적용</h4><p>미장은 최신 exchange_rates(USD→KRW) 곱, 한국장은 그대로.</p></div></div>
+      <div class="step"><div class="dot">5</div><div class="body"><h4>계산 &amp; 분리 렌더</h4><p>보유=원화 평가액·손익 / 관심=현재가·등락률. 위·아래 두 섹션.</p></div></div>
+    </div>
+  </section>
+
+  <!-- 10 -->
+  <section id="screen">
+    <div class="sh"><span class="snum">10</span><h2>화면 구성 (UX)</h2></div>
+    <p class="ssub">단일 대시보드. 상단 기준 선택 라디오 + 총자산 요약, 본문은 두 섹션(내 포트폴리오 / 관심 종목).</p>
+    <div class="screen">
+      <div class="bar"><span class="ttl">📊 내 포트폴리오</span><span class="mini" style="font-family:'JetBrains Mono';font-size:11px;color:var(--mute2)">[전일종가] [프리마켓] [정규장]  ↻ 10s</span></div>
+      <div class="row"><span>총 평가액 (원화)</span><span class="up">₩ 00,000,000 ▲</span></div>
+      <div class="row"><span>총 평가손익 / 수익률</span><span class="up">+₩ 000,000 (+0.00%)</span></div>
+      <div class="row"><span style="color:var(--mute2)">↳ 주가손익 / 환율손익</span><span><span class="up">+₩ 000,000</span> <span style="color:var(--mute2)">/</span> <span class="up">+₩ 000,000</span></span></div>
+      <div class="sect"><div class="lab">보유 종목</div>
+        <div class="row"><span>삼성전자 · KR <span style="color:var(--mute2)">REG</span></span><span class="up">+0.0%</span></div>
+        <div class="row"><span>AAPL · US <span style="color:var(--us)">PRE</span></span><span class="down">−0.0%</span></div>
+        <div class="row"><span>SPY · US · ETF <span style="color:var(--us)">PRE</span></span><span class="up">+0.0%</span></div>
+        <div class="sub">각 행: 종목 · 시장 · 세션배지 · 수량 · 평단 · 현재가 · 원화 평가손익</div>
+      </div>
+      <div class="sect"><div class="lab w">관심 종목 (watchlist)</div>
+        <div class="row"><span>TSLA · US <span style="color:var(--us)">PRE</span></span><span class="up">+0.0%</span></div>
+        <div class="row"><span>+ 종목 검색해서 추가</span><span style="color:var(--mute2)">🔍</span></div>
+        <div class="sub">각 행: 종목 · 현재가 · 등락률 · 미니차트 (손익 없음)</div>
+      </div>
+    </div>
+    <p class="body"><b>차트:</b> 종목 클릭 시 Lightweight Charts. 보유 종목은 평단선 오버레이로 "내 평단 대비 위치" 표시. (선택) 종목상세에 WebSocket 실시간.</p>
+
+    <h3>부드러운 봉(캔들) 생성 — 폴링인데 끊기지 않게</h3>
+    <p class="body">폴링(5~15초)을 그대로 그리면 형성 중 봉이 <b>매 폴링마다 새로 생기거나 종가가 계단식으로 점프</b>한다. 해결은 ①<b>봉 제자리 갱신</b> + ②<b>시각 보간</b>의 분리.</p>
+    <p class="body"><b>분봉 단위(timeframe):</b> 사용자가 선택 — <b>1분 · 3분 · 5분 · 10분 · 1시간 · 1일.</b> 선택값이 봉 버킷 크기가 되고, 형성 중 봉 갱신·이징은 단위와 무관하게 동일하게 동작한다.</p>
+    <div class="radiomock">
+      <div class="rm on"><span class="ring"></span>1분 <span class="mini">1m</span></div>
+      <div class="rm"><span class="ring"></span>3분 <span class="mini">3m</span></div>
+      <div class="rm"><span class="ring"></span>5분 <span class="mini">5m</span></div>
+      <div class="rm"><span class="ring"></span>10분 <span class="mini">10m</span></div>
+      <div class="rm"><span class="ring"></span>1시간 <span class="mini">1h</span></div>
+      <div class="rm"><span class="ring"></span>1일 <span class="mini">1d</span></div>
+    </div>
+    <div class="flow">
+      <div class="step"><div class="dot">1</div><div class="body"><h4>틱 → 시간버킷에 누적</h4><p>폴링 가격을 <b>선택된 분봉 버킷</b>(1m~1d)으로 묶음. <b>같은 버킷이면 새 봉 X</b> — 기존 봉의 고가/저가/종가만 키운다(<code>series.update()</code>, 같은 time). 버킷이 넘어갈 때만 새 봉 시작.</p></div></div>
+      <div class="step"><div class="dot">2</div><div class="body"><h4>종가를 이징으로 글라이드</h4><p>직전 표시 종가 → 새 종가를 <code>requestAnimationFrame</code> easeOut으로 수백 ms 보간. <b>폴링 빈도와 시각 부드러움을 분리</b> → rate limit 안 늘리고도 매끄럽게.</p></div></div>
+      <div class="step"><div class="dot">3</div><div class="body"><h4>정직성 가드</h4><p>보간은 <b>형성 중 봉의 종가 표시</b>에만. 고가/저가는 실제 도달값 즉시 반영(보간이 실제 범위를 넘지 않음). 버킷 마감 시 <b>실제 OHLC로 확정</b>. "표시는 부드럽게, 데이터는 실제값."</p></div></div>
+      <div class="step"><div class="dot">4</div><div class="body"><h4>과거 봉은 KIS 분봉/일봉 조회</h4><p>초기 로드는 선택 단위로 <code>setData()</code>, 이후 형성 중 봉만 틱으로 갱신. 출처: <b>1분=KIS 분봉 직접 · 3/5/10분·1시간=1분봉 집계 · 1일=일봉 API.</b> <code>prices</code>는 손익용 최신-틱 캐시로 역할 분리(과거 봉 저장은 선택 <code>price_candles</code>).</p></div></div>
+    </div>
+    <pre><span class="c">// 1) 형성 중 봉: 선택된 분봉 버킷으로 묶어 제자리 갱신, 넘으면 새 봉</span>
+<span class="v">const</span> TF = { <span class="s">'1m'</span>:<span class="v">60</span>, <span class="s">'3m'</span>:<span class="v">180</span>, <span class="s">'5m'</span>:<span class="v">300</span>, <span class="s">'10m'</span>:<span class="v">600</span>, <span class="s">'1h'</span>:<span class="v">3600</span>, <span class="s">'1d'</span>:<span class="v">86400</span> }; <span class="c">// 초</span>
+<span class="v">let</span> tf = <span class="s">'1m'</span>;                                  <span class="c">// 선택된 분봉(라디오)</span>
+<span class="v">const</span> bucketOf = ts => Math.floor(ts/<span class="v">1000</span> / TF[tf]) * TF[tf]; <span class="c">// LWC 초 단위 버킷 시작</span>
+<span class="v">let</span> cur = <span class="v">null</span>;                                   <span class="c">// 형성 중 봉 {time,open,high,low,close}</span>
+
+<span class="k">function</span> onTick(price, ts) {
+  <span class="v">const</span> t = bucketOf(ts);
+  <span class="k">if</span> (!cur || cur.time !== t)
+    cur = { time:t, open:price, high:price, low:price, close:price }; <span class="c">// 새 봉</span>
+  <span class="k">else</span> {
+    cur.high = Math.max(cur.high, price);
+    cur.low  = Math.min(cur.low,  price);
+    cur.close = price;                       <span class="c">// 실제 종가(데이터)</span>
+  }
+  animateClose(cur);                         <span class="c">// 표시는 부드럽게</span>
+}
+
+<span class="c">// 2) rAF 이징: 직전 표시 종가 → 실제 종가로 글라이드 (고가/저가는 실제값 유지)</span>
+<span class="v">let</span> shown = <span class="v">null</span>;
+<span class="k">function</span> animateClose(bar) {
+  <span class="v">const</span> target = bar.close, start = shown ?? target, t0 = performance.now(), D = <span class="v">600</span>;
+  <span class="k">function</span> frame(now) {
+    <span class="v">const</span> p = Math.min((now - t0) / D, <span class="v">1</span>), e = <span class="v">1</span> - Math.pow(<span class="v">1</span> - p, <span class="v">3</span>); <span class="c">// easeOutCubic</span>
+    shown = start + (target - start) * e;
+    series.update({ ...bar, close: shown });  <span class="c">// time 동일 → 같은 봉 갱신</span>
+    <span class="k">if</span> (p < <span class="v">1</span>) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}</pre>
+    <p class="body"><b>왜 안전한가:</b> 고가/저가를 실제 가격으로 <b>먼저</b> 갱신하므로, 그 사이를 흐르는 <code>shown</code> 종가는 항상 봉의 실제 범위 안에 머문다(가짜 고저 생성 없음). 시간 점프(prefers-reduced-motion)면 <code>D=0</code>으로 보간 끄고 즉시 반영.</p>
+    <p class="body"><b>분봉 전환 시:</b> <code>cur</code>·<code>shown</code> 초기화 → 해당 단위 과거 봉 재조회 후 <code>setData()</code> → 폴링 틱은 새 <code>tf</code> 버킷으로 누적. <b>1일봉</b>은 <code>time</code>을 일자(자정) 기준으로 맞춘다.</p>
+  </section>
+
+  <!-- 11 -->
+  <section id="kis">
+    <div class="sh"><span class="snum">11</span><h2>KIS API 연동 노트</h2></div>
+    <p class="body"><b>권한:</b> 조회(읽기)만 사용. 주문 관련 엔드포인트는 호출하지 않음.</p>
+    <p class="body"><b>토큰:</b> 접근 토큰은 발급 후 약 24시간 유효 → <b>캐시(DB/cache)에 TTL과 함께 저장하고 재사용</b>, 만료 임박 시 갱신. 매 요청 재발급 금지(발급 한도).</p>
+    <p class="body"><b>환경 분리:</b> 모의투자 / 실전 도메인·키가 다름. 개발·테스트는 모의에서, 실계좌는 검증 후. 키는 <code>.env</code>에만.</p>
+    <p class="body"><b>국내 vs 해외:</b> 엔드포인트·필드 다름. 앱 내부에 <code>QuoteProvider</code> 인터페이스로 추상화(국내/해외 구현 분리) → 나머지 로직은 시장 분기 불필요.</p>
+    <p class="body"><b>정규 vs 시간외:</b> 프리마켓·애프터마켓은 해외 현재가 조회의 "시간구분" 파라미터로 구분 조회 → <code>prices.session</code>에 매핑 저장. (정확한 파라미터명은 KIS 문서 확인.)</p>
+    <p class="body"><b>Rate limit:</b> 보유·관심 합집합을 묶어 호출, 캐싱(1~5분)으로 화면 재오픈 시 재호출 방지.</p>
+    <p class="body"><b>잔고(나중):</b> 잔고 조회로 보유 종목 자동 동기화 가능 → 그래도 수동입력 병행 유지(<code>source</code>).</p>
+  </section>
+
+  <!-- 12 -->
+  <section id="roadmap">
+    <div class="sh"><span class="snum">12</span><h2>제작 순서</h2></div>
+    <p class="ssub">매 단계 끝에 "바로 쓸 수 있는 것"이 나오도록. 추천 시작점은 STEP 1(마이그레이션).</p>
+    <div class="road">
+      <div class="rcard"><div class="ph">STEP 1 · 시작</div><h4>마이그레이션 + 종목 시딩</h4><p>8개 테이블 생성, KIS 종목파일을 stocks에 시딩, portfolio 수동 입력 폼(수량·평단·<b>매입환율</b>).</p></div>
+      <div class="rcard"><div class="ph">STEP 2</div><h4>KIS 시세 서비스</h4><p>토큰 캐시·갱신, QuoteProvider(국내/해외), 정규+시간외 조회 → prices 캐싱.</p></div>
+      <div class="rcard"><div class="ph">STEP 3</div><h4>원화 손익 + 대시보드</h4><p>evaluate() 합산, 환율 적용·<b>주가/환율 손익 분리</b>, 상단 요약 + 보유 섹션.</p></div>
+      <div class="rcard"><div class="ph">STEP 4</div><h4>기준 라디오 + 폴링</h4><p>전일종가/프리/정규장 선택, 5~15초 폴링, 세션 배지.</p></div>
+      <div class="rcard"><div class="ph">STEP 5</div><h4>검색 + 즐겨찾기</h4><p>stocks LIKE 검색 → watchlist 연결, 관심 섹션.</p></div>
+      <div class="rcard"><div class="ph">STEP 6</div><h4>차트</h4><p>Lightweight Charts, 보유 평단선. <b>부드러운 봉</b>(버킷 제자리 갱신 + 종가 이징).</p></div>
+      <div class="rcard opt"><div class="badge">선택</div><div class="ph">STEP 7</div><h4>배당 · WebSocket</h4><p>dividends, 종목상세 실시간 틱.</p></div>
+      <div class="rcard opt"><div class="badge">마지막</div><div class="ph">DEPLOY</div><h4>배포 + 로그인</h4><p>SQLite→MySQL/PG, user_id 활용 로그인, 무료 티어.</p></div>
+    </div>
+  </section>
+
+  <!-- 13 -->
+  <section id="constraints">
+    <div class="sh"><span class="snum">13</span><h2>제약 · 비목표 · 주의</h2></div>
+    <div class="cons">
+      <ul>
+        <li><b>읽기 전용.</b> 주문/매매 실행 기능을 만들지 않는다. KIS 조회 권한만 사용.</li>
+        <li><b>투자 자문 아님.</b> 매수/매도 추천·신호·조언 표시 금지. 계산·표시만(자문업 회피). "투자 판단은 본인 책임" 면책 표기.</li>
+        <li><b>프리마켓은 참고용.</b> 거래량 적어 호가 불안정·변동 큼. 정규장 시작 시 가격이 달라짐을 안내.</li>
+        <li><b>장 마감 시 정지.</b> 해당 시장 폐장 시 가격 고정 → 폴링 멈추고 마지막 값 표시.</li>
+        <li><b>봉은 표시만 보간.</b> 차트는 부드럽게 흐르게 그리되 데이터는 실제 OHLC. 보간이 실제 고가/저가 범위를 넘지 않음(가짜 시세 생성 금지).</li>
+        <li><b>보안.</b> KIS 키·계좌정보는 <code>.env</code>에만. DB·코드·저장소에 평문 금지.</li>
+        <li><b>API 비의존 안전장치.</b> 장애/만료 대비 수동입력 유지(<code>source</code> 컬럼).</li>
+        <li><b>데이터 라이선스.</b> 시세는 본인 계좌 확인 용도. 외부 재배포·상업 제공은 별도 검토.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 14 -->
+  <section id="decisions" style="border-bottom:none">
+    <div class="sh"><span class="snum">14</span><h2>결정 로그 (확정 사항)</h2></div>
+    <p class="ssub">기획 대화에서 확정된 결정. 구현 시 임의 변경 금지, 변경은 재협의.</p>
+    <div class="dec">
+      <div class="drow"><span>항목</span><span>결정</span></div>
+      <div class="drow"><span class="q">대상 자산</span><span class="a">주식 + ETF (한 테이블 <code>stocks.type</code>). <b>채권 제외.</b></span></div>
+      <div class="drow"><span class="q">앱 성격</span><span class="a"><b>확인(조회) 전용.</b> 주문/거래내역(trades) 없음.</span></div>
+      <div class="drow"><span class="q">손익</span><span class="a">평가손익만. <b>원화 환산 + 주가/환율 손익 분리.</b> (avg_fx_rate 저장) 실현손익 제외.</span></div>
+      <div class="drow"><span class="q">실시간</span><span class="a"><b>폴링(5~15s) 준실시간.</b> WebSocket은 나중 옵션.</span></div>
+      <div class="drow"><span class="q">프리마켓</span><span class="a">반영함. <code>prices.session</code> + <b>기준 선택 라디오.</b></span></div>
+      <div class="drow"><span class="q">기준 선택</span><span class="a">라디오: <b>전일종가 / 프리마켓 / 정규장.</b> 안 열린 세션 비활성.</span></div>
+      <div class="drow"><span class="q">보유 입력</span><span class="a"><b>1차 수동입력</b> + 시세만 API. 잔고 자동동기화는 나중.</span></div>
+      <div class="drow"><span class="q">환율</span><span class="a"><b>전용 소스</b>(한국은행 등) <b>장중 폴링</b>(수 분 캐시) → 환율손익 반영. KIS 비주력.</span></div>
+      <div class="drow"><span class="q">로그인</span><span class="a"><b>지금 안 만듦.</b> user_id는 미리 넣고 1 고정 → 배포 시 추가.</span></div>
+      <div class="drow"><span class="q">로컬 DB</span><span class="a"><b>SQLite</b> → 배포 시 MySQL/Postgres.</span></div>
+      <div class="drow"><span class="q">네이밍</span><span class="a">영어 + 약어 풀기. 한글 테이블명 금지.</span></div>
+    </div>
+  </section>
+
+  <footer>
+    <p>BUILD SPEC v1.1 · 주식·ETF 포트폴리오 트래커 · KIS · Laravel + Inertia + Vue · 2026-06-20<br>
+    v1.1 개정: 환율손익 분리(portfolio.avg_fx_rate) · 환율 장중 폴링(exchange_rates) · 부드러운 봉 생성(버킷 제자리 갱신 + 종가 이징) · 분봉 선택(1·3·5·10분/1시간/1일).<br>
+    이 문서는 구현 핸드오프용 단일 명세입니다. 결정 로그(§14)는 합의 없이 변경하지 마세요.</p>
+  </footer>
+
+</div>
+</body>
+</html>

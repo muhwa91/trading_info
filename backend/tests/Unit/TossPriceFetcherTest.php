@@ -656,6 +656,221 @@ class TossPriceFetcherTest extends TestCase
     }
 
     // ──────────────────────────────────────────────────────────────────
+    // regular_close TTL 회귀 가드 — 자정 stale 고착 차단 (이번 수정 대상)
+    // ──────────────────────────────────────────────────────────────────
+    //
+    // ⚠️ 구조적 제약(보고): fetchYahooRegularClose() 는 private 이고 내부에서
+    //    `new \GuzzleHttp\Client()` 를 직접 생성해 Yahoo 를 호출하므로, meta(marketState,
+    //    regularMarketPrice)를 주입할 길이 없다(Http::fake 불가 — 기존 H-2 가드와 동일 사정).
+    //    또한 TTL 산식이 Carbon 이 아니라 네이티브 time()/new \DateTime('today 16:05') 를
+    //    쓰므로 Carbon::setTestNow 로 시각을 고정할 수도 없다(실측 확인됨).
+    //    → 무리한 리팩터(제품 코드 변경) 대신 두 갈래로 회귀를 잡는다:
+    //      (1) [동작] 제품과 동일한 TTL 산식을 '주입 가능한 now'로 재현해, ET 여러 시점에서
+    //          만료가 '다음 16:00 ET 를 절대 넘지 않음'·'REGULAR/null=짧음 vs POST=긺' 을 단언.
+    //      (2) [정적] 제품 소스가 수정된 구성(16:05·tomorrow 16:05·REGULAR||null→300)을
+    //          실제로 담고, 옛 '자정(midnight) TTL' 구성을 더는 갖지 않음을 단언.
+    //      (1)이 산식의 의도를, (2)가 그 산식이 제품에 실제로 박혀 있음을 고정한다.
+
+    /**
+     * 제품 fetchYahooRegularClose() 의 TTL 결정 로직을 '주입 가능한 now'로 재현한다.
+     * (제품은 네이티브 time()/DateTime 을 써 시계 고정이 불가능하므로, 동일 산식을
+     *  결정론적으로 평가하기 위한 미러. 제품과의 동치성은 정적 가드 테스트가 보장한다.)
+     *
+     * 제품 로직(TossPriceFetcher::fetchYahooRegularClose):
+     *   - marketState 가 REGULAR 또는 null  → 300 (장중 미완성/불확실 → 짧게)
+     *   - 그 외(PRE/POST/CLOSED)           → 다음 16:05 ET 까지, 단 최소 300
+     *
+     * @param  string|null  $marketState  Yahoo meta.marketState
+     * @param  int          $now          기준 시각(Unix ts, UTC)
+     * @return int  TTL(초)
+     */
+    private function computeRegularCloseTtl(?string $marketState, int $now): int
+    {
+        $nyTz = new \DateTimeZone('America/New_York');
+
+        if ($marketState === 'REGULAR' || $marketState === null) {
+            return 300;
+        }
+
+        // 'today/tomorrow 16:05' 를 주입된 now 기준으로 평가 (제품은 time() 사용)
+        $today = (new \DateTime('@' . $now))->setTimezone($nyTz)->format('Y-m-d');
+        $target = new \DateTime($today . ' 16:05', $nyTz);
+        if ($target->getTimestamp() <= $now) {
+            $target->modify('+1 day');  // 'tomorrow 16:05' 와 동치
+        }
+
+        return max($target->getTimestamp() - $now, 300);
+    }
+
+    /**
+     * 주어진 now 의 '직후 다음 16:00 ET' Unix ts. TTL 만료가 이 경계를 넘으면 회귀(자정 TTL).
+     */
+    private function nextRegularClose1600Et(int $now): int
+    {
+        $nyTz  = new \DateTimeZone('America/New_York');
+        $today = (new \DateTime('@' . $now))->setTimezone($nyTz)->format('Y-m-d');
+        $close = new \DateTime($today . ' 16:00', $nyTz);
+        if ($close->getTimestamp() <= $now) {
+            $close->modify('+1 day');
+        }
+
+        return $close->getTimestamp();
+    }
+
+    /**
+     * (A) [동작] TTL 경계 / 자정 회귀 차단.
+     *
+     * POST(정규장 마감 후) meta 상태에서, ET 시각을 여러 지점으로 고정했을 때
+     * 저장될 TTL 의 만료시점이 '다음 16:00 ET 를 절대 넘지 않음'을 단언한다.
+     * → 옛 버그는 만료가 ET '자정'(다음날 00:00)이라 16:00 을 한참 넘겨 stale 고착됐다.
+     *   이 테스트는 그 자정 TTL 회귀를 직접 잡는다.
+     *
+     * 검증 시점:
+     *   - 17:00 ET (정규장 마감 직후, 같은 날 16:05 는 이미 지남 → 내일 16:05)
+     *   - 00:30 ET (자정 직후, 다음 16:05 는 같은 날 → 그날 16:05)
+     *
+     * @test
+     */
+    public function testRegularCloseTtl_PostState_NeverSurvivesPastNext1600Et(): void
+    {
+        $nyTz = new \DateTimeZone('America/New_York');
+
+        $checkpoints = [
+            // [설명, ET 시각]
+            ['17:00 ET (마감 직후)', new \DateTime('2026-01-15 17:00', $nyTz)],
+            ['00:30 ET (자정 직후)', new \DateTime('2026-01-16 00:30', $nyTz)],
+            // POST 상태가 길게 잡히는 또 다른 경계: 09:00 ET (프리마켓)
+            ['09:00 ET (프리마켓)', new \DateTime('2026-01-16 09:00', $nyTz)],
+        ];
+
+        foreach ($checkpoints as [$label, $etTime]) {
+            $now = $etTime->getTimestamp();
+
+            foreach (['POST', 'CLOSED', 'PRE'] as $state) {
+                $ttl     = $this->computeRegularCloseTtl($state, $now);
+                $expiry  = $now + $ttl;
+                $barrier = $this->nextRegularClose1600Et($now);
+
+                // 핵심 회귀 단언: 만료가 다음 16:00 ET 를 넘으면 안 된다 (자정 TTL 금지).
+                // 허용 마진 +5분(16:05 타깃)까지만 — 16:00~16:05 사이는 정상.
+                $this->assertLessThanOrEqual(
+                    $barrier + 300,
+                    $expiry,
+                    "[{$label} / {$state}] regular_close TTL 만료가 다음 16:00 ET(+5m)를 넘김 — 자정 TTL 회귀"
+                );
+
+                // 만료는 미래여야 한다(최소 300초 보장).
+                $this->assertGreaterThanOrEqual($now + 300, $expiry, "[{$label} / {$state}] TTL 이 최소 300초 미만");
+            }
+        }
+    }
+
+    /**
+     * (B) [동작] 장중 가드 — marketState 별 TTL 대조.
+     *
+     *   - REGULAR : 짧게(=300) — 미완성 진행가를 16:05 까지 고착시키지 않는다.
+     *   - null    : 짧게(=300) — 파싱 실패 시 보수적으로 stale 고착 방지.
+     *   - POST    : 길게(다음 16:05 ET 까지) — 확정 종가를 다음 마감까지 유지.
+     *
+     * @test
+     */
+    public function testRegularCloseTtl_MarketStateGuard_RegularAndNullShort_PostLong(): void
+    {
+        $nyTz = new \DateTimeZone('America/New_York');
+        // 마감 직후(16:30 ET) — POST 면 다음날 16:05 까지라 명확히 길다.
+        $now = (new \DateTime('2026-01-15 16:30', $nyTz))->getTimestamp();
+
+        $regularTtl = $this->computeRegularCloseTtl('REGULAR', $now);
+        $nullTtl    = $this->computeRegularCloseTtl(null, $now);
+        $postTtl    = $this->computeRegularCloseTtl('POST', $now);
+
+        // 장중·불확실 → 정확히 300초만
+        $this->assertSame(300, $regularTtl, 'REGULAR 상태 TTL 이 300 이 아님 — 진행가가 길게 고착될 위험');
+        $this->assertSame(300, $nullTtl, 'marketState 누락(null) TTL 이 300 이 아님 — stale 고착 방지 실패');
+
+        // 확정 종가(POST) → 다음 16:05 까지(여기선 ~24h) — 300 보다 한참 길다
+        $this->assertGreaterThan(
+            300,
+            $postTtl,
+            'POST(확정 종가) TTL 이 300 이하 — 다음 마감까지 유지되지 않음'
+        );
+        $this->assertGreaterThan(
+            $regularTtl,
+            $postTtl,
+            'POST TTL 이 REGULAR TTL 보다 길지 않음 — 장중/확정 구분이 무력화됨'
+        );
+
+        // POST 만료는 정확히 다음 16:05 ET 여야 한다(16:00 경계 ± 정상 마진 내).
+        $barrier = $this->nextRegularClose1600Et($now);
+        $this->assertLessThanOrEqual($barrier + 300, $now + $postTtl, 'POST TTL 만료가 다음 16:00 ET(+5m)를 넘김');
+    }
+
+    /**
+     * (A·B 보강) [정적] 제품 소스가 수정된 TTL 구성을 실제로 담고,
+     * 옛 '자정(midnight) TTL' 구성을 더는 갖지 않음을 단언한다.
+     *
+     * 위 동작 테스트는 산식의 '의도'를 검증하지만, 그 산식이 제품에 박혀 있다는
+     * 보장은 이 정적 가드가 한다(미러-tautology 방지 · H-2 가드와 동일 전략).
+     * 누군가 16:05 타깃을 자정 TTL 로 되돌리거나 REGULAR/null 300초 가드를 빼면 즉시 실패.
+     *
+     * @test
+     */
+    public function testRegularCloseTtl_SourceUsesFixedBoundaryNotMidnight(): void
+    {
+        $src       = $this->getFetcherSource();
+        $methodSrc = $this->extractMethodSource($src, 'fetchYahooRegularClose');
+
+        $this->assertNotEmpty($methodSrc, 'fetchYahooRegularClose 메서드를 찾을 수 없음');
+
+        // (필수) 만료 기준 = 정규장 마감 직후 16:05 ET, 지났으면 내일 16:05
+        $this->assertStringContainsString(
+            "'today 16:05'",
+            $methodSrc,
+            "TTL 타깃이 'today 16:05'(정규장 마감 직후)이 아님 — 자정 TTL 회귀 가능"
+        );
+        $this->assertStringContainsString(
+            "'tomorrow 16:05'",
+            $methodSrc,
+            "TTL 타깃에 'tomorrow 16:05' 분기가 없음 — 오늘 16:05 경과 시 만료가 잘못 잡힘"
+        );
+        // 최소 300초 바닥
+        $this->assertMatchesRegularExpression(
+            '/max\(\s*\$target->getTimestamp\(\)\s*-\s*time\(\)\s*,\s*300\s*\)/',
+            $methodSrc,
+            'TTL 산식이 max(target - time(), 300) 형태가 아님'
+        );
+
+        // (보강) REGULAR 또는 null 이면 300초만 — 미완성/불확실 stale 고착 방지
+        $this->assertMatchesRegularExpression(
+            "/\\\$marketState\s*===\s*'REGULAR'\s*\|\|\s*\\\$marketState\s*===\s*null/",
+            $methodSrc,
+            "marketState REGULAR||null → 300 가드가 없음 — 장중/파싱실패 stale 고착 위험"
+        );
+        $this->assertMatchesRegularExpression(
+            '/\$ttl\s*=\s*300\s*;/',
+            $methodSrc,
+            'REGULAR/null 분기의 $ttl = 300 짧은 TTL 이 없음'
+        );
+
+        // (회귀 차단) 옛 '자정' TTL 구성이 남아 있으면 안 된다.
+        $this->assertStringNotContainsString(
+            "'today midnight'",
+            $methodSrc,
+            "옛 자정 TTL('today midnight') 구성이 남아 있음 — stale 고착 버그 재발"
+        );
+        $this->assertStringNotContainsString(
+            "'tomorrow midnight'",
+            $methodSrc,
+            "옛 자정 TTL('tomorrow midnight') 구성이 남아 있음 — stale 고착 버그 재발"
+        );
+        $this->assertStringNotContainsString(
+            "'tomorrow'",
+            $methodSrc,
+            "옛 자정 TTL('tomorrow'=다음날 00:00) 구성이 남아 있음 — stale 고착 버그 재발"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────
     // 헬퍼
     // ──────────────────────────────────────────────────────────────────
 

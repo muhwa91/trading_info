@@ -1,8 +1,12 @@
 <template>
   <div class="chart-card-container relative bg-base-100/45 backdrop-blur-md border border-base-content/8 rounded-2xl pt-3.5 pb-3.5 pl-3.5 pr-0 h-full flex flex-col justify-between overflow-hidden">
 
-    <!-- 차트 헤더 -->
-    <div class="flex flex-col gap-1.5 mb-2.5 select-none pr-3.5">
+    <!-- 차트 헤더 (그리드 순서변경 드래그 핸들 — 여기를 잡았을 때만 드래그 시작) -->
+    <div
+      class="flex flex-col gap-1.5 mb-2.5 select-none pr-3.5 cursor-grab active:cursor-grabbing"
+      @mousedown="emit('header-grab')"
+      @mouseup="emit('header-release')"
+    >
       <!-- 줄1: 좌(종목 블록) + 우(가격 블록) — 상단 정렬 -->
       <div class="flex items-start justify-between gap-2">
 
@@ -115,6 +119,7 @@
           class="timeframe-select-compact ml-auto mr-2 input input-xs bg-base-200/70 border border-base-content/10 rounded-lg font-bold font-mono text-[11px] text-base-content/70 focus:outline-none focus:border-indigo-500/50 cursor-pointer"
           :value="selectedTimeframe"
           @change.stop="changeTimeframe($event.target.value)"
+          @mousedown.stop
           aria-label="타임프레임 선택"
         >
           <option
@@ -135,6 +140,7 @@
             v-for="tf in timeframes"
             :key="tf.value"
             @click.stop="changeTimeframe(tf.value)"
+            @mousedown.stop
             :class="[
               'tab tab-xs rounded-md font-bold transition-all duration-200 cursor-pointer text-[10px]',
               selectedTimeframe === tf.value
@@ -313,7 +319,7 @@ const props = defineProps({
 });
 
 // ── emits ──────────────────────────────────────────────────────────────────
-const emit = defineEmits(['timeframe-change']);
+const emit = defineEmits(['timeframe-change', 'header-grab', 'header-release']);
 
 // ── 레이아웃 상수 ─────────────────────────────────────────────────────────
 // 차트 우측 여백(px): 차트는 래퍼폭 - CHART_GUTTER 로 렌더됨. 오버레이(58px)가

@@ -290,6 +290,8 @@
               >{{ gridSessionLabel }}</span>
             </div>
             <div
+              @mouseup="gridDragHandleIdx = null"
+              @mouseleave="gridDragHandleIdx = null"
               :class="[
                 'grid gap-4 shrink-0 items-start transition-all duration-300',
                 gridColsClass
@@ -302,7 +304,7 @@
             >
             <div
               v-if="ticker"
-              :draggable="true"
+              :draggable="gridDragHandleIdx === idx"
               @click="activeGridIndex = idx"
               @dragstart="onGridDragStart(idx, $event)"
               @dragend="onGridDragEnd"
@@ -310,7 +312,7 @@
               @dragleave="onGridDragLeave(idx)"
               @drop="onGridDrop(idx)"
               :class="[
-                'group relative card bg-base-100/45 backdrop-blur-md border transition-all duration-250 overflow-hidden rounded-2xl cursor-grab active:cursor-grabbing',
+                'group relative card bg-base-100/45 backdrop-blur-md border transition-all duration-250 overflow-hidden rounded-2xl',
                 isGridClosed(idx)
                   ? 'h-60'
                   : (activeGridTickersCount === 1 ? 'h-80 sm:h-96 lg:h-120' : 'h-72 sm:h-80 lg:h-110'),
@@ -331,16 +333,23 @@
               <template v-if="ticker && gridStockData[idx]">
                 <!-- 휴장/장마감: 종가 숫자 표시 + 차트 보기 버튼 -->
                 <div v-if="isGridClosed(idx)" class="h-full flex flex-col items-center justify-center gap-2 select-none px-4 text-center">
-                  <span class="text-xs font-bold text-base-content/45 tracking-widest uppercase">{{ gridStockData[idx].name }}</span>
-                  <span class="text-[2.25rem] font-black font-mono tracking-tight leading-none" :class="quoteColorClass(ticker, gridStockData[idx].change_amount)">
-                    {{ formatStockValue(ticker, gridStockData[idx].current_price) }}
-                  </span>
-                  <div class="flex items-center gap-2 text-sm font-bold font-mono" :class="quoteColorClass(ticker, gridStockData[idx].change_amount)">
-                    <span>{{ (gridStockData[idx].change_amount || 0) >= 0 ? '▲' : '▼' }}</span>
-                    <span>{{ ((gridStockData[idx].change_amount || 0) >= 0 ? '+' : '') + formatStockValue(ticker, gridStockData[idx].change_amount) }}</span>
-                    <span class="opacity-75">({{ ((gridStockData[idx].change_amount || 0) >= 0 ? '+' : '') + Number(gridStockData[idx].change_percent).toFixed(2) }}%)</span>
+                  <!-- 차트가 없는 장마감/휴장 카드: 종목명~라벨 블록을 드래그 핸들로(차트 카드 헤더와 일관) -->
+                  <div
+                    class="flex flex-col items-center gap-2 cursor-grab active:cursor-grabbing"
+                    @mousedown="gridDragHandleIdx = idx"
+                    @mouseup="gridDragHandleIdx = null"
+                  >
+                    <span class="text-xs font-bold text-base-content/45 tracking-widest uppercase">{{ gridStockData[idx].name }}</span>
+                    <span class="text-[2.25rem] font-black font-mono tracking-tight leading-none" :class="quoteColorClass(ticker, gridStockData[idx].change_amount)">
+                      {{ formatStockValue(ticker, gridStockData[idx].current_price) }}
+                    </span>
+                    <div class="flex items-center gap-2 text-sm font-bold font-mono" :class="quoteColorClass(ticker, gridStockData[idx].change_amount)">
+                      <span>{{ (gridStockData[idx].change_amount || 0) >= 0 ? '▲' : '▼' }}</span>
+                      <span>{{ ((gridStockData[idx].change_amount || 0) >= 0 ? '+' : '') + formatStockValue(ticker, gridStockData[idx].change_amount) }}</span>
+                      <span class="opacity-75">({{ ((gridStockData[idx].change_amount || 0) >= 0 ? '+' : '') + Number(gridStockData[idx].change_percent).toFixed(2) }}%)</span>
+                    </div>
+                    <span class="text-[10px] font-semibold text-base-content/35 uppercase tracking-widest mt-1 px-2 py-0.5 rounded-full bg-base-200/50 border border-base-content/8">{{ gridStockData[idx].is_trading_day === false ? '휴장 · 전일 마감' : '장마감 · 종가' }}</span>
                   </div>
-                  <span class="text-[10px] font-semibold text-base-content/35 uppercase tracking-widest mt-1 px-2 py-0.5 rounded-full bg-base-200/50 border border-base-content/8">{{ gridStockData[idx].is_trading_day === false ? '휴장 · 전일 마감' : '장마감 · 종가' }}</span>
                   <button
                     @click.stop="openGridChartModal(ticker, idx)"
                     class="mt-1 flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold border border-indigo-500/30 text-indigo-400 bg-indigo-500/8 hover:bg-indigo-500/18 hover:border-indigo-400/50 transition-all duration-200 cursor-pointer"
@@ -368,6 +377,8 @@
                   :usd-krw-rate="usdKrwRate"
                   :average-price="getAveragePriceForTicker(ticker)"
                   @timeframe-change="handleTimeframeChange(idx, $event)"
+                  @header-grab="gridDragHandleIdx = idx"
+                  @header-release="gridDragHandleIdx = null"
                 />
               </template>
 
@@ -506,6 +517,7 @@ const indexTimeframes = ref({ 'NQ=F': '3m', 'KOSPI200': '3m', 'KOSPI_NIGHT': '3m
 const activeGridIndex = ref(0);
 const gridDraggingIdx = ref(null); // 드래그 중인 그리드 슬롯
 const gridDragOverIdx = ref(null); // 드롭 대상으로 올라온 그리드 슬롯
+const gridDragHandleIdx = ref(null); // 드래그 핸들(차트 헤더)을 잡은 슬롯 — 이 슬롯만 draggable 활성
 const loading = ref(true);
 const error = ref(false);
 const ws = ref(null);
@@ -762,6 +774,7 @@ function onGridDrop(idx) {
 function onGridDragEnd() {
   gridDraggingIdx.value = null;
   gridDragOverIdx.value = null;
+  gridDragHandleIdx.value = null; // 드래그 종료 시 핸들 잠금 복귀(헤더 mouseup이 누락돼도 안전)
 }
 
 // ── 메서드 ────────────────────────────────────────────────────

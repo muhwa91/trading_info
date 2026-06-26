@@ -532,10 +532,30 @@ class TossPriceFetcher
 
             $price = (float) $price;
 
-            // ET 자정까지 남은 초 (최소 300초)
-            $nyTz     = new \DateTimeZone('America/New_York');
-            $midnight = new \DateTime('tomorrow', $nyTz);
-            $ttl      = max($midnight->getTimestamp() - time(), 300);
+            // TTL 결정 — stale 버그 수정:
+            //   기존엔 ET '자정'까지 TTL 이라, 정규장 종가가 확정되는 16:00 ET 이후에도
+            //   프리마켓에 채운 '어제 종가' 캐시가 자정까지 살아남아 당일 종가를 못 잡았다
+            //   (warmRegularCloses 가 Cache::has 면 skip → 16:00 새 종가를 영영 페치 안 함).
+            //   → 만료 기준을 '다음 16:05 ET(정규장 마감 직후)'로 옮겨, 워머가 애프터마켓에
+            //     처음 진입할 때 regularMarketPrice(=오늘 확정 종가)로 한 번 교체되게 한다.
+            $nyTz        = new \DateTimeZone('America/New_York');
+            $marketState = $meta['marketState'] ?? null;
+
+            if ($marketState === 'REGULAR' || $marketState === null) {
+                // 장중(REGULAR) 가드: regularMarketPrice 가 '미완성 진행가'이므로 16:05 까지
+                //   고착시키면 안 된다. 짧은 TTL(300초)로만 저장해 다음 워밍 사이클에 교체한다.
+                //   marketState 가 없으면(파싱 실패) 보수적으로 동일하게 300초만 잡아 stale
+                //   고착을 막는다(긴 TTL 로 잘못된 값을 박는 것보다 안전).
+                $ttl = 300;
+            } else {
+                // PRE / POST / CLOSED 등 — 다음 정규장 마감 직후(16:05 ET)에 만료.
+                //   오늘 16:05 가 아직 안 지났으면 오늘, 지났으면 내일 16:05 로.
+                $target = new \DateTime('today 16:05', $nyTz);
+                if ($target->getTimestamp() <= time()) {
+                    $target = new \DateTime('tomorrow 16:05', $nyTz);
+                }
+                $ttl = max($target->getTimestamp() - time(), 300);
+            }
 
             Cache::put($cacheKey, $price, $ttl);
 

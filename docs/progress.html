@@ -74,6 +74,18 @@
   </nav>
 
   <!-- ENTRIES:START -->
+  <div class="entry" data-agent="frontend">
+    <h2>차트 카드를 '헤더'에서만 잡아 옮기도록 변경 <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-06-26 · 담당: frontend</p>
+    <div class="req"><span class="label">요청 →</span> 지금은 모니터링 차트 카드의 아무 데나 잡아도 순서가 바뀌어, 차트를 만지려다 실수로 옮겨진다. 차트 위쪽 '헤더'(종목명·현재가 줄)를 잡았을 때만 옮겨지게 해 달라.</div>
+    <div class="done"><span class="label">처리 →</span> 카드 전체가 아니라 <b>차트 헤더를 잡았을 때만</b> 드래그가 시작되도록 제한했다. 차트 본문(그래프)을 잡으면 순서가 바뀌지 않아 차트 조작과 충돌하지 않는다. 잡는 곳임을 알리는 손 모양 커서도 헤더로 옮겼고, 헤더 안 기간 버튼은 눌러도 드래그로 빠지지 않게 처리. 장마감 카드는 상단 정보 블록이 손잡이 역할을 한다. 빌드·테스트 전부 통과(155개).</div>
+  </div>
+  <div class="entry" data-agent="debug backend qa">
+    <h2>미국 '전일 정규장 종가'가 며칠씩 옛 값으로 묵던 문제 해결 <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-06-26 · 담당: debug·backend·qa</p>
+    <div class="req"><span class="label">요청 →</span> 새 작업실에서 미국 주간거래 시세가 토스로 제대로 들어오는지 실측해 달라.</div>
+    <div class="done"><span class="label">처리 →</span> 토스 실시간 시세는 정상(애플·엔비디아·테슬라 실측 확인)인데, 점검 중 <b>'전일 정규장 종가'가 실제보다 며칠 묵은 값</b>(예: 애플 293 vs 실제 275, 6% 차이)으로 표시되는 걸 발견했다. 원인은 그 값을 저장하는 캐시가 미국 장 마감(오후 4시 ET) <b>전에</b> 만료돼, 마감 뒤 확정된 새 종가를 영영 못 받아오던 구조였다. 만료 시점을 '장 마감 직후'로 옮기고 장중엔 임시값을 짧게만 쓰도록 고쳐 항상 최신 종가를 잡게 했다. 실측으로 세 종목 모두 올바른 종가로 교정 확인, 재발 방지 테스트 3개 추가(전체 225개 통과), 실시간 서버 재시작 완료.</div>
+  </div>
   <div class="entry" data-agent="backend">
     <h2>시세 출처 표시를 정직하게 — 토스가 막히면 "Yahoo 폴백"으로 솔직히 표기 <span class="badge ok">완료</span></h2>
     <p class="meta">2026-06-25 · 담당: backend</p>

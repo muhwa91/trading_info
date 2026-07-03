@@ -40,3 +40,7 @@
 - `backend/app/Services/MarketSessionService.php` — 장 세션·거래일 판정(토스 캘린더)
 - `frontend/src/components/StockChart.vue` — 차트 컴포넌트
 - `docs/` — 개발 문서 · 진행상황(`progress.html`)
+
+## 🤖 개발 방식
+
+이 프로젝트는 역할별 AI 에이전트 팀(기획·백엔드·프론트엔드·QA·리뷰·보안)을 직접 구성·운영하는 [AI Agent Workspace](https://github.com/muhwa91/ai-agent-workspace) 거버넌스 아래에서 개발·유지보수됩니다 — API 계약 동결 후 병렬 구현(Contract-First), 훅 기반 품질 게이트, 비공개 모노레포 → 공개 미러 워크플로우.

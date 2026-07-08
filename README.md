@@ -4,7 +4,7 @@
 
 > ⚠️ **조회·자문 전용** — 주문/매매·실현손익·투자 추천은 하지 않습니다(평가손익만, 면책 표기).
 
-## 📡 데이터 소스
+## 데이터 소스
 | 소스 | 담당 |
 |---|---|
 | **토스증권 Open API** (주력) | 국내·미국 현재가, 차트(분/일봉), 환율(USD/KRW), 종목 마스터(이름·타입·통화) |
@@ -14,7 +14,7 @@
 > 종목명·타입·통화 등 토스가 제공하는 메타데이터는 DB에 저장하지 않고 토스에서 받아 캐싱합니다(DB는 보유·관심·가격이력의 FK 중심축).
 > 전환 상세: [`docs/features/toss-api-migration/`](docs/features/toss-api-migration/)
 
-## 🛠 스택
+## 스택
 - **백엔드**: Laravel 8 (PHP 7.4~8) + 로컬 MariaDB(`hachiware_1`)
 - **프론트**: Vue 3 (순수 JS) + Vite + Tailwind v4 + daisyUI + lightweight-charts
 - **실시간**: 순수 PHP Stream Socket WebSocket (포트 8080, 3초 사이클)
@@ -33,7 +33,7 @@
 - `TOSS_API_URL` / `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET` — 토스증권 Open API (토스증권 WTS 설정 메뉴에서 발급)
 - `DB_*` — 로컬 MariaDB 접속
 
-## 📁 핵심 구조
+## 핵심 구조
 - `backend/app/Services/Toss/` — 토스 API 게이트웨이(토큰·배치시세·차트·환율·종목마스터)
 - `backend/app/Services/Quote/TossQuoteProvider.php` — 포트폴리오 평가가(국내·미국)
 - `backend/app/Http/Controllers/StockController.php` — 시세·차트·지수 REST
@@ -41,6 +41,6 @@
 - `frontend/src/components/StockChart.vue` — 차트 컴포넌트
 - `docs/` — 개발 문서 · 진행상황(`progress.html`)
 
-## 🤖 개발 방식
+## 개발 방식
 
 이 프로젝트는 역할별 AI 에이전트 팀(기획·백엔드·프론트엔드·QA·리뷰·보안)을 직접 구성·운영하는 [AI Agent Workspace](https://github.com/muhwa91/ai-agent-workspace) 거버넌스 아래에서 개발·유지보수됩니다 — API 계약 동결 후 병렬 구현(Contract-First), 훅 기반 품질 게이트, 비공개 모노레포 → 공개 미러 워크플로우.

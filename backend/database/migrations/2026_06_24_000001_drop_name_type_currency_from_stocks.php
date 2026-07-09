@@ -44,7 +44,7 @@ class DropNameTypeCurrencyFromStocks extends Migration
      *
      * 복원 후 기존 데이터가 없으므로 name 은 '' (빈 문자열 기본값),
      * type 은 'stock', currency 는 'KRW' 로 초기화된다.
-     * 실제 값은 TossStockMaster 또는 KrxStocksSeeder 재실행으로 복구.
+     * 실제 값은 TossStockMaster accessor 가 런타임에 제공한다.
      */
     public function down(): void
     {

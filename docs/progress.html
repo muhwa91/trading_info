@@ -74,6 +74,12 @@
   </nav>
 
   <!-- ENTRIES:START -->
+  <div class="entry" data-agent="backend qa">
+    <h2>종목 검색 자동완성을 네이버 API로 전환 (JSON 파일 의존 제거) <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-07-09 · 담당: backend · qa</p>
+    <div class="req"><span class="label">요청 →</span> 노트북에서 코드를 새로 받아(clone) 작업하면 종목 검색 자동완성이 안 됐다. 원인은 검색에 쓰는 종목 목록 파일(krx·us JSON)이 공유 저장소에 안 올라가서. 파일 대신 API로 실시간으로 종목을 찾아오게 해 달라.</div>
+    <div class="res"><span class="label">처리 →</span> 검색을 로컬 파일 대신 <b>네이버 증권 자동완성 API</b> 호출로 교체했다. 한글·초성(ㅅㅅㅈㅈ→삼성전자)·부분일치·미국주 한글명(애플→AAPL)까지 되고, 일본·중국 종목은 걸러 국내·미국만 보여준다. 화면은 그대로(응답 형식 유지). 이제 어느 컴퓨터에서 받아도 파일 없이 검색이 된다. 검증: 6개 검색 케이스·외국종목 제외·빈값 처리 모두 통과, 기존 테스트 회귀 없음.</div>
+  </div>
   <div class="entry" data-agent="main">
     <h2>미국 주간거래·애프터 시간대 토스 시세 실측 (자동 기록 중) <span class="badge wip">진행중</span></h2>
     <p class="meta">2026-07-03 · 담당: main</p>

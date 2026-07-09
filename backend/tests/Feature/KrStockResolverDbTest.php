@@ -23,7 +23,7 @@ use Tests\TestCase;
  *   5. 이름에 SOL 포함 → type='etf'
  *   6. 이름이 일반 종목명 → type='stock'
  *   7. market='KR', currency='KRW' 고정
- *   8. .KS 접미사 → exchange='KOSPI' (krx_stocks.json 없을 때 접미사 폴백)
+ *   8. .KS 접미사 → exchange='KOSPI' (접미사 폴백)
  *   9. .KQ 접미사 → exchange='KOSDAQ'
  *  10. 동일 코드 두 번 호출 → DB row 1개만 (firstOrCreate 보장)
  *
@@ -106,7 +106,7 @@ class KrStockResolverDbTest extends TestCase
     /** @test */
     public function testNameHintNullUnknownCodeFallsBackToCode(): void
     {
-        // KR_NAME_MAP에 없는 코드, krx_stocks.json도 없는 경우
+        // KR_NAME_MAP에 없는 코드
         $stock = $this->resolver->resolveOrCreate('999999.KS', null);
 
         // 코드 자체('999999')가 name으로 저장
@@ -170,31 +170,23 @@ class KrStockResolverDbTest extends TestCase
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 8-9. exchange 추론 (krx_stocks.json 없을 때 접미사 폴백)
+    // 8-9. exchange 추론 (접미사 폴백 — .KS→KOSPI, .KQ→KOSDAQ)
     // ──────────────────────────────────────────────────────────────
 
     /** @test */
-    public function testKsSuffixGivesKospiExchangeOrNull(): void
+    public function testKsSuffixGivesKospiExchange(): void
     {
         $stock = $this->resolver->resolveOrCreate('999991.KS', '테스트종목A');
 
-        // krx_stocks.json 있으면 그 값, 없으면 KOSPI, null 모두 허용
-        // (중요: MariaDB가 아니라 SQLite에서 돌고 있음을 간접 증명)
-        $this->assertTrue(
-            $stock->exchange === 'KOSPI' || $stock->exchange === null || is_string($stock->exchange),
-            'exchange는 KOSPI 또는 null 이어야 한다'
-        );
+        $this->assertSame('KOSPI', $stock->exchange);
     }
 
     /** @test */
-    public function testKqSuffixGivesKosdaqExchangeOrNull(): void
+    public function testKqSuffixGivesKosdaqExchange(): void
     {
         $stock = $this->resolver->resolveOrCreate('999992.KQ', '테스트종목B');
 
-        $this->assertTrue(
-            $stock->exchange === 'KOSDAQ' || $stock->exchange === null || is_string($stock->exchange),
-            'exchange는 KOSDAQ 또는 null 이어야 한다'
-        );
+        $this->assertSame('KOSDAQ', $stock->exchange);
     }
 
     // ──────────────────────────────────────────────────────────────

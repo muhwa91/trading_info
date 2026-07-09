@@ -1069,227 +1069,82 @@ class StockController extends Controller
         return $this->stockMaster->getName($ticker);
     }
 
+    /**
+     * 종목 검색 자동완성 — 네이버 증권 자동완성 API 프록시.
+     *
+     * 로컬 JSON(krx_stocks.json·us_stocks.json) 의존을 제거하고
+     * 네이버 `ac.stock.naver.com` 을 호출한다(초성·한글·부분일치·미국주 한글검색 지원).
+     * 응답 계약은 기존 그대로 유지: [{ticker, name, isKorean, exchange}, ...] 최대 20개.
+     *
+     * type: 'kr'(KOR만) / 'us'(USA만) / 'all'(KOR+USA, 일본·중국 등 제외)
+     */
     public function searchStocks(Request $request)
     {
-        $query = trim($request->query('q', ''));
+        // q 는 문자열만 허용 — ?q[]=a 배열 주입 시 trim(array) TypeError(500) 방어.
+        // (string) 캐스팅은 배열에 'Array to string' warning 을 남기므로 is_string 가드로 처리.
+        $rawQuery = $request->query('q', '');
+        $query = is_string($rawQuery) ? trim($rawQuery) : '';
         $type = $request->query('type', 'all'); // 'kr', 'us', 'all'
-        
-        if (empty($query)) {
+
+        // 빈값 또는 과도한 길이(50자 초과)는 조회 없이 빈 결과 반환.
+        if ($query === '' || mb_strlen($query) > 50) {
             return response()->json([]);
         }
 
-        // 1. 국내 주식의 경우: krx_stocks.json + DB stocks(KR) 합산 검색
-        if ($type === 'kr') {
-            $queryLower  = strtolower($query);
-            $queryChosung = $this->getChosung($queryLower);
+        // type → 허용 국가코드 집합
+        $allowedNations = $type === 'kr' ? ['KOR']
+            : ($type === 'us' ? ['USA'] : ['KOR', 'USA']);
 
-            // 1-a. krx_stocks.json 검색 (초성/한글/코드)
-            $jsonResults = [];
-            $seenCodes   = [];   // DB 추가분 중복 제거용
+        try {
+            $client = new Client();
+            $response = $client->get('https://ac.stock.naver.com/ac', [
+                'query' => ['q' => $query, 'target' => 'stock'],
+                'headers' => ['User-Agent' => 'Mozilla/5.0'],
+                'timeout' => 5,
+            ]);
 
-            $filePath = storage_path('app/krx_stocks.json');
-            if (file_exists($filePath)) {
-                $jsonContent = file_get_contents($filePath);
-                $krxStocks   = json_decode($jsonContent, true);
-                if (is_array($krxStocks)) {
-                    foreach ($krxStocks as $stock) {
-                        $name        = $stock['name'];
-                        $code        = $stock['code'];
-                        $nameLower   = strtolower($name);
-                        $nameChosung = $this->getChosung($nameLower);
+            $data = json_decode($response->getBody()->getContents(), true);
+            $items = is_array($data['items'] ?? null) ? $data['items'] : [];
 
-                        $match = (strpos($code, $queryLower) !== false)
-                            || (strpos($nameLower, $queryLower) !== false)
-                            || (strpos($nameChosung, $queryChosung) !== false);
+            $results = [];
+            foreach ($items as $item) {
+                $nation = $item['nationCode'] ?? '';
+                if (! in_array($nation, $allowedNations, true)) {
+                    continue; // 일본·중국 등 제외 + type 필터
+                }
 
-                        if ($match) {
-                            $jsonResults[] = [
-                                'ticker'   => $stock['ticker'],
-                                'name'     => $name,
-                                'isKorean' => true,
-                                'exchange' => $stock['market'],
-                            ];
-                            $seenCodes[$code] = true;
-                        }
+                $code     = $item['code'] ?? '';
+                $typeCode = $item['typeCode'] ?? '';
+                if ($code === '') {
+                    continue;
+                }
 
-                        if (count($jsonResults) >= 20) {
-                            break;
-                        }
-                    }
+                if ($nation === 'KOR') {
+                    // 프론트가 국내 ticker 에 .KS/.KQ 접미사를 기대함(KrStockResolver 폴백과 정합)
+                    $ticker = $typeCode === 'KOSPI' ? $code . '.KS'
+                        : ($typeCode === 'KOSDAQ' ? $code . '.KQ' : $code);
+                } else {
+                    $ticker = $code; // 미국은 심볼 그대로 (reutersCode 접미사 미사용)
+                }
+
+                $results[] = [
+                    'ticker'   => $ticker,
+                    'name'     => $item['name'] ?? $code,
+                    'isKorean' => $nation === 'KOR',
+                    'exchange' => $typeCode,
+                ];
+
+                if (count($results) >= 20) {
+                    break;
                 }
             }
 
-            // 1-b. DB stocks(KR) 검색 — krx_stocks.json 에 없는 종목(SOL ETF 등)을 보완
-            // Phase 7: name 컬럼 삭제됨 → symbol LIKE 만 쿼리. name 은 accessor 경유.
-            $dbResults = [];
-            try {
-                $dbStocks = \App\Models\Stock::where('market', 'KR')
-                    ->where(function ($q) use ($queryLower) {
-                        $q->whereRaw('LOWER(symbol) LIKE ?', ['%' . $queryLower . '%']);
-                    })
-                    ->limit(20)
-                    ->get(['id', 'symbol', 'exchange']);
+            return response()->json($results);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('[searchStocks] 네이버 자동완성 오류: ' . $e->getMessage());
 
-                foreach ($dbStocks as $dbStock) {
-                    // krx_stocks.json 결과와 중복이면 건너뜀
-                    if (isset($seenCodes[$dbStock->symbol])) {
-                        continue;
-                    }
-                    $exchange      = $dbStock->exchange ?? 'KR';
-                    $dbResults[]   = [
-                        'ticker'   => $dbStock->symbol . '.KS',   // 프론트 일관성 유지
-                        'name'     => $dbStock->name,
-                        'isKorean' => true,
-                        'exchange' => $exchange,
-                    ];
-                }
-            } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error('[searchStocks] DB KR 검색 오류: ' . $e->getMessage());
-            }
-
-            // krx_stocks.json 결과 우선, DB 추가분을 뒤에 붙여 최대 20개
-            $merged = array_slice(array_merge($jsonResults, $dbResults), 0, 20);
-            return response()->json($merged);
+            return response()->json([]);
         }
-
-        // 2. 미국 주식: us_stocks.json(KIS 마스터) 우선 → Yahoo Finance 폴백(보완)
-        //    - 한글/영문/티커 부분일치 검색
-        //    - 한글 검색어면 us_stocks.json 매칭이 우선 노출
-        //    - Yahoo 는 마스터에 없는 종목 보완용
-
-        $queryUpper  = strtoupper($query);
-        $queryLower  = strtolower($query);
-        // 한글 포함 여부 판정 (U+AC00~U+D7A3 범위)
-        $isKoreanQuery = (bool) preg_match('/[\x{AC00}-\x{D7A3}]/u', $query);
-
-        // 2-a. us_stocks.json (KIS 마스터) 검색
-        $masterResults = [];
-        $seenSymbols   = [];   // Yahoo 결과와 중복 제거용
-
-        $usStocksPath = storage_path('app/us_stocks.json');
-        if (file_exists($usStocksPath)) {
-            $usStocks = json_decode(file_get_contents($usStocksPath), true);
-            if (is_array($usStocks)) {
-                foreach ($usStocks as $stock) {
-                    $symbol  = $stock['symbol'] ?? '';
-                    $koName  = $stock['koName'] ?? '';
-                    $enName  = $stock['enName'] ?? '';
-                    $excd    = $stock['exchange'] ?? '';
-
-                    $koLower = mb_strtolower($koName, 'UTF-8');
-                    $enLower = strtolower($enName);
-
-                    $match = (stripos($symbol, $queryUpper) !== false)
-                        || (mb_strpos($koLower, $queryLower, 0, 'UTF-8') !== false)
-                        || (strpos($enLower, $queryLower) !== false);
-
-                    if ($match) {
-                        // 한글명이 있으면 한글명 우선, 없으면 영문명
-                        $displayName = ($koName !== '' && $koName !== $enName) ? "{$koName} ({$enName})" : $enName;
-
-                        $masterResults[] = [
-                            'ticker'   => $symbol,
-                            'name'     => $displayName,
-                            'isKorean' => false,
-                            'exchange' => $excd,
-                        ];
-                        $seenSymbols[$symbol] = true;
-                    }
-
-                    if (count($masterResults) >= 20) {
-                        break;
-                    }
-                }
-            }
-        }
-
-        // 2-b. Yahoo Finance 폴백 — 한글 검색어면 스킵(Yahoo 는 한글 검색 불가),
-        //      영문/티커 검색이고 마스터 결과가 부족할 때만 보완
-        $yahooResults = [];
-        if (! $isKoreanQuery) {
-            try {
-                $client = new Client();
-                $url = "https://query1.finance.yahoo.com/v1/finance/search?q=" . urlencode($query) . "&quotesCount=20&newsCount=0";
-                $response = $client->get($url, [
-                    'headers' => [
-                        'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    ],
-                    'timeout' => 5,
-                ]);
-
-                $data   = json_decode($response->getBody()->getContents(), true);
-                $quotes = $data['quotes'] ?? [];
-
-                foreach ($quotes as $quote) {
-                    $quoteType = $quote['quoteType'] ?? '';
-                    if ($quoteType !== 'EQUITY' && $quoteType !== 'ETF') {
-                        continue;
-                    }
-
-                    $symbol    = $quote['symbol'] ?? '';
-                    $name      = $quote['longname'] ?? $quote['shortname'] ?? $symbol;
-                    $exchange  = $quote['exchange'] ?? '';
-                    $isDomestic = preg_match('/(\.KS|\.KQ)$/i', $symbol) || preg_match('/^\d{6}$/', $symbol);
-
-                    // type='us' 면 국내 종목 제외
-                    if ($type === 'us' && $isDomestic) {
-                        continue;
-                    }
-
-                    // us_stocks.json 에서 이미 찾은 심볼은 중복 제거
-                    if (isset($seenSymbols[$symbol])) {
-                        continue;
-                    }
-
-                    $yahooResults[] = [
-                        'ticker'   => $symbol,
-                        'name'     => $name,
-                        'isKorean' => (bool) $isDomestic,
-                        'exchange' => $exchange,
-                    ];
-                }
-            } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::warning('[searchStocks] Yahoo 검색 오류(폴백 스킵): ' . $e->getMessage());
-            }
-        }
-
-        // 한글 검색어면 마스터 결과 단독, 영문이면 마스터 우선 + Yahoo 보완
-        $merged = array_slice(array_merge($masterResults, $yahooResults), 0, 20);
-        return response()->json($merged);
-    }
-
-    private function getChosung($str)
-    {
-        $chosung = ["ㄱ", "ㄲ", "ㄴ", "ㄷ", "ㄸ", "ㄹ", "ㅁ", "ㅂ", "ㅃ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅉ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"];
-        $result = "";
-        
-        $len = mb_strlen($str, 'UTF-8');
-        for ($i = 0; $i < $len; $i++) {
-            $char = mb_substr($str, $i, 1, 'UTF-8');
-            $code = $this->utf8Ord($char);
-            
-            if ($code >= 0xAC00 && $code <= 0xD7A3) {
-                $temp = $code - 0xAC00;
-                $choIdx = (int)($temp / 588);
-                $result .= $chosung[$choIdx];
-            } else {
-                $result .= $char;
-            }
-        }
-        return $result;
-    }
-
-    private function utf8Ord($ch)
-    {
-        $len = strlen($ch);
-        if ($len <= 0) return 0;
-        $h = ord($ch[0]);
-        if ($h <= 0x7F) return $h;
-        if ($h < 0xC2) return 0;
-        if ($h <= 0xDF && $len > 1) return ($h & 0x1F) << 6 | (ord($ch[1]) & 0x3F);
-        if ($h <= 0xEF && $len > 2) return ($h & 0x0F) << 12 | (ord($ch[1]) & 0x3F) << 6 | (ord($ch[2]) & 0x3F);
-        if ($h <= 0xF4 && $len > 3) return ($h & 0x0F) << 18 | (ord($ch[1]) & 0x3F) << 12 | (ord($ch[2]) & 0x3F) << 6 | (ord($ch[3]) & 0x3F);
-        return 0;
     }
 
     /**

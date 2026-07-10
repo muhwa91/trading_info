@@ -44,7 +44,10 @@ class AppServiceProvider extends ServiceProvider
 
         // Phase 3 신규: 국내 현재가 배치 페처 · 등락 계산기 · Quote 프로바이더
         $this->app->singleton(TossChangeCalculator::class, function ($app) {
-            return new TossChangeCalculator($app->make(TossApiClient::class));
+            return new TossChangeCalculator(
+                $app->make(TossApiClient::class),
+                $app->make(TossSymbolMapper::class)
+            );
         });
 
         $this->app->singleton(TossPriceFetcher::class, function ($app) {

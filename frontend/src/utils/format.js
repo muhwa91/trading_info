@@ -4,9 +4,9 @@
  * PortfolioSummaryBar.vue, HoldingsPanel.vue 에서 글자 단위로 동일하게
  * 중복되던 함수를 한 곳으로 모은 것. 순수 함수만 포함.
  *
- * 색상 규칙 (국내·미국 구분 없이 통일):
- *   상승(증가) → rose-400  (#f43f5e)
- *   하락(감소) → sky-400   (#38bdf8)
+ * 색상 규칙 (국내·미국 구분 없이 통일 — 시맨틱 신호색):
+ *   상승(증가) → up   (#F6465D, KR 적)
+ *   하락(감소) → down (#3EA6FF, KR 청)
  */
 
 // ── 금액 포맷 ──────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ export function formatRecordedAt(val) {
 
 /**
  * 손익값에 따른 텍스트 색 클래스 반환.
- * 국내·미국 구분 없이 상승=빨강(rose-400), 하락=파랑(sky-400)으로 통일.
+ * 국내·미국 구분 없이 상승=빨강(up), 하락=파랑(down)으로 통일.
  * @param {number|null} value  손익 금액(양수=이익, 음수=손실)
  * @param {'kr'|'us'}  market  호환을 위해 시그니처 유지 (무시됨)
  * @returns {string} Tailwind 색상 클래스
@@ -108,20 +108,7 @@ export function formatRecordedAt(val) {
 export function profitColorClass(value, market) {
   const n = Number(value);
   if (isNaN(n)) return 'text-base-content/60';
-  return n >= 0 ? 'text-rose-400' : 'text-sky-400';
-}
-
-/**
- * 손익값에 따른 배지 배경+텍스트 클래스 반환.
- * 국내·미국 구분 없이 상승=badge-kr-up(빨강), 하락=badge-kr-down(파랑)으로 통일.
- * @param {number|null} value  손익 금액
- * @param {'kr'|'us'}  market  호환을 위해 시그니처 유지 (무시됨)
- * @returns {string} Tailwind / 커스텀 클래스
- */
-export function profitBadgeClass(value, market) {
-  const n = Number(value);
-  if (isNaN(n)) return 'text-base-content/30 bg-base-200/40';
-  return n >= 0 ? 'badge-kr-up' : 'badge-kr-down';
+  return n >= 0 ? 'text-up' : 'text-down';
 }
 
 // ── displayName 헬퍼 ───────────────────────────────────────────────

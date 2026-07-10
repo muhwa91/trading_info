@@ -1,15 +1,15 @@
 <template>
-  <div class="h-screen bg-base-300 text-base-content font-sans flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200 overflow-hidden">
+  <div class="h-screen bg-base-300 text-base-content font-sans flex flex-col selection:bg-accent/30 selection:text-white overflow-hidden">
 
     <!-- ── 상단 고정 영역 (헤더 + 손익 요약 바) ── -->
-    <div class="sticky top-0 z-50 shrink-0">
-      <!-- Header -->
-      <header class="navbar bg-base-100/75 backdrop-blur-lg border-b border-base-content/8 px-4 sm:px-6 min-h-0 py-2 sm:py-2.5 shrink-0 select-none shadow-sm">
+    <div class="sticky top-0 z-100 shrink-0">
+      <!-- Header (유일한 글래스) -->
+      <header class="navbar bg-base-100/70 backdrop-blur-lg border-b border-hairline px-4 sm:px-6 min-h-0 py-2 shrink-0 select-none">
         <!-- 로고 -->
         <div class="flex items-center gap-3 min-w-0 shrink-0">
           <!-- 로고 아이콘 (클릭 → 메인으로 이동) -->
           <div
-            class="w-9 h-9 bg-indigo-600 hover:rotate-12 hover:scale-110 active:scale-95 transition-all duration-300 ease-out rounded-xl flex items-center justify-center text-white shadow-md shadow-indigo-600/30 cursor-pointer shrink-0"
+            class="w-9 h-9 bg-accent hover:opacity-90 transition-opacity duration-120 rounded-sm flex items-center justify-center text-white cursor-pointer shrink-0"
             role="button"
             tabindex="0"
             title="메인으로"
@@ -23,7 +23,7 @@
           </div>
 
           <!-- 앱 이름 -->
-          <span class="hidden sm:block text-base font-black tracking-tight text-base-content/80 shrink-0">Stockpit</span>
+          <span class="hidden sm:block text-base font-bold font-mono tracking-tight text-base-content/60 shrink-0">Stockpit</span>
         </div>
 
         <!-- 손익 요약 바 (헤더에 통합 — 환율·미국/국내 손익) -->
@@ -36,23 +36,21 @@
         </div>
 
         <div class="flex-none flex items-center gap-2">
-          <!-- WebSocket 상태 필 -->
+          <!-- WebSocket 상태 필 (LIVE=시스템 연결 단일 의미) -->
           <div
             :class="[
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[12px] font-extrabold font-mono transition-all duration-300',
+              'flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-medium font-mono transition-colors duration-120',
               error
                 ? 'bg-error/8 border-error/25 text-error'
-                : 'bg-base-200/80 border-base-content/8 text-success'
+                : 'bg-base-200/80 border-hairline text-success'
             ]"
             :title="error ? 'WebSocket 연결 끊김' : 'WebSocket 실시간 연결 중'"
             role="status"
             :aria-label="error ? '연결 끊김' : '실시간 연결 중'"
           >
-            <span class="relative flex h-1.5 w-1.5 shrink-0">
-              <span :class="['animate-ping absolute inline-flex h-full w-full rounded-full opacity-60', error ? 'bg-error' : 'bg-success']"></span>
-              <span :class="['relative inline-flex rounded-full h-1.5 w-1.5', error ? 'bg-error' : 'bg-success']"></span>
-            </span>
-            <span :class="error ? 'animate-pulse' : ''">
+            <!-- 연결점: 단일 pulse (ping 중첩 제거) -->
+            <span :class="['inline-flex rounded-full h-1.5 w-1.5 shrink-0 animate-pulse', error ? 'bg-error' : 'bg-success']"></span>
+            <span>
               {{ error ? 'DISCONNECTED' : 'LIVE' }}
             </span>
           </div>
@@ -72,11 +70,11 @@
           'absolute top-1/2 -translate-y-1/2 z-30',
           'flex flex-col items-center justify-center gap-1',
           'w-6 py-8',
-          'bg-indigo-600/90 text-white border border-indigo-400/40 shadow-lg shadow-indigo-600/25',
-          'hover:bg-indigo-500 hover:w-7 transition-all duration-200 cursor-pointer',
+          'bg-accent/90 text-white border border-accent-line',
+          'hover:bg-accent hover:w-7 transition-colors duration-120 cursor-pointer',
           sidebarPosition === 'left'
-            ? 'left-0 rounded-r-lg'
-            : 'right-0 rounded-l-lg'
+            ? 'left-0 rounded-r-md'
+            : 'right-0 rounded-l-md'
         ]"
       >
         <!-- left 사이드바: 오른쪽으로 펼치는 방향 (chevrons-right) -->
@@ -98,8 +96,8 @@
             : [
                 'w-full md:w-72 lg:w-96 h-64 md:h-full',
                 sidebarPosition === 'left'
-                  ? 'border-b md:border-b-0 md:border-r border-base-content/10'
-                  : 'border-t md:border-t-0 md:border-l border-base-content/10'
+                  ? 'border-b md:border-b-0 md:border-r border-hairline'
+                  : 'border-t md:border-t-0 md:border-l border-hairline'
               ]
         ]"
       >
@@ -126,14 +124,14 @@
         <!-- WS 로딩 스켈레톤 -->
         <div v-if="loading" class="flex flex-col space-y-4 md:space-y-5 animate-pulse">
           <!-- 보유표 스켈레톤 -->
-          <div class="card bg-base-100/45 border border-base-content/8 rounded-2xl overflow-hidden p-4 md:p-5">
+          <div class="card bg-base-100 border border-hairline rounded-md overflow-hidden p-4">
             <div class="flex items-center justify-between mb-3">
               <div class="flex items-center gap-2">
-                <div class="skeleton h-4 w-4 rounded"></div>
-                <div class="skeleton h-4 w-20 rounded"></div>
+                <div class="skeleton h-4 w-4 rounded-xs"></div>
+                <div class="skeleton h-4 w-20 rounded-xs"></div>
                 <div class="skeleton h-4 w-6 rounded-full"></div>
               </div>
-              <div class="skeleton h-6 w-12 rounded-lg"></div>
+              <div class="skeleton h-6 w-12 rounded-sm"></div>
             </div>
             <div class="space-y-2">
               <div v-for="n in 3" :key="n" class="flex gap-3">
@@ -150,12 +148,12 @@
 
           <!-- 지수 카드 스켈레톤 (2열) -->
           <div class="grid gap-4 grid-cols-1 lg:grid-cols-2">
-            <div v-for="n in 2" :key="n" class="skeleton h-48 rounded-2xl"></div>
+            <div v-for="n in 2" :key="n" class="skeleton h-48 rounded-md"></div>
           </div>
 
           <!-- 종목 그리드 스켈레톤 (최대 6개) -->
           <div class="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-            <div v-for="n in 6" :key="n" class="skeleton h-72 sm:h-80 rounded-2xl"></div>
+            <div v-for="n in 6" :key="n" class="skeleton h-72 sm:h-80 rounded-md"></div>
           </div>
         </div>
 
@@ -176,14 +174,40 @@
             <button
               type="button"
               @click="indexCollapsed = !indexCollapsed"
-              class="flex items-center gap-2 px-3 py-2 rounded-xl bg-base-100/40 backdrop-blur-md border border-base-content/8 hover:border-indigo-500/25 transition-all duration-200 cursor-pointer select-none"
+              class="flex items-center gap-2 px-3 py-2 rounded-sm bg-base-100 border border-hairline hover:border-hairline-strong transition-colors duration-120 cursor-pointer select-none"
               :aria-expanded="!indexCollapsed"
               aria-label="지수 영역 접기/펼치기"
             >
-              <svg :class="['h-3.5 w-3.5 text-white transition-transform duration-200', indexCollapsed ? '-rotate-90' : '']" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <svg :class="['h-3.5 w-3.5 text-base-content/60 transition-transform duration-200', indexCollapsed ? '-rotate-90' : '']" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
-              <span class="text-xs font-extrabold text-white tracking-wider uppercase">지수 · 나스닥 / 코스피</span>
+              <span class="text-xs font-semibold text-base-content/60 tracking-wider uppercase">{{ indexHeaderLabel }}</span>
+
+              <!-- 접힘 상태 & 세션 활성 지수 인라인 시세 (나스닥100=미국정규장 / 코스피 야간선물=야간선물세션) -->
+              <!-- 차트 없음·틱 플래시 없음. 펼치면 카드가 같은 값을 보여주므로 접힘일 때만. -->
+              <span
+                v-if="indexCollapsed && collapsedInlineQuotes.length"
+                class="ml-auto flex items-center gap-3 min-w-0 overflow-hidden"
+              >
+                <span
+                  v-for="q in collapsedInlineQuotes"
+                  :key="q.ticker"
+                  class="flex items-center gap-2 font-mono leading-none whitespace-nowrap transition-colors duration-260 rounded-xs px-1"
+                  :class="indexFlash[q.ticker] === 'up'
+                    ? 'bg-up-weak text-up'
+                    : indexFlash[q.ticker] === 'down'
+                      ? 'bg-down-weak text-down'
+                      : indexQuoteColor(q.ticker)"
+                >
+                  <span class="text-2xs font-medium text-base-content/40 tracking-wider shrink-0">{{ q.label }}</span>
+                  <span class="text-sm font-semibold">{{ formatIndexValue(indexStockData[q.ticker].current_price) }}</span>
+                  <span class="text-2xs font-medium">
+                    {{ indexQuoteIsUp(q.ticker) ? '▲' : '▼' }}
+                    {{ (indexQuoteIsUp(q.ticker) ? '+' : '') + formatIndexValue(indexStockData[q.ticker].change_amount) }}
+                    ({{ (indexQuoteIsUp(q.ticker) ? '+' : '') + Number(indexStockData[q.ticker].change_percent).toFixed(2) }}%)
+                  </span>
+                </span>
+              </span>
             </button>
             <!-- visibleIndexTickers: 나스닥 + (정규장=종합지수 / 야간=야간선물 / 그 외 없음) -->
             <div v-show="!indexCollapsed" :class="['grid gap-4 shrink-0 items-stretch transition-all duration-300', visibleIndexTickers.length === 1 ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2']">
@@ -191,10 +215,10 @@
               v-for="ticker in visibleIndexTickers"
               :key="ticker"
               :class="[
-                'h-72 sm:h-80 lg:h-90 rounded-2xl transition-all duration-300',
+                'h-72 sm:h-80 lg:h-90 rounded-md transition-colors duration-120',
                 indexDisplayMode(ticker) === 'chart'
                   ? ''
-                  : 'overflow-hidden bg-base-100/45 backdrop-blur-md border border-base-content/8 hover:border-indigo-500/25 hover:shadow-lg hover:shadow-indigo-500/5 card-hover'
+                  : 'overflow-hidden bg-base-100 border border-hairline hover:border-hairline-strong card-hover'
               ]"
             >
               <template v-if="indexStockData[ticker]">
@@ -213,34 +237,31 @@
                 />
                 <!-- quote 모드 (코스피 야간선물 / NQ 휴장 / 코스피 장마감 등) -->
                 <div v-else class="h-full flex flex-col items-center justify-center gap-0 select-none px-6 py-5">
-                  <!-- 상단: 티커 배지 + 종목명 -->
-                  <div class="flex items-center gap-2 mb-4">
-                    <span class="px-1.5 py-0.5 rounded text-[11px] font-extrabold font-mono text-indigo-300 bg-indigo-500/12 border border-indigo-500/20 tracking-wider leading-tight shrink-0">
-                      {{ ticker }}
-                    </span>
-                    <span class="text-xs font-bold text-base-content/55 tracking-widest">{{ indexStockData[ticker].name }}</span>
+                  <!-- 상단: 종목명 (지수는 티커 배지 없이 이름만) -->
+                  <div class="flex items-center justify-center mb-4">
+                    <span class="text-xs font-medium text-base-content/55 tracking-widest">{{ indexStockData[ticker].name }}</span>
                   </div>
-                  <!-- 중앙: 큰 가격 숫자 -->
+                  <!-- 중앙: 큰 가격 숫자 (서명 리드아웃) -->
                   <span
-                    class="text-[2.75rem] font-black font-mono tracking-tight leading-none mb-3"
+                    class="text-readout font-bold font-mono tracking-tight leading-none mb-3"
                     :class="indexQuoteColor(ticker)"
                   >
                     {{ formatIndexValue(indexStockData[ticker].current_price) }}
                   </span>
                   <!-- 등락액 + 퍼센트 -->
-                  <div class="flex items-center gap-1.5 text-sm font-bold font-mono mb-4" :class="indexQuoteColor(ticker)">
+                  <div class="flex items-center gap-2 text-sm font-semibold font-mono mb-4" :class="indexQuoteColor(ticker)">
                     <span class="text-base leading-none">{{ indexQuoteIsUp(ticker) ? '▲' : '▼' }}</span>
                     <span>{{ (indexQuoteIsUp(ticker) ? '+' : '') + formatIndexValue(indexStockData[ticker].change_amount) }}</span>
                     <span class="opacity-70 text-xs">({{ (indexQuoteIsUp(ticker) ? '+' : '') + Number(indexStockData[ticker].change_percent).toFixed(2) }}%)</span>
                   </div>
-                  <!-- 하단: 세션 상태 배지 -->
+                  <!-- 하단: 세션 상태 배지 (3계층) -->
                   <span
                     :class="[
-                      'text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-lg border leading-tight',
+                      'text-2xs font-medium uppercase tracking-widest px-2 py-0.5 rounded-xs border leading-tight',
                       indexQuoteLabel(ticker) === '야간 거래중' || indexQuoteLabel(ticker) === '거래중'
-                        ? 'text-cyan-400 bg-cyan-500/10 border-cyan-500/25'
+                        ? 'text-ses-ext bg-ses-ext-weak border-ses-ext-line'
                         : indexQuoteLabel(ticker) === '정규장'
-                          ? 'text-pink-400 bg-pink-500/8 border-pink-500/20'
+                          ? 'text-ses-open bg-ses-open-weak border-ses-open-line'
                           : 'text-base-content/45 bg-base-200/40 border-base-content/10'
                     ]"
                   >{{ indexQuoteLabel(ticker) }}</span>
@@ -248,8 +269,8 @@
               </template>
               <!-- 로딩 -->
               <div v-else class="h-full flex flex-col items-center justify-center gap-3">
-                <span class="loading loading-spinner text-indigo-500/60 loading-sm"></span>
-                <span class="text-[10px] text-base-content/35 font-mono tracking-widest uppercase">Loading Index...</span>
+                <span class="loading loading-spinner text-accent/60 loading-sm"></span>
+                <span class="text-2xs text-base-content/35 font-mono tracking-widest uppercase">Loading Index...</span>
               </div>
             </div>
           </div>
@@ -259,37 +280,37 @@
           <div class="flex flex-col gap-3">
             <!-- 국내/미국 토글 -->
             <div class="flex items-center gap-2">
-              <div class="tabs tabs-boxed bg-base-100/40 backdrop-blur-md p-0.5 rounded-xl border border-base-content/8 gap-0">
+              <div class="tabs tabs-boxed bg-base-200 p-0.5 rounded-sm border border-hairline gap-0">
                 <button
                   v-for="m in [{ v: 'KR', l: '국내' }, { v: 'US', l: '미국' }]"
                   :key="m.v"
                   type="button"
                   @click="setGridMarket(m.v)"
                   :class="[
-                    'tab rounded-lg text-xs font-extrabold transition-all duration-200 cursor-pointer px-4 py-1',
+                    'tab rounded-sm text-xs font-semibold transition-colors duration-120 cursor-pointer px-4 py-1',
                     gridMarket === m.v
-                      ? 'tab-active bg-indigo-600/15 border border-indigo-500/25 text-indigo-300'
+                      ? 'tab-active bg-surface-raised border border-accent-line text-base-content'
                       : 'text-base-content/45 hover:text-base-content/70 border border-transparent'
                   ]"
                   :aria-pressed="gridMarket === m.v"
                 >{{ m.l }}</button>
               </div>
 
-              <!-- 현재 시장 세션 배지 (토글 옆) -->
+              <!-- 현재 시장 세션 배지 (토글 옆 — 3계층: 정규장=open / 연장=ext / 마감=muted) -->
               <span
                 v-if="gridSessionLabel"
                 :class="[
-                  'inline-flex items-center justify-center px-4 h-8 rounded-lg text-xs font-extrabold leading-tight shrink-0 border',
-                  gridSessionLabel === '주간거래' ? 'text-emerald-400 bg-emerald-500/8 border-emerald-500/20' : '',
-                  gridSessionLabel === '프리마켓' ? 'text-amber-400 bg-amber-500/8 border-amber-500/20' : '',
-                  gridSessionLabel === '정규장'   ? 'text-pink-400  bg-pink-500/8  border-pink-500/20'  : '',
-                  (gridSessionLabel === '애프터마켓' || gridSessionLabel === '야간거래' || gridSessionLabel === '거래중')
-                                                  ? 'text-cyan-400  bg-cyan-500/8  border-cyan-500/20'  : '',
-                  gridSessionLabel === '장마감'   ? 'text-base-content/40 bg-base-200/40 border-base-content/10' : ''
+                  'inline-flex items-center justify-center px-2 h-[22px] rounded-xs text-2xs font-medium leading-tight shrink-0 border',
+                  gridSessionLabel === '정규장'
+                    ? 'text-ses-open bg-ses-open-weak border-ses-open-line'
+                    : (gridSessionLabel === '주간거래' || gridSessionLabel === '프리마켓' || gridSessionLabel === '애프터마켓' || gridSessionLabel === '야간거래' || gridSessionLabel === '거래중')
+                      ? 'text-ses-ext bg-ses-ext-weak border-ses-ext-line'
+                      : 'text-base-content/40 bg-base-200/40 border-base-content/10'
                 ]"
               >{{ gridSessionLabel }}</span>
             </div>
             <div
+              v-auto-animate
               @mouseup="gridDragHandleIdx = null"
               @mouseleave="gridDragHandleIdx = null"
               :class="[
@@ -312,22 +333,22 @@
               @dragleave="onGridDragLeave(idx)"
               @drop="onGridDrop(idx)"
               :class="[
-                'group relative card bg-base-100/45 backdrop-blur-md border transition-all duration-250 overflow-hidden rounded-2xl',
+                'group relative card bg-base-100 border transition-colors duration-120 overflow-hidden rounded-md',
                 isGridClosed(idx)
                   ? 'h-60'
                   : (activeGridTickersCount === 1 ? 'h-80 sm:h-96 lg:h-120' : 'h-72 sm:h-80 lg:h-110'),
                 gridDragOverIdx === idx
-                  ? 'border-indigo-400 ring-2 ring-indigo-400/50'
+                  ? 'border-accent ring-1 ring-accent'
                   : (activeGridIndex === idx
-                    ? 'border-indigo-500/60 shadow-xl shadow-indigo-500/8 ring-1 ring-indigo-500/20'
-                    : 'border-base-content/8 hover:border-base-content/20 hover:shadow-md'),
+                    ? 'border-accent-line'
+                    : 'border-hairline hover:border-hairline-strong'),
                 gridDraggingIdx === idx ? 'opacity-50' : ''
               ]"
             >
-              <!-- 활성 카드 상단 강조 바 -->
+              <!-- 활성 카드 상단 강조 바 (2px bg-accent) -->
               <div
                 v-if="activeGridIndex === idx"
-                class="absolute top-0 left-4 right-4 h-0.5 rounded-b-full bg-indigo-500/70"
+                class="absolute top-0 left-4 right-4 h-0.5 rounded-b-full bg-accent"
               ></div>
 
               <template v-if="ticker && gridStockData[idx]">
@@ -339,20 +360,20 @@
                     @mousedown="gridDragHandleIdx = idx"
                     @mouseup="gridDragHandleIdx = null"
                   >
-                    <span class="text-xs font-bold text-base-content/45 tracking-widest uppercase">{{ gridStockData[idx].name }}</span>
-                    <span class="text-[2.25rem] font-black font-mono tracking-tight leading-none" :class="quoteColorClass(ticker, gridStockData[idx].change_amount)">
+                    <span class="text-xs font-medium text-base-content/45 tracking-widest uppercase">{{ gridStockData[idx].name }}</span>
+                    <span class="text-readout font-bold font-mono tracking-tight leading-none" :class="quoteColorClass(ticker, gridStockData[idx].change_amount)">
                       {{ formatStockValue(ticker, gridStockData[idx].current_price) }}
                     </span>
-                    <div class="flex items-center gap-2 text-sm font-bold font-mono" :class="quoteColorClass(ticker, gridStockData[idx].change_amount)">
+                    <div class="flex items-center gap-2 text-sm font-semibold font-mono" :class="quoteColorClass(ticker, gridStockData[idx].change_amount)">
                       <span>{{ (gridStockData[idx].change_amount || 0) >= 0 ? '▲' : '▼' }}</span>
                       <span>{{ ((gridStockData[idx].change_amount || 0) >= 0 ? '+' : '') + formatStockValue(ticker, gridStockData[idx].change_amount) }}</span>
                       <span class="opacity-75">({{ ((gridStockData[idx].change_amount || 0) >= 0 ? '+' : '') + Number(gridStockData[idx].change_percent).toFixed(2) }}%)</span>
                     </div>
-                    <span class="text-[10px] font-semibold text-base-content/35 uppercase tracking-widest mt-1 px-2 py-0.5 rounded-full bg-base-200/50 border border-base-content/8">{{ gridStockData[idx].is_trading_day === false ? '휴장 · 전일 마감' : '장마감 · 종가' }}</span>
+                    <span class="text-2xs font-medium text-base-content/35 uppercase tracking-widest mt-1 px-2 py-0.5 rounded-full bg-base-200/50 border border-hairline">{{ gridStockData[idx].is_trading_day === false ? '휴장 · 전일 마감' : '장마감 · 종가' }}</span>
                   </div>
                   <button
                     @click.stop="openGridChartModal(ticker, idx)"
-                    class="mt-1 flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold border border-indigo-500/30 text-indigo-400 bg-indigo-500/8 hover:bg-indigo-500/18 hover:border-indigo-400/50 transition-all duration-200 cursor-pointer"
+                    class="mt-1 flex items-center gap-1 px-3 py-1 rounded-full text-2xs font-medium border border-accent-line text-accent bg-accent-weak hover:border-accent transition-colors duration-120 cursor-pointer"
                     :aria-label="`${gridStockData[idx].name} 차트 보기`"
                     title="프리/애프터마켓 봉 포함 차트 보기"
                   >
@@ -384,8 +405,8 @@
 
               <!-- 종목 데이터 로딩 중 -->
               <div v-else class="h-full flex flex-col items-center justify-center gap-3">
-                <span class="loading loading-spinner text-indigo-500/60 loading-sm"></span>
-                <span class="text-[10px] text-base-content/35 font-mono tracking-widest uppercase">{{ ticker }} 데이터 수신 중...</span>
+                <span class="loading loading-spinner text-accent/60 loading-sm"></span>
+                <span class="text-2xs text-base-content/35 font-mono tracking-widest uppercase">{{ ticker }} 데이터 수신 중...</span>
               </div>
             </div>
             </template>
@@ -393,16 +414,16 @@
             <!-- 전체 빈 상태 안내 (차트가 하나도 없을 때만) -->
             <div
               v-if="activeGridTickersCount === 0"
-              class="col-span-full flex flex-col items-center justify-center gap-3 text-center p-10 select-none h-60 card bg-base-100/30 backdrop-blur-md border border-dashed border-base-content/15 rounded-2xl"
+              class="col-span-full flex flex-col items-center justify-center gap-3 text-center p-10 select-none h-60 card bg-base-100 border border-dashed border-hairline-strong rounded-md"
             >
-              <div class="w-12 h-12 rounded-xl border-2 border-dashed border-base-content/15 flex items-center justify-center">
+              <div class="w-12 h-12 rounded-md border-2 border-dashed border-hairline-strong flex items-center justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-base-content/25" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
               </div>
               <div class="flex flex-col gap-1">
-                <span class="text-xs font-bold text-base-content/40">표시할 차트가 없습니다</span>
-                <span class="text-[10px] text-base-content/25 leading-relaxed">왼쪽 관심 종목에서<br>종목을 클릭해 배치하세요</span>
+                <span class="text-xs font-medium text-base-content/40">표시할 차트가 없습니다</span>
+                <span class="text-2xs text-base-content/25 leading-relaxed">왼쪽 관심 종목에서<br>종목을 클릭해 배치하세요</span>
               </div>
             </div>
           </div>
@@ -413,10 +434,11 @@
     </div>
 
     <!-- ── 휴장 카드 차트 모달 ── -->
+    <Teleport to="body">
     <Transition name="grid-modal-fade">
       <div
         v-if="gridChartModal.show"
-        class="fixed inset-0 z-60 flex flex-col"
+        class="fixed inset-0 z-1000 flex flex-col"
         role="dialog"
         aria-modal="true"
         :aria-label="gridChartModal.stockName ? `${gridChartModal.stockName} 차트` : '종목 차트'"
@@ -424,26 +446,26 @@
         tabindex="-1"
         ref="gridChartModalEl"
       >
-        <div class="absolute inset-0 bg-black/75 backdrop-blur-sm" @click="closeGridChartModal"></div>
+        <div class="absolute inset-0 bg-black/70" @click="closeGridChartModal"></div>
 
-        <div class="relative z-10 m-auto w-full max-w-5xl h-[90vh] sm:h-[80vh] min-h-0 sm:min-h-120 mx-2 sm:mx-auto bg-base-100 border border-base-content/12 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div class="relative z-10 m-auto w-full max-w-5xl h-[90vh] sm:h-[80vh] min-h-0 sm:min-h-120 mx-2 sm:mx-auto bg-base-100 border border-hairline-strong rounded-lg shadow-modal flex flex-col overflow-hidden">
 
-          <div class="flex items-center justify-between px-5 py-3 border-b border-base-content/8 shrink-0">
+          <div class="flex items-center justify-between px-4 h-12 border-b border-hairline shrink-0">
             <div class="flex items-center gap-2">
-              <span class="px-2 py-0.5 rounded-md text-[11px] font-extrabold font-mono text-indigo-300 bg-indigo-500/12 border border-indigo-500/20 tracking-wider">
+              <span class="px-2 py-0.5 rounded-xs text-2xs font-medium font-mono text-accent bg-accent-weak border border-accent-line tracking-wider">
                 {{ gridChartModal.ticker }}
               </span>
-              <span class="text-sm font-black text-white">{{ gridChartModal.stockName }}</span>
-              <span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold font-mono border leading-tight text-amber-400 bg-amber-500/8 border-amber-500/20">
+              <span class="text-sm font-semibold text-white">{{ gridChartModal.stockName }}</span>
+              <span class="px-1.5 py-0.5 rounded-xs text-2xs font-medium font-mono border leading-tight text-base-content/55 bg-base-200/60 border-hairline">
                 휴장 · 프리/애프터 봉
               </span>
             </div>
             <div class="flex items-center gap-2">
-              <span v-if="gridChartModal.loading" class="loading loading-spinner loading-xs text-indigo-400"></span>
-              <span v-if="gridChartModal.error" class="text-[11px] text-error font-bold font-mono">데이터 오류</span>
+              <span v-if="gridChartModal.loading" class="loading loading-spinner loading-xs text-accent"></span>
+              <span v-if="gridChartModal.error" class="text-2xs text-error font-medium font-mono">데이터 오류</span>
               <button
                 @click="closeGridChartModal"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-base-content/40 hover:text-base-content/80 hover:bg-base-200/60 transition-all cursor-pointer"
+                class="w-7 h-7 flex items-center justify-center rounded-sm text-base-content/40 hover:text-base-content/80 hover:bg-base-200/60 transition-colors cursor-pointer"
                 aria-label="차트 닫기"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -453,17 +475,17 @@
             </div>
           </div>
 
-          <div class="flex-1 min-h-0 p-3">
+          <div class="flex-1 min-h-0 p-4">
             <div v-if="gridChartModal.loading" class="h-full flex items-center justify-center gap-3">
-              <span class="loading loading-ring loading-md text-indigo-500"></span>
-              <span class="text-xs font-bold text-base-content/50 font-mono">차트 데이터 불러오는 중...</span>
+              <span class="loading loading-ring loading-md text-accent"></span>
+              <span class="text-xs font-medium text-base-content/50 font-mono">차트 데이터 불러오는 중...</span>
             </div>
             <div v-else-if="gridChartModal.error" class="h-full flex flex-col items-center justify-center gap-3">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-error/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p class="text-xs font-bold text-error/70 font-mono">{{ gridChartModal.errorMessage }}</p>
-              <button @click="fetchGridChartCandles" class="btn btn-xs btn-outline btn-error font-bold rounded-lg cursor-pointer">재시도</button>
+              <p class="text-xs font-medium text-error/70 font-mono">{{ gridChartModal.errorMessage }}</p>
+              <button @click="fetchGridChartCandles" class="btn btn-xs btn-outline btn-error font-medium rounded-sm cursor-pointer">재시도</button>
             </div>
             <StockChart
               v-else-if="gridChartModal.candles.length > 0"
@@ -481,12 +503,13 @@
               @timeframe-change="onGridChartTimeframeChange"
             />
             <div v-else-if="!gridChartModal.loading" class="h-full flex flex-col items-center justify-center gap-3">
-              <p class="text-xs font-bold text-base-content/40 font-mono">차트 데이터가 없습니다 (장외 시간 또는 휴장일)</p>
+              <p class="text-xs font-medium text-base-content/40 font-mono">차트 데이터가 없습니다 (장외 시간 또는 휴장일)</p>
             </div>
           </div>
         </div>
       </div>
     </Transition>
+    </Teleport>
 
     <!-- ── 전역 커스텀 confirm 모달 (단 한 번 마운트) ── -->
     <ConfirmDialog />
@@ -689,6 +712,57 @@ const isKospiNightSession = computed(() => {
   const eveningTradingDay = dow >= 1 && dow <= 5 && t >= 1800;
   const morningAfterTradingDay = dow >= 2 && dow <= 6 && t < 500;
   return eveningTradingDay || morningAfterTradingDay;
+});
+
+// 미국 정규장(나스닥) 개장 여부 — 지수 헤더 인라인 NQ 시세 노출 게이트.
+// 백엔드 getUsSession 의 정규장 경계와 동일(ET 09:30~16:00, 평일). ET 타임존 위임으로 DST 자동 처리.
+// isKospiRegularSession 의 KST-폴백과 같은 패턴. NQ=F quote(15초 WS)를 참조해 갱신 주기에 맞춰 재평가.
+// ponytail: 미국 공휴일 체크(getUsSession 의 isUsMarketTradingToday)는 생략 — 공휴일 정규장 시간대에
+//           NQ 숫자가 잠깐 보이는 무해한 오탐뿐. 필요해지면 휴장 캘린더를 프론트에 노출해 게이트 추가.
+const isUsRegularSession = computed(() => {
+  const nq = indexStockData.value['NQ=F'];
+  if (!nq || nq.current_price === null || nq.current_price === undefined) return false;
+  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const dow = et.getDay(); // 0=일 … 6=토
+  const t = et.getHours() * 100 + et.getMinutes();
+  return dow >= 1 && dow <= 5 && t >= 930 && t < 1600;
+});
+
+// 접힘 헤더 인라인 틱 플래시 — 지수별 독립('up'/'down' 260ms 후 해제). StockChart priceFlash 패턴 동일.
+// prefers-reduced-motion 은 전역 CSS(style.css)가 transition-duration 을 무효화해 자연 존중.
+const indexFlash = ref({});
+const indexFlashTimers = {};
+function triggerIndexFlash(ticker, oldP, newP) {
+  if (oldP == null || newP == null || newP === oldP) return;
+  indexFlash.value = { ...indexFlash.value, [ticker]: newP > oldP ? 'up' : 'down' };
+  clearTimeout(indexFlashTimers[ticker]);
+  indexFlashTimers[ticker] = setTimeout(() => {
+    indexFlash.value = { ...indexFlash.value, [ticker]: '' };
+  }, 260); // 설계서 §6: 가격 틱 플래시 260ms 통일
+}
+
+// 접힘 헤더 우측 인라인 시세 목록 — 세션 활성 지수만(나스닥100=미국 정규장 / 코스피 야간선물=야간선물 세션).
+// KOSPI_NIGHT·NQ=F 스토어 데이터 재사용(새 호출 없음). 펼치면 카드가 같은 값을 보여주므로 접힘일 때만 노출.
+const collapsedInlineQuotes = computed(() => {
+  const out = [];
+  if (isUsRegularSession.value && indexStockData.value['NQ=F']) {
+    out.push({ ticker: 'NQ=F', label: '나스닥100' });
+  }
+  if (isKospiNightSession.value && indexStockData.value['KOSPI_NIGHT']) {
+    out.push({ ticker: 'KOSPI_NIGHT', label: '코스피 야간선물' });
+  }
+  return out;
+});
+
+// 지수 접힘 헤더 라벨 — 세션에 맞춰 코스피 표기 전환(visibleIndexTickers 와 동일 우선순위).
+// 정규장/주간=코스피 · 야간선물 세션=코스피 야간선물 · 장외/휴장=코스피 생략(나스닥만).
+const indexHeaderLabel = computed(() => {
+  const kospi = isKospiRegularSession.value
+    ? '코스피'
+    : isKospiNightSession.value
+      ? '코스피 야간선물'
+      : null;
+  return kospi ? `지수 · 나스닥 / ${kospi}` : '지수 · 나스닥';
 });
 
 // ── watch ──────────────────────────────────────────────────────
@@ -980,6 +1054,9 @@ function handleWebSocketUpdate(stocks) {
     if (stocks[ticker]) {
       const stock = { ...stocks[ticker] };
       stock.name = getStockDisplayName(ticker, stock.name);
+      // 접힘 헤더 인라인 틱 플래시: 이전가 대비 상승/하락 시 260ms 색 점등 (StockChart priceFlash 패턴 재사용)
+      const prev = indexStockData.value[ticker]?.current_price;
+      triggerIndexFlash(ticker, prev, stock.current_price);
       indexStockData.value[ticker] = stock;
     }
   });
@@ -1053,7 +1130,7 @@ function handleWebSocketUpdate(stocks) {
       }
     });
     if (changed) watchlistDetailsMap.value = resetMap;
-  }, 800);
+  }, 260);  // 설계서 §6: 가격 틱 플래시 260ms 통일
 }
 
 // ── 그리드 / 타임프레임 ───────────────────────────────────────
@@ -1095,8 +1172,8 @@ function indexQuoteColor(ticker) {
   const d = indexStockData.value[ticker];
   if (!d) return 'text-base-content';
   const up = (d.change_amount || 0) >= 0;
-  // 국내·미국 구분 없이 상승=빨강(rose-400), 하락=파랑(sky-400)으로 통일
-  return up ? 'text-rose-400' : 'text-sky-400';
+  // 국내·미국 구분 없이 상승=빨강(up), 하락=파랑(down)으로 통일
+  return up ? 'text-up' : 'text-down';
 }
 
 function formatIndexValue(v) {
@@ -1169,8 +1246,8 @@ function isGridClosed(idx) {
 
 function quoteColorClass(ticker, changeAmount) {
   const up = (changeAmount || 0) >= 0;
-  // 국내·미국 구분 없이 상승=빨강(rose-400), 하락=파랑(sky-400)으로 통일
-  return up ? 'text-rose-400' : 'text-sky-400';
+  // 국내·미국 구분 없이 상승=빨강(up), 하락=파랑(down)으로 통일
+  return up ? 'text-up' : 'text-down';
 }
 
 function getStockDisplayName(ticker, backendName) {
@@ -1181,8 +1258,8 @@ function getStockDisplayName(ticker, backendName) {
     'QCOM': '퀄컴', 'BABA': '알리바바', 'NKE': '나이키', 'SBUX': '스타벅스',
     'DIS': '디즈니', 'TSM': '티에스엠씨', 'COIN': '코인베이스', 'PLTR': '팔란티어',
     'SOXL': '속슬 (반도체 3배)', 'TQQQ': '티큐큐큐 (나스닥 3배)',
-    'USDKRW=X': '원/달러 환율', 'NQ=F': '나스닥100 선물',
-    'KOSPI200': '코스피 지수', 'KOSPI_NIGHT': '코스피 야간선물',
+    'USDKRW=X': '원/달러 환율', 'NQ=F': '나스닥100',
+    'KOSPI200': '코스피', 'KOSPI_NIGHT': '코스피 야간선물',
     '0167A0.KS': 'SOL AI반도체TOP2플러스', '0167A0': 'SOL AI반도체TOP2플러스',
     '0167AO.KS': 'SOL AI반도체TOP2플러스', '0167AO': 'SOL AI반도체TOP2플러스',
     '005930.KS': '삼성전자', '005930': '삼성전자',

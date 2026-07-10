@@ -5,11 +5,11 @@
     <Transition name="toast-slide">
       <div
         v-if="toast.show"
-        class="fixed top-4 right-4 z-200 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-lg text-xs font-bold font-mono transition-all duration-300"
+        class="fixed top-4 right-4 z-1200 flex items-center gap-2 px-4 py-3 rounded-md border shadow-pop text-xs font-medium font-mono"
         :class="toast.type === 'success'
-          ? 'bg-emerald-900/90 border-emerald-500/30 text-emerald-300'
+          ? 'bg-success/15 border-success/30 text-success'
           : toast.type === 'warn'
-            ? 'bg-amber-900/90 border-amber-500/30 text-amber-300'
+            ? 'bg-warning/15 border-warning/30 text-warning'
             : 'bg-error/15 border-error/30 text-error'"
         role="alert"
         aria-live="polite"
@@ -22,23 +22,23 @@
     </Transition>
 
     <!-- 사이드바 헤더 -->
-    <div class="px-4 pt-4 pb-3 border-b border-base-content/8 select-none relative z-30 bg-base-100/60 backdrop-blur-sm shrink-0">
+    <div class="px-4 pt-4 pb-3 border-b border-hairline select-none relative z-30 bg-base-100 shrink-0">
       <div class="flex items-center justify-between mb-3">
-        <h2 class="text-xs font-extrabold tracking-widest text-base-content/60 uppercase flex items-center gap-2">
+        <h2 class="text-xs font-semibold tracking-widest text-base-content/60 uppercase flex items-center gap-2">
           <!-- 연결 상태 점 -->
-          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/60 shrink-0"></span>
+          <span class="w-2 h-2 rounded-full bg-success animate-pulse shadow-sm shadow-success/60 shrink-0"></span>
           관심 종목
           <!-- 종목 카운트 배지 (현재 탭 필터 기준) -->
-          <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold font-mono text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 normal-case tracking-normal select-none">
+          <span class="px-2 py-0.5 rounded-full text-2xs font-medium font-mono text-accent bg-accent-weak border border-accent-line normal-case tracking-normal select-none">
             {{ filteredItems.length }}
           </span>
         </h2>
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-2">
           <!-- 사이드바 좌/우 위치 토글 버튼 -->
           <button
             @click="emit('toggle-position')"
             aria-label="사이드바 좌우 위치 변경"
-            class="w-7 h-7 flex items-center justify-center rounded-lg text-base-content/45 hover:text-base-content/80 hover:bg-base-200/60 border border-base-content/10 hover:border-base-content/20 transition-all duration-200 cursor-pointer shrink-0"
+            class="w-7 h-7 flex items-center justify-center rounded-sm text-base-content/45 hover:text-base-content/80 hover:bg-base-200/60 border border-hairline hover:border-hairline-strong transition-colors duration-120 cursor-pointer shrink-0"
           >
             <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M8 9l-3 3 3 3M16 9l3 3-3 3M5 12h14" />
@@ -47,7 +47,7 @@
           <!-- 사이드바 닫기(접기) 버튼 -->
           <button
             @click="emit('collapse')"
-            class="w-7 h-7 flex items-center justify-center rounded-lg text-base-content/45 hover:text-base-content/80 hover:bg-base-200/60 border border-base-content/10 hover:border-base-content/20 transition-all duration-200 cursor-pointer shrink-0"
+            class="w-7 h-7 flex items-center justify-center rounded-sm text-base-content/45 hover:text-base-content/80 hover:bg-base-200/60 border border-hairline hover:border-hairline-strong transition-colors duration-120 cursor-pointer shrink-0"
             aria-label="사이드바 닫기"
           >
             <!-- lucide: chevrons-left -->
@@ -59,16 +59,16 @@
       </div>
 
       <!-- KR / US / 전체 탭 -->
-      <div class="tabs tabs-boxed bg-base-200/70 p-0.5 rounded-lg border border-base-content/6 select-none w-full mb-2.5">
+      <div class="tabs tabs-boxed bg-base-200 p-0.5 rounded-sm border border-hairline select-none w-full mb-2">
         <button
           v-for="m in SEARCH_MODE_OPTIONS"
           :key="m.value"
           type="button"
           @click="searchMode = m.value; apiSearchResults = []; emit('market-change', m.value)"
           :class="[
-            'tab flex-1 rounded-md text-xs font-extrabold transition-all duration-200 cursor-pointer',
+            'tab flex-1 rounded-sm text-xs font-semibold transition-colors duration-120 cursor-pointer',
             searchMode === m.value
-              ? 'tab-active bg-indigo-600/12 border border-indigo-500/20 text-indigo-400 shadow-sm'
+              ? 'tab-active bg-surface-raised border border-accent-line text-base-content'
               : 'text-base-content/40 hover:text-base-content/70 border border-transparent'
           ]"
         >{{ m.label }}</button>
@@ -84,7 +84,7 @@
             @keyup.enter="addBestMatch"
             type="text"
             :placeholder="searchMode === 'kr' ? '종목명 / 초성 / 티커' : searchMode === 'us' ? '티커 / 종목명' : '종목명 / 티커 검색'"
-            class="input input-sm input-bordered join-item flex-1 font-semibold text-sm focus:outline-none focus:border-indigo-500/60 placeholder:text-base-content/25 uppercase bg-base-200/50"
+            class="input input-sm input-bordered join-item flex-1 font-medium text-sm focus:outline-none focus:border-accent placeholder:text-base-content/25 uppercase bg-base-200/50"
             aria-label="종목 검색"
             autocomplete="off"
           />
@@ -92,7 +92,7 @@
             v-if="searchQuery"
             @click="clearSearch"
             type="button"
-            class="btn btn-sm btn-ghost join-item border border-base-content/15 text-base-content/30 hover:text-base-content/60 px-2"
+            class="btn btn-sm btn-ghost join-item border border-hairline text-base-content/30 hover:text-base-content/60 px-2"
             aria-label="검색어 지우기"
           >
             <!-- lucide: X -->
@@ -106,39 +106,31 @@
         <Transition name="fade-slide">
           <div
             v-if="showDropdown && mergedSearchResults.length > 0"
-            class="absolute left-0 right-0 top-full mt-1.5 border border-base-content/10 rounded-xl shadow-2xl z-100 max-h-52 sm:max-h-72 overflow-y-auto backdrop-blur-xl bg-base-100/97 custom-scrollbar"
+            class="absolute left-0 right-0 top-full mt-2 border border-hairline rounded-md shadow-pop z-800 max-h-52 sm:max-h-72 overflow-y-auto bg-base-100 custom-scrollbar"
           >
             <!-- 드롭다운 헤더 -->
             <div
-              class="sticky top-0 px-3 py-1.5 text-[10px] font-extrabold bg-base-200/80 border-b border-base-content/6 tracking-widest select-none uppercase backdrop-blur-sm"
-              :class="searchMode === 'kr'
-                ? 'text-rose-400/80'
-                : searchMode === 'us'
-                  ? 'text-emerald-400/80'
-                  : 'text-indigo-400/80'"
+              class="sticky top-0 px-3 py-1.5 text-2xs font-semibold bg-base-200 border-b border-hairline tracking-widest select-none uppercase text-base-content/50"
             >
               검색 결과 ({{ mergedSearchResults.length }})
             </div>
             <div
               v-for="stock in mergedSearchResults"
               :key="stock.ticker"
-              class="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-indigo-500/6 transition-colors border-b border-base-content/4 last:border-b-0 group"
+              class="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-accent-weak transition-colors border-b border-hairline last:border-b-0 group"
             >
               <div class="flex flex-col min-w-0 flex-1 mr-2">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="text-white font-bold text-xs group-hover:text-indigo-300 transition-colors" :title="stock.name">{{ stock.name }}</span>
-                  <span class="px-1 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/15">{{ stock.ticker }}</span>
-                  <span
-                    class="text-[10px] font-bold font-mono px-1 py-0.5 rounded"
-                    :class="stock.isKorean ? 'text-rose-400/70 bg-rose-500/6' : 'text-emerald-400/70 bg-emerald-500/6'"
-                  >{{ stock.isKorean ? 'KR' : 'US' }}</span>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-white font-semibold text-xs group-hover:text-accent transition-colors" :title="stock.name">{{ stock.name }}</span>
+                  <span class="px-1 py-0.5 rounded-xs text-2xs font-medium font-mono bg-accent-weak text-accent border border-accent-line">{{ stock.ticker }}</span>
+                  <FlagIcon :market="stock.isKorean ? 'KR' : 'US'" />
                 </div>
-                <span v-if="stock.subName" class="text-[11px] text-base-content/35 mt-0.5 truncate" :title="stock.subName">{{ stock.subName }}</span>
+                <span v-if="stock.subName" class="text-2xs text-base-content/35 mt-0.5 truncate" :title="stock.subName">{{ stock.subName }}</span>
               </div>
               <button
                 @click.stop="addItem(stock)"
                 :disabled="actionLoading"
-                class="shrink-0 btn btn-xs bg-indigo-600/70 hover:bg-indigo-500 text-white border-0 font-bold gap-1 rounded-lg cursor-pointer transition-all duration-150 disabled:opacity-40"
+                class="shrink-0 btn btn-xs btn-primary font-semibold gap-1 rounded-sm cursor-pointer transition-colors duration-120 disabled:opacity-40"
                 :aria-label="`${stock.name} 관심 추가`"
               >
                 <!-- lucide: Plus -->
@@ -153,7 +145,7 @@
       </div>
 
       <!-- 액션 에러 메시지 -->
-      <p v-if="errorMsg" class="flex items-center gap-1 text-[10px] text-error mt-1.5 font-bold font-mono" role="alert">
+      <p v-if="errorMsg" class="flex items-center gap-1 text-2xs text-error mt-2 font-medium font-mono" role="alert">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
         </svg>
@@ -162,30 +154,30 @@
     </div>
 
     <!-- 종목 목록 -->
-    <div class="flex-1 overflow-y-auto p-2 space-y-1.5 custom-scrollbar" role="list" aria-label="통합 관심 종목 목록">
+    <div v-auto-animate class="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar" role="list" aria-label="통합 관심 종목 목록">
 
       <!-- 초기 로딩 스켈레톤 (items 아직 없을 때) -->
-      <div v-if="actionLoading && items.length === 0" class="space-y-1.5 animate-pulse p-1">
-        <div v-for="n in 6" :key="n" class="skeleton h-14 rounded-xl"></div>
+      <div v-if="actionLoading && items.length === 0" class="space-y-2 animate-pulse p-1">
+        <div v-for="n in 6" :key="n" class="skeleton h-14 rounded-sm"></div>
       </div>
 
       <!-- 빈 상태 -->
       <div v-else-if="items.length === 0" class="flex flex-col items-center justify-center py-12 gap-3 select-none">
-        <div class="w-10 h-10 rounded-xl border-2 border-dashed border-base-content/15 flex items-center justify-center">
+        <div class="w-10 h-10 rounded-md border-2 border-dashed border-hairline-strong flex items-center justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/25" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
           </svg>
         </div>
         <div class="text-center">
-          <p class="text-[11px] font-bold text-base-content/35">관심 종목 없음</p>
-          <p class="text-[11px] text-base-content/22 mt-0.5">위 검색창에서 종목을 추가하세요</p>
+          <p class="text-2xs font-medium text-base-content/35">관심 종목 없음</p>
+          <p class="text-2xs text-base-content/22 mt-1">위 검색창에서 종목을 추가하세요</p>
         </div>
       </div>
 
       <!-- 시장 필터 결과 없음 (전체엔 있으나 선택 시장엔 없음) -->
       <div v-else-if="filteredItems.length === 0" class="flex flex-col items-center justify-center py-12 gap-2 select-none">
-        <p class="text-[11px] font-bold text-base-content/35">{{ searchMode === 'kr' ? '국내' : '미국' }} 관심 종목이 없습니다</p>
-        <p class="text-[11px] text-base-content/22">'전체'에서 모두 보거나 종목을 추가하세요</p>
+        <p class="text-2xs font-medium text-base-content/35">{{ searchMode === 'kr' ? '국내' : '미국' }} 관심 종목이 없습니다</p>
+        <p class="text-2xs text-base-content/22">'전체'에서 모두 보거나 종목을 추가하세요</p>
       </div>
 
       <!-- 종목 행 목록 -->
@@ -197,49 +189,44 @@
           role="listitem"
           :aria-label="`${item.displayName} 선택`"
           :class="[
-            'relative flex items-center justify-between px-3 py-2.5 pr-8 rounded-xl cursor-pointer border transition-all duration-200 select-none',
+            'relative flex items-center justify-between px-3 py-2 pr-8 rounded-sm cursor-pointer border transition-colors duration-120 select-none',
             selectedTicker === item.displayTicker
-              ? 'bg-indigo-600/8 border-indigo-500/35 text-white shadow-md shadow-indigo-600/5'
-              : 'bg-base-200/25 hover:bg-base-200/60 border-transparent hover:border-base-content/10 text-base-content/85'
+              ? 'bg-accent-weak border-accent-line text-white'
+              : 'bg-base-200/40 hover:bg-base-200 border-transparent hover:border-hairline text-base-content/85'
           ]"
         >
           <!-- 활성 선택 좌측 바 -->
           <div
             v-if="selectedTicker === item.displayTicker"
-            class="absolute left-0 top-2 bottom-2 w-0.5 rounded-r-full bg-indigo-500/70"
+            class="absolute left-0 top-2 bottom-2 w-0.5 rounded-r-full bg-accent"
           ></div>
 
           <div class="flex flex-col flex-1 min-w-0 mr-2">
             <!-- 한글명 우선 표시 -->
             <div
-              class="font-black text-sm text-white tracking-tight leading-tight truncate"
+              class="font-semibold text-sm text-white tracking-tight leading-tight truncate"
               :title="item.displayName"
             >{{ item.displayName }}</div>
             <!-- 티커 배지 + 시장 구분 -->
-            <div class="flex items-center gap-1 mt-0.5">
-              <span class="text-[11px] text-base-content/45 font-mono font-semibold tracking-wider leading-tight">
+            <div class="flex items-center gap-1 mt-1">
+              <span class="text-2xs text-base-content/45 font-mono font-medium tracking-wider leading-tight">
                 {{ item.hasPrice ? item.displayTicker : '시세 대기 중' }}
               </span>
-              <span
-                class="text-[10px] font-bold font-mono px-1 py-0 rounded leading-tight"
-                :class="item.market === 'KR'
-                  ? 'text-rose-400/70 bg-rose-500/6'
-                  : 'text-emerald-400/70 bg-emerald-500/6'"
-              >{{ item.market }}</span>
+              <FlagIcon :market="item.market" />
             </div>
           </div>
 
-          <div class="flex flex-col items-end shrink-0 gap-0.5">
+          <div class="flex flex-col items-end shrink-0 gap-1">
             <!-- 현재가 (flash 애니메이션) -->
             <span
               v-if="item.hasPrice"
               :class="[
-                'font-extrabold text-sm font-mono transition-all duration-250 rounded px-1 py-0.5 leading-tight',
+                'font-semibold text-sm font-mono transition-colors duration-260 rounded-xs px-1 py-0.5 leading-tight',
                 item.flash === 'up'
-                  ? 'bg-rose-500/15 text-rose-400 scale-105'
+                  ? 'bg-up-weak text-up'
                   : '',
                 item.flash === 'down'
-                  ? 'bg-sky-500/15 text-sky-400 scale-105'
+                  ? 'bg-down-weak text-down'
                   : '',
                 !item.flash ? 'text-white/90' : ''
               ]"
@@ -250,20 +237,20 @@
             <span
               v-if="item.hasPrice && item.changePercent !== null"
               :class="[
-                'text-[10px] font-extrabold font-mono px-1 py-0.5 rounded leading-tight',
+                'text-2xs font-medium font-mono px-1 py-0.5 rounded-xs leading-tight',
                 item.changePercent >= 0
-                  ? 'text-rose-400 bg-rose-500/8'
-                  : 'text-sky-400 bg-sky-500/8'
+                  ? 'text-up bg-up-weak'
+                  : 'text-down bg-down-weak'
               ]"
             >{{ item.changePercent >= 0 ? '+' : '' }}{{ item.changePercent.toFixed(2) }}%</span>
-            <span v-else-if="item.hasPrice" class="text-[10px] text-base-content/25 font-mono">---</span>
+            <span v-else-if="item.hasPrice" class="text-2xs text-base-content/25 font-mono">---</span>
           </div>
 
           <!-- 삭제 버튼 -->
           <button
             @click.stop="removeItem(item)"
             :disabled="actionLoading"
-            class="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center text-base-content/30 hover:text-error hover:bg-error/10 rounded-md transition-all duration-150 cursor-pointer disabled:opacity-40"
+            class="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center text-base-content/30 hover:text-error hover:bg-error/10 rounded-xs transition-colors duration-120 cursor-pointer disabled:opacity-40"
             :title="`${item.displayName} 삭제`"
             :aria-label="`${item.displayName} 삭제`"
           >
@@ -282,6 +269,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import axios from 'axios';
 import { confirm as confirmDialog } from '../composables/useConfirm.js';
+import FlagIcon from './FlagIcon.vue';
 import { localSearch, normalizeKrTicker, SEARCHABLE_STOCKS } from '../stocksKnown.js';
 
 // ── 모듈 스코프 헬퍼 / 상수 ─────────────────────────────────────
@@ -722,11 +710,11 @@ function formatPrice(market, price) {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(148, 163, 184, 0.18);
   border-radius: 99px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #6366f1;
+  background: var(--color-accent-line);
 }
 
 /* 드롭다운 페이드 슬라이드 */

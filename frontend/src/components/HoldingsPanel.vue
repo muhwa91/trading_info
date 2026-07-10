@@ -1,15 +1,15 @@
 <template>
-  <div class="card bg-base-100/45 backdrop-blur-md border border-base-content/8 rounded-2xl overflow-hidden">
+  <div class="card bg-base-100 border border-hairline rounded-md overflow-hidden">
 
     <!-- 토스트 알림 -->
     <Transition name="toast-slide">
       <div
         v-if="toast.show"
-        class="fixed top-16 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-lg text-xs font-bold font-mono transition-all duration-300"
+        class="fixed top-16 right-4 z-1200 flex items-center gap-2 px-4 py-3 rounded-md border shadow-pop text-xs font-medium font-mono"
         :class="toast.type === 'success'
-          ? 'bg-emerald-900/90 border-emerald-500/30 text-emerald-300'
+          ? 'bg-success/15 border-success/30 text-success'
           : toast.type === 'warn'
-            ? 'bg-amber-900/90 border-amber-500/30 text-amber-300'
+            ? 'bg-warning/15 border-warning/30 text-warning'
             : 'bg-error/15 border-error/30 text-error'"
         role="alert"
         aria-live="polite"
@@ -22,12 +22,12 @@
     </Transition>
 
     <!-- 섹션 헤더 -->
-    <div class="flex items-center justify-between px-4 md:px-5 py-3.5 border-b border-base-content/8">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-hairline">
       <div class="flex items-center gap-2">
         <!-- 접기/펼치기 토글 -->
         <button
           @click="holdingsCollapsed = !holdingsCollapsed"
-          class="w-6 h-6 flex items-center justify-center rounded-md text-base-content/50 hover:text-white hover:bg-base-200/60 transition-all duration-200 cursor-pointer shrink-0"
+          class="w-6 h-6 flex items-center justify-center rounded-sm text-base-content/50 hover:text-white hover:bg-base-200/60 transition-colors duration-120 cursor-pointer shrink-0"
           :aria-expanded="!holdingsCollapsed"
           aria-label="보유 종목 접기/펼치기"
         >
@@ -35,18 +35,18 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
         </button>
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/50 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
         </svg>
-        <h2 class="text-sm font-black text-white tracking-tight leading-none">보유 종목</h2>
-        <span class="px-2 py-0.5 rounded-full text-xs font-extrabold font-mono text-indigo-400 bg-indigo-500/10 border border-indigo-500/20">
+        <h2 class="text-sm font-semibold text-white tracking-tight leading-none">보유 종목</h2>
+        <span class="px-2 py-0.5 rounded-full text-2xs font-medium font-mono text-accent bg-accent-weak border border-accent-line">
           {{ holdings.length }}
         </span>
       </div>
       <!-- 보유 추가 버튼 -->
       <button
         @click="openHoldingModal()"
-        class="btn btn-xs bg-indigo-600/80 hover:bg-indigo-500 border-indigo-500/30 text-white font-bold gap-1 rounded-lg cursor-pointer transition-all duration-200"
+        class="btn btn-xs btn-primary font-semibold gap-1 rounded-sm cursor-pointer transition-colors duration-120"
         aria-label="보유 종목 추가"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -58,14 +58,14 @@
 
     <!-- 빈 상태 -->
     <div v-if="holdings.length === 0" v-show="!holdingsCollapsed" class="flex flex-col items-center justify-center py-14 gap-3 select-none">
-      <div class="w-12 h-12 rounded-xl border-2 border-dashed border-base-content/12 flex items-center justify-center">
+      <div class="w-12 h-12 rounded-md border-2 border-dashed border-hairline-strong flex items-center justify-center">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-base-content/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
         </svg>
       </div>
       <div class="text-center">
-        <p class="text-sm font-bold text-base-content/35">보유 종목을 추가하세요</p>
-        <p class="text-xs text-base-content/22 mt-0.5">우측 상단 '추가' 버튼으로 종목을 등록하세요</p>
+        <p class="text-sm font-medium text-base-content/35">보유 종목을 추가하세요</p>
+        <p class="text-xs text-base-content/22 mt-1">우측 상단 '추가' 버튼으로 종목을 등록하세요</p>
       </div>
     </div>
 
@@ -73,31 +73,31 @@
     <div v-else v-show="!holdingsCollapsed" class="overflow-x-auto custom-scrollbar">
       <table class="w-full min-w-215" role="table" aria-label="보유 종목 목록">
         <thead>
-          <tr class="text-xs font-extrabold text-base-content/35 tracking-wider uppercase border-b border-base-content/6">
+          <tr class="text-2xs font-semibold text-base-content/35 tracking-wide uppercase border-b border-hairline bg-base-200">
+            <!-- 세션 배지 열 헤더 (제일 앞, 빈 헤더) -->
+            <th class="px-1 py-3 w-20 whitespace-nowrap"></th>
             <!-- 드래그 핸들 열 -->
             <th class="w-8 px-2 py-3 whitespace-nowrap"></th>
-            <th class="text-left px-4 md:px-5 py-3 font-extrabold whitespace-nowrap">종목</th>
-            <!-- 세션 배지 열 헤더 (빈 헤더) -->
-            <th class="px-1 py-3 w-20 whitespace-nowrap"></th>
+            <th class="text-left px-4 py-3 font-semibold whitespace-nowrap">종목</th>
             <!-- 국가 열 헤더 -->
-            <th class="text-center px-3 py-3 font-extrabold whitespace-nowrap">국가</th>
-            <th class="text-right px-3 py-3 font-extrabold whitespace-nowrap">수량</th>
-            <th class="text-right px-3 py-3 font-extrabold whitespace-nowrap">평단가</th>
-            <th class="text-right px-3 py-3 font-extrabold whitespace-nowrap">현재가</th>
-            <th class="text-right px-3 py-3 font-extrabold whitespace-nowrap">미실현손익</th>
-            <th class="text-right px-3 py-3 font-extrabold whitespace-nowrap">손익률</th>
-            <th class="text-right px-3 py-3 font-extrabold whitespace-nowrap">평가금액</th>
-            <th class="text-center px-4 md:px-5 py-3 font-extrabold whitespace-nowrap">관리</th>
+            <th class="text-center px-3 py-3 font-semibold whitespace-nowrap">국가</th>
+            <th class="text-right px-3 py-3 font-semibold whitespace-nowrap">수량</th>
+            <th class="text-right px-3 py-3 font-semibold whitespace-nowrap">평단가</th>
+            <th class="text-right px-3 py-3 font-semibold whitespace-nowrap">현재가</th>
+            <th class="text-right px-3 py-3 font-semibold whitespace-nowrap">미실현손익</th>
+            <th class="text-right px-3 py-3 font-semibold whitespace-nowrap">손익률</th>
+            <th class="text-right px-3 py-3 font-semibold whitespace-nowrap">평가금액</th>
+            <th class="text-center px-4 py-3 font-semibold whitespace-nowrap">관리</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody v-auto-animate>
           <tr
             v-for="item in orderedHoldings"
             :key="item.portfolio_id"
             :draggable="true"
             :class="[
-              'border-b border-base-content/4 last:border-b-0 hover:bg-base-200/20 transition-colors duration-150 cursor-pointer',
-              dragOverId === item.portfolio_id ? 'bg-indigo-500/10 border-indigo-500/30' : ''
+              'border-b border-hairline last:border-b-0 hover:bg-base-200/50 transition-colors duration-120 cursor-pointer',
+              dragOverId === item.portfolio_id ? 'bg-accent-weak border-accent-line' : ''
             ]"
             role="row"
             :title="`${item.name || item.symbol} 차트 보기`"
@@ -108,30 +108,12 @@
             @drop.prevent="onDrop($event, item.portfolio_id)"
             @dragend="onDragEnd"
           >
-            <!-- 드래그 핸들 -->
-            <td
-              class="w-8 px-2 py-3.5 text-center"
-              @click.stop
-              title="드래그하여 순서 변경"
-              aria-label="드래그 핸들"
-            >
-              <span class="text-base-content/20 hover:text-base-content/50 cursor-grab active:cursor-grabbing select-none text-base leading-none">⠿</span>
-            </td>
-
-            <!-- 종목명·심볼 -->
-            <td class="px-4 md:px-5 py-3.5 whitespace-nowrap">
-              <div class="flex items-center gap-1.5">
-                <span class="text-sm font-black text-white leading-tight">{{ displayName(item) }}</span>
-                <span class="px-1.5 py-0.5 rounded text-xs font-bold font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/15 leading-tight">{{ item.symbol }}</span>
-              </div>
-            </td>
-
-            <!-- 세션 배지 셀 -->
+            <!-- 세션 배지 셀 (제일 앞) -->
             <!-- live_session(백엔드, 공휴일 정확)이 있으면 우선 사용; 없으면 클라이언트 계산값 폴백 -->
-            <td class="px-2 py-3.5 text-center whitespace-nowrap" @click.stop>
+            <td class="px-2 py-2.5 text-center whitespace-nowrap" @click.stop>
               <span
                 :class="[
-                  'inline-flex items-center justify-center px-4 h-8 rounded-lg border text-xs font-extrabold leading-tight whitespace-nowrap',
+                  'inline-flex items-center justify-center px-2 h-[22px] rounded-xs border text-2xs font-medium leading-tight whitespace-nowrap',
                   sessionBadgeStyle(itemSessionCode(item))
                 ]"
               >
@@ -139,34 +121,46 @@
               </span>
             </td>
 
-            <!-- 국가 배지 -->
-            <td class="px-3 py-3.5 text-center whitespace-nowrap">
-              <span
-                class="text-xs font-bold font-mono px-1.5 py-0.5 rounded"
-                :class="item.market === 'KR'
-                  ? 'text-rose-400/70 bg-rose-500/6'
-                  : 'text-emerald-400/70 bg-emerald-500/6'"
-              >{{ item.market }}</span>
+            <!-- 드래그 핸들 -->
+            <td
+              class="w-8 px-2 py-2.5 text-center"
+              @click.stop
+              title="드래그하여 순서 변경"
+              aria-label="드래그 핸들"
+            >
+              <span class="text-base-content/20 hover:text-base-content/50 cursor-grab active:cursor-grabbing select-none text-base leading-none">⠿</span>
+            </td>
+
+            <!-- 종목명 (티커 심볼은 보유종목 목록에서 미표시) -->
+            <td class="px-4 py-2.5 whitespace-nowrap">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold text-white leading-tight">{{ displayName(item) }}</span>
+              </div>
+            </td>
+
+            <!-- 국가 배지 (국기 아이콘 — 시장 라벨) -->
+            <td class="px-3 py-2.5 text-center whitespace-nowrap">
+              <FlagIcon :market="item.market" class="mx-auto" />
             </td>
 
             <!-- 수량 -->
-            <td class="px-3 py-3.5 text-right whitespace-nowrap">
-              <span class="text-sm font-bold font-mono text-white/80">{{ formatQuantity(item.quantity) }}</span>
+            <td class="px-3 py-2.5 text-right whitespace-nowrap">
+              <span class="text-sm font-medium font-mono text-white/80">{{ formatQuantity(item.quantity) }}</span>
             </td>
 
             <!-- 평단가 -->
-            <td class="px-3 py-3.5 text-right whitespace-nowrap">
-              <span class="text-sm font-bold font-mono text-base-content/60">
+            <td class="px-3 py-2.5 text-right whitespace-nowrap">
+              <span class="text-sm font-medium font-mono text-base-content/60">
                 <template v-if="item.market === 'US'">{{ fmtUSAvg(item) }}</template>
                 <template v-else>{{ formatPrice(item.currency, item.average_price) }}</template>
               </span>
             </td>
 
             <!-- 현재가 -->
-            <td class="px-3 py-3.5 text-right whitespace-nowrap">
+            <td class="px-3 py-2.5 text-right whitespace-nowrap">
               <span
                 v-if="item.price_available && item.current_price !== null"
-                class="text-sm font-extrabold font-mono inline-block px-1 rounded transition-colors duration-300"
+                class="text-sm font-semibold font-mono inline-block px-1 rounded-xs transition-colors duration-260"
                 :class="[item.market === 'US'
                   ? profitColorClass(calcUSDProfit(item), 'us')
                   : profitColorClass(item.profitKRW, 'kr'), flashCellClass(item)]"
@@ -178,18 +172,18 @@
             </td>
 
             <!-- 미실현손익 (US: 정규장 종가 기준 + 장전 손익 / KR: 서버 계산값) -->
-            <td class="px-3 py-3.5 text-right whitespace-nowrap">
+            <td class="px-3 py-2.5 text-right whitespace-nowrap">
               <template v-if="item.market === 'US'">
                 <template v-if="item.price_available && item.current_price !== null && item.average_price !== null">
                   <!-- 미실현손익: 애프터/주간 포함 총 손익 (현재가 − 평단) × 수량 — 증권사 '애프터/주간 ON' 과 동일 -->
                   <span
-                    class="text-sm font-black font-mono inline-block px-1 rounded transition-colors duration-300"
+                    class="text-sm font-semibold font-mono inline-block px-1 rounded-xs transition-colors duration-260"
                     :class="[profitColorClass(calcUSDProfit(item), 'us'), flashCellClass(item)]"
                   >{{ fmtUSProfit(item) }}</span>
                   <!-- 정규장(종가 기준) 손익: (정규장 종가 − 평단) × 수량. 연장 세션에서만 노출 -->
                   <span
                     v-if="showUSExtBreakdown(item)"
-                    class="text-xs font-bold font-mono block mt-0.5 opacity-75"
+                    class="text-xs font-medium font-mono block mt-1 opacity-75"
                     :class="profitColorClass(calcUSUnrealizedProfit(item), 'us')"
                     title="정규장 종가 기준 손익(증권사 애프터/주간 OFF 와 동일)"
                   >정규장 {{ fmtUSUnrealizedProfit(item) }}</span>
@@ -199,7 +193,7 @@
               <template v-else>
                 <span
                   v-if="item.price_available && item.profitKRW !== null"
-                  class="text-sm font-black font-mono inline-block px-1 rounded transition-colors duration-300"
+                  class="text-sm font-semibold font-mono inline-block px-1 rounded-xs transition-colors duration-260"
                   :class="[profitColorClass(item.profitKRW, 'kr'), flashCellClass(item)]"
                 >{{ formatProfitWon(item.profitKRW) }}</span>
                 <span v-else class="text-sm font-mono text-base-content/20">—</span>
@@ -207,18 +201,18 @@
             </td>
 
             <!-- 손익률 -->
-            <td class="px-3 py-3.5 text-right whitespace-nowrap">
+            <td class="px-3 py-2.5 text-right whitespace-nowrap">
               <template v-if="item.market === 'US'">
                 <template v-if="item.price_available && item.current_price !== null && item.average_price !== null">
                   <!-- 손익률: 애프터/주간 포함 총 손익률 (현재가 기준, 금액과 일치) -->
                   <span
-                    class="text-sm font-extrabold font-mono inline-block px-1 rounded transition-colors duration-300"
+                    class="text-sm font-semibold font-mono inline-block px-1 rounded-xs transition-colors duration-260"
                     :class="[profitColorClass(calcUSDProfit(item), 'us'), flashCellClass(item)]"
                   >{{ formatProfitRate(calcUSDProfitRate(item)) }}</span>
                   <!-- 정규장(종가 기준) 손익률: 연장 세션에서만 노출 -->
                   <span
                     v-if="showUSExtBreakdown(item)"
-                    class="text-xs font-bold font-mono block mt-0.5 opacity-75"
+                    class="text-xs font-medium font-mono block mt-1 opacity-75"
                     :class="profitColorClass(calcUSUnrealizedProfit(item), 'us')"
                     title="정규장 종가 기준 손익률(증권사 애프터/주간 OFF 와 동일)"
                   >정규장 {{ formatProfitRate(calcUSUnrealizedProfitRate(item)) }}</span>
@@ -228,7 +222,7 @@
               <template v-else>
                 <span
                   v-if="item.price_available && item.profitKRW !== null"
-                  class="text-sm font-extrabold font-mono inline-block px-1 rounded transition-colors duration-300"
+                  class="text-sm font-semibold font-mono inline-block px-1 rounded-xs transition-colors duration-260"
                   :class="[profitColorClass(item.profitKRW, 'kr'), flashCellClass(item)]"
                 >{{ formatProfitRate(item.profitRate) }}</span>
                 <span v-else class="text-sm font-mono text-base-content/20">—</span>
@@ -236,12 +230,12 @@
             </td>
 
             <!-- 평가금액 (US: 총=연장 현재가 기준 + 정규장=종가 기준, 정규장 중엔 정규장 줄 숨김) -->
-            <td class="px-3 py-3.5 text-right whitespace-nowrap">
+            <td class="px-3 py-2.5 text-right whitespace-nowrap">
               <template v-if="fmtMarketValue(item) !== null">
-                <span class="text-sm font-bold font-mono text-white/70 inline-block px-1 rounded transition-colors duration-300" :class="flashCellClass(item)">{{ fmtMarketValue(item) }}</span>
+                <span class="text-sm font-medium font-mono text-white/70 inline-block px-1 rounded-xs transition-colors duration-260" :class="flashCellClass(item)">{{ fmtMarketValue(item) }}</span>
                 <span
                   v-if="showUSExtBreakdown(item) && fmtRegularMarketValue(item) !== null"
-                  class="text-xs font-mono text-base-content/45 block mt-0.5"
+                  class="text-xs font-mono text-base-content/45 block mt-1"
                   title="정규장 종가 기준 평가금액"
                 >정규장 {{ fmtRegularMarketValue(item) }}</span>
               </template>
@@ -249,8 +243,8 @@
             </td>
 
             <!-- 관리 버튼 -->
-            <td class="px-4 md:px-5 py-3.5 text-center whitespace-nowrap">
-              <div class="flex items-center justify-center gap-1.5">
+            <td class="px-4 py-2.5 text-center whitespace-nowrap">
+              <div class="flex items-center justify-center gap-2">
                 <!-- $ / ₩ 토글 (US 종목만) -->
                 <button
                   v-if="item.market === 'US'"
@@ -258,12 +252,12 @@
                   :disabled="!props.exchangeRate?.USD_KRW"
                   :title="getCurrencyMode(item.portfolio_id) === 'USD' ? '원화로 전환' : '달러로 전환'"
                   :aria-label="`${item.symbol} 통화 전환`"
-                  class="btn btn-xs btn-ghost border border-base-content/10 hover:border-emerald-500/40 hover:bg-emerald-500/8 text-base-content/40 hover:text-emerald-400 rounded-lg cursor-pointer transition-all duration-150 disabled:opacity-30 font-mono text-[11px]"
+                  class="btn btn-xs btn-ghost border border-hairline hover:border-accent-line hover:bg-accent-weak text-base-content/40 hover:text-accent rounded-sm cursor-pointer transition-colors duration-120 disabled:opacity-30 font-mono text-2xs"
                 >{{ getCurrencyMode(item.portfolio_id) === 'USD' ? '₩' : '$' }}</button>
                 <!-- 수정 버튼 -->
                 <button
                   @click.stop="openHoldingModal(item)"
-                  class="btn btn-xs btn-ghost border border-base-content/10 hover:border-indigo-500/40 hover:bg-indigo-500/8 text-base-content/40 hover:text-indigo-400 rounded-lg cursor-pointer transition-all duration-150"
+                  class="btn btn-xs btn-ghost border border-hairline hover:border-accent-line hover:bg-accent-weak text-base-content/40 hover:text-accent rounded-sm cursor-pointer transition-colors duration-120"
                   :aria-label="`${item.symbol} 수정`"
                   title="수정"
                 >
@@ -274,7 +268,7 @@
                 <button
                   @click.stop="deleteHolding(item)"
                   :disabled="actionLoading"
-                  class="btn btn-xs btn-ghost border border-base-content/10 hover:border-error/40 hover:bg-error/8 text-base-content/40 hover:text-error rounded-lg cursor-pointer transition-all duration-150 disabled:opacity-40"
+                  class="btn btn-xs btn-ghost border border-hairline hover:border-error/40 hover:bg-up-weak text-base-content/40 hover:text-error rounded-sm cursor-pointer transition-colors duration-120 disabled:opacity-40"
                   :aria-label="`${item.symbol} 삭제`"
                   title="삭제"
                 >
@@ -298,31 +292,31 @@
     <Transition name="modal-fade">
       <div
         v-if="showChartModal"
-        class="fixed inset-0 z-60 flex flex-col"
+        class="fixed inset-0 z-1000 flex flex-col"
         role="dialog"
         aria-modal="true"
         :aria-label="chartModalItem ? `${chartModalItem.name || chartModalItem.symbol} 차트` : '종목 차트'"
       >
-        <div class="absolute inset-0 bg-black/75 backdrop-blur-sm" @click="closeChartModal"></div>
+        <div class="absolute inset-0 bg-black/70" @click="closeChartModal"></div>
 
-        <div class="relative z-10 m-auto w-full max-w-5xl h-[90vh] sm:h-[80vh] min-h-0 sm:min-h-120 mx-2 sm:mx-auto bg-base-100 border border-base-content/12 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div class="relative z-10 m-auto w-full max-w-5xl h-[90vh] sm:h-[80vh] min-h-0 sm:min-h-120 mx-2 sm:mx-auto bg-base-100 border border-hairline-strong rounded-lg shadow-modal flex flex-col overflow-hidden">
           <!-- 모달 헤더 -->
-          <div class="flex items-center justify-between px-5 py-3 border-b border-base-content/8 shrink-0">
+          <div class="flex items-center justify-between px-4 h-12 border-b border-hairline shrink-0">
             <div class="flex items-center gap-2">
-              <span class="px-2 py-0.5 rounded-md text-xs font-extrabold font-mono text-indigo-300 bg-indigo-500/12 border border-indigo-500/20 tracking-wider">
+              <span class="px-2 py-0.5 rounded-xs text-2xs font-medium font-mono text-accent bg-accent-weak border border-accent-line tracking-wider">
                 {{ chartModalItem ? chartModalItem.symbol : '' }}
               </span>
-              <span class="text-sm font-black text-white">{{ chartModalItem ? displayName(chartModalItem) : '' }}</span>
-              <span class="px-1.5 py-0.5 rounded text-xs font-extrabold font-mono border leading-tight text-indigo-400 bg-indigo-500/10 border-indigo-500/20">보유</span>
+              <span class="text-sm font-semibold text-white">{{ chartModalItem ? displayName(chartModalItem) : '' }}</span>
+              <span class="px-1.5 py-0.5 rounded-xs text-2xs font-medium font-mono border leading-tight text-accent bg-accent-weak border-accent-line">보유</span>
             </div>
 
             <div class="flex items-center gap-2">
-              <span v-if="chartLoading" class="loading loading-spinner loading-xs text-indigo-400"></span>
-              <span v-if="chartError" class="text-xs text-error font-bold font-mono">데이터 오류</span>
+              <span v-if="chartLoading" class="loading loading-spinner loading-xs text-accent"></span>
+              <span v-if="chartError" class="text-2xs text-error font-medium font-mono">데이터 오류</span>
 
               <button
                 @click="closeChartModal"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-base-content/40 hover:text-base-content/80 hover:bg-base-200/60 transition-all cursor-pointer"
+                class="w-7 h-7 flex items-center justify-center rounded-sm text-base-content/40 hover:text-base-content/80 hover:bg-base-200/60 transition-colors cursor-pointer"
                 aria-label="차트 닫기"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -333,18 +327,18 @@
           </div>
 
           <!-- 차트 본체 -->
-          <div class="flex-1 min-h-0 p-3">
+          <div class="flex-1 min-h-0 p-4">
             <div v-if="chartLoading" class="h-full flex items-center justify-center gap-3">
-              <span class="loading loading-ring loading-md text-indigo-500"></span>
-              <span class="text-xs font-bold text-base-content/50 font-mono">차트 데이터 불러오는 중...</span>
+              <span class="loading loading-ring loading-md text-accent"></span>
+              <span class="text-xs font-medium text-base-content/50 font-mono">차트 데이터 불러오는 중...</span>
             </div>
 
             <div v-else-if="chartError" class="h-full flex flex-col items-center justify-center gap-3">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-error/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p class="text-xs font-bold text-error/70 font-mono">{{ chartErrorMessage }}</p>
-              <button @click="fetchChartCandles" class="btn btn-xs btn-outline btn-error font-bold rounded-lg cursor-pointer">재시도</button>
+              <p class="text-xs font-medium text-error/70 font-mono">{{ chartErrorMessage }}</p>
+              <button @click="fetchChartCandles" class="btn btn-xs btn-outline btn-error font-medium rounded-sm cursor-pointer">재시도</button>
             </div>
 
             <StockChart
@@ -363,7 +357,7 @@
             />
 
             <div v-else-if="!chartLoading" class="h-full flex flex-col items-center justify-center gap-3">
-              <p class="text-xs font-bold text-base-content/40 font-mono">차트 데이터가 없습니다 (장외 시간 또는 휴장일)</p>
+              <p class="text-xs font-medium text-base-content/40 font-mono">차트 데이터가 없습니다 (장외 시간 또는 휴장일)</p>
             </div>
           </div>
         </div>
@@ -380,23 +374,23 @@
     <Transition name="modal-fade">
       <div
         v-if="showHoldingModal"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4"
+        class="fixed inset-0 z-1000 flex items-center justify-center p-4"
         role="dialog"
         aria-modal="true"
         :aria-label="editingHolding ? '보유 종목 수정' : '보유 종목 추가'"
         @click.self="closeHoldingModal"
       >
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="closeHoldingModal"></div>
+        <div class="absolute inset-0 bg-black/70" @click="closeHoldingModal"></div>
 
-        <div class="relative z-10 w-full max-w-md bg-base-100 border border-base-content/12 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div class="relative z-10 w-full max-w-md bg-base-100 border border-hairline-strong rounded-lg shadow-modal overflow-hidden flex flex-col max-h-[90vh]">
           <!-- 모달 헤더 -->
-          <div class="flex items-center justify-between px-5 py-4 border-b border-base-content/8 shrink-0">
-            <h3 class="text-sm font-black text-white tracking-tight">
+          <div class="flex items-center justify-between px-4 h-12 border-b border-hairline shrink-0">
+            <h3 class="text-sm font-semibold text-white tracking-tight">
               {{ editingHolding ? '보유 종목 수정' : '보유 종목 추가' }}
             </h3>
             <button
               @click="closeHoldingModal"
-              class="w-7 h-7 flex items-center justify-center rounded-lg text-base-content/40 hover:text-base-content/80 hover:bg-base-200/60 transition-all cursor-pointer"
+              class="w-7 h-7 flex items-center justify-center rounded-sm text-base-content/40 hover:text-base-content/80 hover:bg-base-200/60 transition-colors cursor-pointer"
               aria-label="닫기"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -409,17 +403,14 @@
           <form @submit.prevent="submitHoldingForm" class="p-4 sm:p-5 space-y-4 overflow-y-auto custom-scrollbar">
 
             <!-- 종목 선택 (추가 모드만) -->
-            <div v-if="!editingHolding" class="space-y-1.5" ref="holdingSearchContainer">
-              <label class="text-xs font-extrabold text-base-content/50 tracking-wider uppercase">종목 선택</label>
+            <div v-if="!editingHolding" class="space-y-2" ref="holdingSearchContainer">
+              <label class="text-2xs font-medium text-base-content/50 tracking-wider uppercase">종목 선택</label>
 
               <!-- 선택된 종목 표시 -->
-              <div v-if="holdingForm.symbol" class="flex items-center justify-between px-3 py-2.5 rounded-xl bg-indigo-500/8 border border-indigo-500/25">
+              <div v-if="holdingForm.symbol" class="flex items-center justify-between px-3 py-2.5 rounded-sm bg-accent-weak border border-accent-line">
                 <div class="flex items-center gap-2">
-                  <span class="text-sm font-black text-white">{{ holdingForm.symbol }}</span>
-                  <span
-                    class="text-xs font-bold font-mono px-1.5 py-0.5 rounded"
-                    :class="holdingForm.market === 'KR' ? 'text-rose-400/70 bg-rose-500/6' : 'text-emerald-400/70 bg-emerald-500/6'"
-                  >{{ holdingForm.market }}</span>
+                  <span class="text-sm font-semibold text-white">{{ holdingForm.symbol }}</span>
+                  <FlagIcon :market="holdingForm.market" />
                   <span v-if="holdingForm.stockName" class="text-xs text-base-content/50 truncate max-w-32">{{ holdingForm.stockName }}</span>
                 </div>
                 <button
@@ -436,7 +427,7 @@
 
               <!-- 검색 입력 (종목 미선택 시) -->
               <div v-else class="relative">
-                <div class="flex items-center gap-1.5">
+                <div class="flex items-center gap-2">
                   <!-- 시장 선택 -->
                   <div class="tabs tabs-boxed bg-base-200/70 p-0.5 rounded-lg border border-base-content/6 gap-0 shrink-0">
                     <button
@@ -445,9 +436,9 @@
                       type="button"
                       @click="holdingSearchMode = m.value; holdingSearchResults = []"
                       :class="[
-                        'tab rounded-md text-xs font-extrabold transition-all duration-200 cursor-pointer px-2 py-1',
+                        'tab rounded-sm text-xs font-semibold transition-colors duration-120 cursor-pointer px-2 py-1',
                         holdingSearchMode === m.value
-                          ? 'tab-active bg-indigo-600/15 border border-indigo-500/25 text-indigo-400 shadow-sm'
+                          ? 'tab-active bg-surface-raised border border-accent-line text-base-content'
                           : 'text-base-content/40 hover:text-base-content/70 border border-transparent'
                       ]"
                     >{{ m.label }}</button>
@@ -458,7 +449,7 @@
                     @focus="showHoldingSearchDropdown = true"
                     type="text"
                     placeholder="종목명 / 티커 검색..."
-                    class="input input-sm input-bordered flex-1 font-semibold text-xs focus:outline-none focus:border-indigo-500/60 placeholder:text-base-content/25 bg-base-200/50 rounded-lg"
+                    class="input input-sm input-bordered flex-1 font-semibold text-xs focus:outline-none focus:border-accent placeholder:text-base-content/25 bg-base-200/50 rounded-sm"
                     aria-label="보유 종목 검색"
                     autocomplete="off"
                   />
@@ -468,26 +459,23 @@
                 <Transition name="fade-slide">
                   <div
                     v-if="showHoldingSearchDropdown && holdingSearchResults.length > 0"
-                    class="absolute left-0 right-0 top-full mt-1 border border-base-content/10 rounded-xl shadow-2xl z-50 max-h-52 overflow-y-auto backdrop-blur-xl bg-base-100/97 custom-scrollbar"
+                    class="absolute left-0 right-0 top-full mt-1 border border-hairline rounded-md shadow-pop z-800 max-h-52 overflow-y-auto bg-base-100 custom-scrollbar"
                   >
                     <div
                       v-for="stock in holdingSearchResults"
                       :key="stock.ticker"
                       @click.stop="selectHoldingStock(stock)"
-                      class="flex items-center justify-between px-3 py-2.5 cursor-pointer hover:bg-indigo-500/6 transition-colors border-b border-base-content/4 last:border-b-0 group"
+                      class="flex items-center justify-between px-3 py-2.5 cursor-pointer hover:bg-accent-weak transition-colors border-b border-hairline last:border-b-0 group"
                     >
                       <div class="flex flex-col min-w-0 flex-1 mr-2">
-                        <div class="flex items-center gap-1.5 flex-wrap">
-                          <span class="text-white font-bold text-sm group-hover:text-indigo-300 transition-colors">{{ stock.name }}</span>
-                          <span class="px-1 py-0.5 rounded text-xs font-bold font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/15">{{ stock.ticker }}</span>
-                          <span
-                            class="text-xs font-bold font-mono px-1 py-0.5 rounded"
-                            :class="stock.isKorean ? 'text-rose-400/70 bg-rose-500/6' : 'text-emerald-400/70 bg-emerald-500/6'"
-                          >{{ stock.isKorean ? 'KR' : 'US' }}</span>
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="text-white font-semibold text-sm group-hover:text-accent transition-colors">{{ stock.name }}</span>
+                          <span class="px-1 py-0.5 rounded-xs text-2xs font-medium font-mono bg-accent-weak text-accent border border-accent-line">{{ stock.ticker }}</span>
+                          <FlagIcon :market="stock.isKorean ? 'KR' : 'US'" />
                         </div>
                         <span v-if="stock.subName" class="text-xs text-base-content/35 mt-0.5 truncate">{{ stock.subName }}</span>
                       </div>
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-base-content/20 group-hover:text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-base-content/20 group-hover:text-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
                       </svg>
                     </div>
@@ -497,18 +485,15 @@
             </div>
 
             <!-- 수정 모드: 종목 정보 (읽기 전용) -->
-            <div v-if="editingHolding" class="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-base-200/40 border border-base-content/8">
-              <span class="text-sm font-black text-white">{{ editingHolding.symbol }}</span>
-              <span
-                class="text-xs font-bold font-mono px-1.5 py-0.5 rounded"
-                :class="editingHolding.market === 'KR' ? 'text-rose-400/70 bg-rose-500/6' : 'text-emerald-400/70 bg-emerald-500/6'"
-              >{{ editingHolding.market }}</span>
+            <div v-if="editingHolding" class="flex items-center gap-2 px-3 py-2.5 rounded-sm bg-base-200/40 border border-hairline">
+              <span class="text-sm font-semibold text-white">{{ editingHolding.symbol }}</span>
+              <FlagIcon :market="editingHolding.market" />
               <span class="text-xs text-base-content/40 truncate">{{ editingHolding.name }}</span>
             </div>
 
             <!-- 수량 -->
-            <div class="space-y-1.5">
-              <label for="hp-qty" class="text-xs font-extrabold text-base-content/50 tracking-wider uppercase">수량</label>
+            <div class="space-y-2">
+              <label for="hp-qty" class="text-2xs font-medium text-base-content/50 tracking-wider uppercase">수량</label>
               <input
                 id="hp-qty"
                 v-model="holdingForm.quantity"
@@ -517,16 +502,16 @@
                 step="1"
                 inputmode="numeric"
                 placeholder="보유 수량"
-                class="input input-sm input-bordered w-full font-mono text-sm focus:outline-none focus:border-indigo-500/60 bg-base-200/50 rounded-lg"
+                class="input input-sm input-bordered w-full font-mono text-sm focus:outline-none focus:border-accent bg-base-200/50 rounded-sm"
                 :class="formErrors.quantity ? 'border-error/60' : ''"
                 required
               />
-              <p v-if="formErrors.quantity" class="text-xs text-error font-bold font-mono mt-0.5">{{ formErrors.quantity }}</p>
+              <p v-if="formErrors.quantity" class="text-xs text-error font-medium font-mono mt-1">{{ formErrors.quantity }}</p>
             </div>
 
             <!-- 평단가 -->
-            <div class="space-y-1.5">
-              <label for="hp-avg" class="text-xs font-extrabold text-base-content/50 tracking-wider uppercase">
+            <div class="space-y-2">
+              <label for="hp-avg" class="text-2xs font-medium text-base-content/50 tracking-wider uppercase">
                 평단가
                 <span class="font-normal text-base-content/35 ml-1 normal-case">
                   ({{ holdingFormMarket === 'KR' ? '원화' : 'USD $' }})
@@ -540,16 +525,16 @@
                 :step="holdingFormMarket === 'KR' ? '1' : 'any'"
                 :inputmode="holdingFormMarket === 'KR' ? 'numeric' : 'decimal'"
                 :placeholder="holdingFormMarket === 'KR' ? '매입 평단 (원)' : '매입 평단 (USD)'"
-                class="input input-sm input-bordered w-full font-mono text-sm focus:outline-none focus:border-indigo-500/60 bg-base-200/50 rounded-lg"
+                class="input input-sm input-bordered w-full font-mono text-sm focus:outline-none focus:border-accent bg-base-200/50 rounded-sm"
                 :class="formErrors.average_price ? 'border-error/60' : ''"
                 required
               />
-              <p v-if="formErrors.average_price" class="text-xs text-error font-bold font-mono mt-0.5">{{ formErrors.average_price }}</p>
+              <p v-if="formErrors.average_price" class="text-xs text-error font-medium font-mono mt-1">{{ formErrors.average_price }}</p>
             </div>
 
             <!-- 매입환율 (US 종목만) -->
-            <div v-if="holdingFormMarket === 'US'" class="space-y-1.5">
-              <label for="hp-fx" class="text-xs font-extrabold text-base-content/50 tracking-wider uppercase">
+            <div v-if="holdingFormMarket === 'US'" class="space-y-2">
+              <label for="hp-fx" class="text-2xs font-medium text-base-content/50 tracking-wider uppercase">
                 매입환율
                 <span class="font-normal text-base-content/35 ml-1 normal-case">USD/KRW — 매입 당시 환율</span>
               </label>
@@ -560,11 +545,11 @@
                 min="1"
                 step="0.01"
                 placeholder="예: 1350.00"
-                class="input input-sm input-bordered w-full font-mono text-sm focus:outline-none focus:border-indigo-500/60 bg-base-200/50 rounded-lg"
+                class="input input-sm input-bordered w-full font-mono text-sm focus:outline-none focus:border-accent bg-base-200/50 rounded-sm"
                 :class="formErrors.avg_fx_rate ? 'border-error/60' : ''"
                 required
               />
-              <p v-if="formErrors.avg_fx_rate" class="text-xs text-error font-bold font-mono mt-0.5">{{ formErrors.avg_fx_rate }}</p>
+              <p v-if="formErrors.avg_fx_rate" class="text-xs text-error font-medium font-mono mt-1">{{ formErrors.avg_fx_rate }}</p>
             </div>
 
             <!-- 폼 레벨 에러 -->
@@ -584,12 +569,12 @@
               <button
                 type="button"
                 @click="closeHoldingModal"
-                class="btn btn-sm btn-ghost flex-1 font-bold border border-base-content/10 hover:bg-base-200/40 rounded-xl cursor-pointer"
+                class="btn btn-sm btn-ghost flex-1 font-medium border border-hairline hover:bg-base-200/40 rounded-sm cursor-pointer"
               >취소</button>
               <button
                 type="submit"
                 :disabled="actionLoading || (!editingHolding && !holdingForm.symbol)"
-                class="btn btn-sm flex-1 font-bold rounded-xl cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white border-0 disabled:opacity-40"
+                class="btn btn-sm btn-primary flex-1 font-semibold rounded-sm cursor-pointer disabled:opacity-40"
               >
                 <span v-if="actionLoading" class="loading loading-spinner loading-xs"></span>
                 {{ editingHolding ? '저장' : '추가' }}
@@ -609,6 +594,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import axios from 'axios';
 import { confirm as confirmDialog } from '../composables/useConfirm.js';
 import StockChart from './StockChart.vue';
+import FlagIcon from './FlagIcon.vue';
 import { localSearch, normalizeKrTicker, SEARCHABLE_STOCKS } from '../stocksKnown.js';
 import {
   formatWon,
@@ -688,7 +674,7 @@ watch(
           const m = { ...flashMap.value };
           delete m[id];
           flashMap.value = m;
-        }, 700);
+        }, 260);  // 설계서 §6: 가격 틱 플래시 260ms 통일
       }
       if (cur != null) _prevPrices[id] = cur;
     }
@@ -696,11 +682,11 @@ watch(
   { deep: true }
 );
 
-// 셀 플래시 배경 클래스 (상승=빨강, 하락=파랑)
+// 셀 플래시 배경 클래스 (상승=빨강 / 하락=파랑 — 신호색 weak)
 function flashCellClass(item) {
   const f = flashMap.value[item.portfolio_id];
-  if (f === 'up') return 'bg-rose-500/15';
-  if (f === 'down') return 'bg-sky-500/15';
+  if (f === 'up') return 'bg-up-weak';
+  if (f === 'down') return 'bg-down-weak';
   return '';
 }
 
@@ -779,12 +765,13 @@ function sessionLabel(code) {
 }
 
 function sessionBadgeStyle(code) {
+  // 3계층: 정규장=ses-open(앰버) / 연장(프리·애프터·주간·야간)=ses-ext(틸) / 마감=중립 muted
   switch(code) {
-    case 'EXT_NIGHT': return 'text-emerald-400 bg-emerald-500/8 border-emerald-500/20';
-    case 'PRE': return 'text-amber-400 bg-amber-500/8 border-amber-500/20';
     case 'REG_KR':
-    case 'REG_US': return 'text-pink-400 bg-pink-500/8 border-pink-500/20';
-    case 'AFT': return 'text-cyan-400 bg-cyan-500/8 border-cyan-500/20';
+    case 'REG_US': return 'text-ses-open bg-ses-open-weak border-ses-open-line';
+    case 'EXT_NIGHT':
+    case 'PRE':
+    case 'AFT': return 'text-ses-ext bg-ses-ext-weak border-ses-ext-line';
     case 'CLOSED':
     default: return 'text-base-content/40 bg-base-200/40 border-base-content/10';
   }
@@ -1550,11 +1537,12 @@ function displayName(item) {
 }
 
 function sessionBadgeClass(badge) {
+  // 3계층: 정규장=ses-open / 연장(프리·애프터)=ses-ext / 마감=중립
   switch (badge) {
-    case 'REG': return 'bg-indigo-500/12 text-indigo-400 border-indigo-500/25';
-    case 'PRE': return 'bg-amber-500/12 text-amber-400 border-amber-500/25';
-    case 'AFT': return 'bg-purple-500/12 text-purple-400 border-purple-500/25';
-    default:    return 'bg-base-200/40 text-base-content/25 border-base-content/8';
+    case 'REG': return 'bg-ses-open-weak text-ses-open border-ses-open-line';
+    case 'PRE':
+    case 'AFT': return 'bg-ses-ext-weak text-ses-ext border-ses-ext-line';
+    default:    return 'bg-base-200/40 text-base-content/25 border-hairline';
   }
 }
 
@@ -1581,6 +1569,7 @@ onBeforeUnmount(() => {
   if (holdingSearchDebounce) clearTimeout(holdingSearchDebounce);
   if (toastTimer) clearTimeout(toastTimer);
   if (sessionTimer) clearInterval(sessionTimer);
+  for (const t of Object.values(_flashTimers)) clearTimeout(t);
 });
 </script>
 

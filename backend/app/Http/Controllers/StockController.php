@@ -164,11 +164,9 @@ class StockController extends Controller
             
             $content = json_decode($response->getContent(), true);
             if (is_array($content)) {
-                $now = new \DateTime('now', new \DateTimeZone('Asia/Seoul'));
-                $hour = (int)$now->format('H');
-                // 야간선물은 개장일(거래일) 저녁에만 운영 — 공휴일이면 미운영 (KIS API 기준)
-                $isNightActive = (($hour >= 18 || $hour < 5) && $this->isKrTradingDay(time()));
-                $content['session'] = $isNightActive ? '거래중' : '장마감';
+                // 야간선물은 개장일(거래일) 저녁~익일 새벽에만 운영 — 공휴일이면 미운영 (KIS API 기준).
+                // 새벽 연장분(전일 밤 세션)을 잘라먹지 않도록 전일 거래일 판정 포함(isKrNightFuturesActive).
+                $content['session'] = $this->isKrNightFuturesActive() ? '거래중' : '장마감';
                 return response()->json($content);
             }
             return $response;
@@ -575,17 +573,9 @@ class StockController extends Controller
 
     private function generateKOSPINightFutures($kospi, $nq)
     {
-        $now = new \DateTime('now', new \DateTimeZone('Asia/Seoul'));
-        $hour = (int)$now->format('H');
-        $dayOfWeek = (int)$now->format('N');
-        
-        $isNightActive = false;
+        // KRX 야간 세션은 개장일 18:00 ~ 익일 05:00. 공휴일 제외 + 새벽 연장분은 전일 거래일 기준 판정.
+        $isNightActive = $this->isKrNightFuturesActive();
 
-        // KRX 야간 세션은 개장일 18:00 ~ 익일 05:00. 공휴일은 KIS API 로 판정해 제외.
-        if (($hour >= 18 || $hour < 5) && $this->isKrTradingDay(time())) {
-            $isNightActive = true;
-        }
-        
         $price = $kospi['price'];
         $change = 0.0;
         $changePercent = 0.0;
@@ -1229,6 +1219,23 @@ class StockController extends Controller
 
         ksort($grouped);
         return array_values($grouped);
+    }
+
+    /**
+     * 야간선물(KRX) 세션 활성 여부. 개장일 18:00 ~ 익일 05:00.
+     * 새벽(00~05시)은 "전일 저녁 세션"의 연장이므로 거래일 판정을 전일 기준으로 해야 한다.
+     * (그러지 않으면 토요일 새벽=금요일 밤 세션이 '오늘=비거래일'로 잘려 '장마감'으로 오판정됨.)
+     */
+    private function isKrNightFuturesActive(): bool
+    {
+        $hour = (int)(new \DateTime('now', new \DateTimeZone('Asia/Seoul')))->format('H');
+        if ($hour >= 18) {
+            return $this->isKrTradingDay(time());            // 오늘 저녁 세션
+        }
+        if ($hour < 5) {
+            return $this->isKrTradingDay(strtotime('-1 day')); // 전일 저녁 세션의 새벽 연장
+        }
+        return false;
     }
 
     /**

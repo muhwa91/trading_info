@@ -5,7 +5,7 @@
  *   formatWon, formatProfitWon, formatProfitUSD,
  *   formatProfitRate (×100 회귀 방지),
  *   formatQuantity, formatPrice,
- *   profitColorClass, profitBadgeClass,
+ *   profitColorClass,
  *   displayName
  *
  * 외부 의존 없음 — 순수 함수만 테스트.
@@ -20,7 +20,6 @@ import {
   formatQuantity,
   formatPrice,
   profitColorClass,
-  profitBadgeClass,
   displayName,
 } from './format.js';
 
@@ -247,36 +246,36 @@ describe('formatPrice', () => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('profitColorClass', () => {
-  // 국내·미국 구분 없이 상승=rose-400, 하락=sky-400 으로 통일
-  it('KR 상승 → text-rose-400', () => {
-    expect(profitColorClass(1000, 'kr')).toBe('text-rose-400');
+  // 국내·미국 구분 없이 상승=up(빨강), 하락=down(파랑) 시맨틱 신호색으로 통일
+  it('KR 상승 → text-up', () => {
+    expect(profitColorClass(1000, 'kr')).toBe('text-up');
   });
 
-  it('KR 하락 → text-sky-400', () => {
-    expect(profitColorClass(-1000, 'kr')).toBe('text-sky-400');
+  it('KR 하락 → text-down', () => {
+    expect(profitColorClass(-1000, 'kr')).toBe('text-down');
   });
 
-  it('KR 0 → text-rose-400 (0은 상승 처리)', () => {
-    expect(profitColorClass(0, 'kr')).toBe('text-rose-400');
+  it('KR 0 → text-up (0은 상승 처리)', () => {
+    expect(profitColorClass(0, 'kr')).toBe('text-up');
   });
 
-  // US 시장도 동일: 상승=rose, 하락=sky (market 인자 무시)
-  it('US 상승 → text-rose-400 (통일)', () => {
-    expect(profitColorClass(500, 'us')).toBe('text-rose-400');
+  // US 시장도 동일: 상승=up, 하락=down (market 인자 무시)
+  it('US 상승 → text-up (통일)', () => {
+    expect(profitColorClass(500, 'us')).toBe('text-up');
   });
 
-  it('US 하락 → text-sky-400 (통일)', () => {
-    expect(profitColorClass(-500, 'us')).toBe('text-sky-400');
+  it('US 하락 → text-down (통일)', () => {
+    expect(profitColorClass(-500, 'us')).toBe('text-down');
   });
 
-  it('US 0 → text-rose-400 (0은 상승 처리, 통일)', () => {
-    expect(profitColorClass(0, 'us')).toBe('text-rose-400');
+  it('US 0 → text-up (0은 상승 처리, 통일)', () => {
+    expect(profitColorClass(0, 'us')).toBe('text-up');
   });
 
   // NaN: Number(null)=0 이므로 상승 처리됨. 실제 NaN은 Number('abc') 등.
-  it('null → Number(null)=0 → 상승 처리(text-rose-400)', () => {
+  it('null → Number(null)=0 → 상승 처리(text-up)', () => {
     // null은 Number()로 0이 되어 isNaN(0)=false, 0>=0 → 상승 색
-    expect(profitColorClass(null, 'kr')).toBe('text-rose-400');
+    expect(profitColorClass(null, 'kr')).toBe('text-up');
   });
 
   it('문자열(비숫자) → NaN → text-base-content/60', () => {
@@ -285,42 +284,6 @@ describe('profitColorClass', () => {
 
   it('undefined → NaN → text-base-content/60', () => {
     expect(profitColorClass(undefined, 'us')).toBe('text-base-content/60');
-  });
-});
-
-// ──────────────────────────────────────────────────────────────────
-// profitBadgeClass
-// ──────────────────────────────────────────────────────────────────
-
-describe('profitBadgeClass', () => {
-  // 국내·미국 구분 없이 상승=badge-kr-up(빨강), 하락=badge-kr-down(파랑)으로 통일
-  it('KR 상승 → badge-kr-up', () => {
-    expect(profitBadgeClass(1000, 'kr')).toBe('badge-kr-up');
-  });
-
-  it('KR 하락 → badge-kr-down', () => {
-    expect(profitBadgeClass(-1000, 'kr')).toBe('badge-kr-down');
-  });
-
-  it('US 상승 → badge-kr-up (통일)', () => {
-    expect(profitBadgeClass(1000, 'us')).toBe('badge-kr-up');
-  });
-
-  it('US 하락 → badge-kr-down (통일)', () => {
-    expect(profitBadgeClass(-1000, 'us')).toBe('badge-kr-down');
-  });
-
-  it('null → Number(null)=0 → 상승 badge-kr-up (0은 상승 처리)', () => {
-    // Number(null)=0, isNaN(0)=false → badge-kr-up
-    expect(profitBadgeClass(null, 'kr')).toBe('badge-kr-up');
-  });
-
-  it('문자열(비숫자) → NaN → 비활성 클래스', () => {
-    expect(profitBadgeClass('abc', 'kr')).toBe('text-base-content/30 bg-base-200/40');
-  });
-
-  it('KR 0 → badge-kr-up (0은 상승)', () => {
-    expect(profitBadgeClass(0, 'kr')).toBe('badge-kr-up');
   });
 });
 

@@ -37,9 +37,12 @@ class TossChangeCalculator
 
     private TossApiClient $client;
 
-    public function __construct(TossApiClient $client)
+    private TossSymbolMapper $mapper;
+
+    public function __construct(TossApiClient $client, TossSymbolMapper $mapper)
     {
         $this->client = $client;
+        $this->mapper = $mapper;
     }
 
     /**
@@ -167,8 +170,20 @@ class TossChangeCalculator
                 return strcmp($tB, $tA);  // 내림차순 (최신 먼저)
             });
 
-            // index 0 = 최신 봉(당일), index 1 = 직전 봉(prevClose)
-            $prevCandle = $candles[1];
+            // 전일종가 선택: 최신 봉(index 0)이 "오늘의 진행중 봉"이면 index 1, 아니면 index 0.
+            //   미국 프리마켓~개장 직후엔 토스에 오늘 일봉이 아직 없어 [전일, 전전일] 로 와,
+            //   무조건 index 1 을 쓰면 전전일 종가를 기준가로 잡아 등락 부호까지 반전된다(예: MU 7/10).
+            //   봉 timestamp 는 거래소 로컬 오프셋 포함 ISO8601 → currency 로 거래소 TZ 판별 후 날짜 비교.
+            //   currency 결측 시(US 종목인데 필드 누락) 서울TZ 폴백은 오늘봉 판별을 오판→부호반전 위험 →
+            //   심볼로 시장 판별해 폴백(TossSymbolMapper 재사용). ponytail: 표준 심볼 분류를 그대로 씀.
+            $currency   = $candles[0]['currency'] ?? null;
+            $isUsMarket = $currency !== null
+                ? $currency === 'USD'
+                : $this->mapper->market($tossSymbol) === 'US';
+            $tz         = $isUsMarket ? 'America/New_York' : 'Asia/Seoul';
+            $latestDate = Carbon::parse((string) ($candles[0]['timestamp'] ?? ''))->setTimezone($tz)->toDateString();
+            $isTodayBar = $latestDate === Carbon::now($tz)->toDateString();
+            $prevCandle = $isTodayBar ? $candles[1] : $candles[0];
             $prevClose  = isset($prevCandle['closePrice']) ? (float) $prevCandle['closePrice'] : null;
 
             if ($prevClose === null || $prevClose <= 0.0) {

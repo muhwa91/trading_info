@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Log;
  * 응답 구조:
  * {
  *   "session": "regular",
- *   "exchange_rate": { "USD_KRW": 1380.5, "recorded_at": "..." },
+ *   "exchange_rate": { "USD_KRW": 1380.5, "recorded_at": "...", "source": "...", "prev_close": 1505.91 },
  *   "summary": {
  *     "totalMarketValueKRW": 0.0,
  *     "totalCostKRW": 0.0,
@@ -301,6 +301,7 @@ class DashboardController extends Controller
                 'USD_KRW'    => $fxData['rate'],
                 'recorded_at' => $fxData['recorded_at'],
                 'source'     => $fxData['source'] ?? null,
+                'prev_close' => $fxData['prev_close'] ?? null,
             ] : null,
             'summary'       => $summary,
             'holdings'      => $holdingRows,

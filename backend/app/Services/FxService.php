@@ -6,7 +6,9 @@ namespace App\Services;
 
 use App\Models\ExchangeRate;
 use App\Services\Toss\TossFxProvider;
+use GuzzleHttp\Client;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -31,6 +33,15 @@ class FxService
     private const FROM = 'USD';
     private const TO   = 'KRW';
 
+    /** USD/KRW 전일 종가 캐시 키 — 하루 1회 갱신(ET 자정 경계). */
+    private const FX_PREV_CLOSE_CACHE_KEY = 'yahoo_fx_prev_close_usdkrw';
+
+    /** Yahoo Finance v8 chart endpoint — USDKRW=X 전일 종가 소스. */
+    private const YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/USDKRW=X?interval=1d&range=2d';
+
+    /** Yahoo 전일 종가 요청 타임아웃(초). */
+    private const YAHOO_TIMEOUT = 5;
+
     private TossFxProvider $tossFxProvider;
 
     public function __construct(TossFxProvider $tossFxProvider)
@@ -46,10 +57,16 @@ class FxService
      *   2. 실패 시 DB 직전값 (신선도 무관)
      *   3. DB도 없으면 null
      *
-     * @return array{rate:float,recorded_at:string,source:string}|null
+     * 반환 배열에는 전일 종가 prev_close(Yahoo USDKRW=X, float|null)가 항상 포함된다.
+     * 프론트의 "환율 전일 대비 ▲/▼" 표시용 — 취득 실패 시 null(graceful).
+     *
+     * @return array{rate:float,recorded_at:string,source:string,prev_close:float|null}|null
      */
     public function getUsdKrw(): ?array
     {
+        // 전일 종가는 하루 단위로 천천히 변하는 값 — 캐시 히트가 대부분(1일 1회 HTTP).
+        $prevClose = $this->fetchPrevClose();
+
         $row = ExchangeRate::where('from_currency', self::FROM)
             ->where('to_currency', self::TO)
             ->first();
@@ -62,6 +79,7 @@ class FxService
                 'rate'        => (float) $row->rate,
                 'recorded_at' => $row->recorded_at->toDateTimeString(),
                 'source'      => (string) ($row->source ?? 'cached'),
+                'prev_close'  => $prevClose,
             ];
         }
 
@@ -76,6 +94,7 @@ class FxService
                     'rate'        => (float) $row->rate,
                     'recorded_at' => $row->recorded_at ? $row->recorded_at->toDateTimeString() : null,
                     'source'      => 'db_fallback',
+                    'prev_close'  => $prevClose,
                 ];
             }
 
@@ -86,7 +105,59 @@ class FxService
 
         $this->upsertRate($fetched['rate'], $fetched['recorded_at'], $fetched['source']);
 
+        $fetched['prev_close'] = $prevClose;
+
         return $fetched;
+    }
+
+    /**
+     * USD/KRW 전일 종가를 Yahoo USDKRW=X chart meta.chartPreviousClose 에서 조회.
+     *
+     * 캐시 키: yahoo_fx_prev_close_usdkrw — 다음 ET 자정까지 TTL(일 단위 경계).
+     *   전일 종가는 확정값(진행 중 아님)이라 regular_close 의 16:05 REGULAR 가드는 불필요.
+     * 실패·필드 없음 시 null 반환 (예외 전파 금지 — 기존 폴백 스타일 유지).
+     *
+     * @return float|null
+     */
+    private function fetchPrevClose(): ?float
+    {
+        $cached = Cache::get(self::FX_PREV_CLOSE_CACHE_KEY);
+        if ($cached !== null) {
+            return (float) $cached > 0 ? (float) $cached : null;
+        }
+
+        try {
+            $httpClient = new Client();
+            $res        = $httpClient->get(self::YAHOO_CHART_URL, [
+                'headers'     => [
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                ],
+                'http_errors' => false,
+                'timeout'     => self::YAHOO_TIMEOUT,
+            ]);
+
+            $data = json_decode((string) $res->getBody(), true);
+            $prev = $data['chart']['result'][0]['meta']['chartPreviousClose'] ?? null;
+
+            if ($prev === null || (float) $prev <= 0) {
+                Log::debug('[FxService] Yahoo USDKRW=X chartPreviousClose 없음');
+                return null;
+            }
+
+            $prev = (float) $prev;
+
+            // 다음 ET 자정까지 캐시 (일 단위 경계) — 하루 1회만 HTTP.
+            $nyTz   = new \DateTimeZone('America/New_York');
+            $target = new \DateTime('tomorrow', $nyTz);
+            $ttl    = max($target->getTimestamp() - time(), 300);
+
+            Cache::put(self::FX_PREV_CLOSE_CACHE_KEY, $prev, $ttl);
+
+            return $prev;
+        } catch (\Throwable $e) {
+            Log::warning('[FxService] USD/KRW 전일 종가 취득 실패: ' . $e->getMessage());
+            return null;
+        }
     }
 
     /**

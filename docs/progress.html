@@ -74,6 +74,12 @@
   </nav>
 
   <!-- ENTRIES:START -->
+  <div class="entry" data-agent="backend frontend">
+    <h2>헤더 손익 요약 — 3행 열 정렬 + 환율 전일 대비 등락 표시 <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-07-14 · 담당: backend · frontend</p>
+    <div class="req"><span class="label">요청 →</span> 헤더의 환율·미국·한국 요약이 한 줄에 흘러 잘려 보였다. 차트 우측 가격 표시처럼 세 줄로 나눠 숫자를 세로로 딱 맞게 정렬하고, 환율도 어제보다 얼마나 오르내렸는지 보이게 해 달라.</div>
+    <div class="res"><span class="label">처리 →</span> 환율/미국/한국을 세 줄로 나누고 숫자·단위·손익·등락률이 각각 같은 세로선에 정렬되게 했다. 환율에는 전일 종가(Yahoo)를 붙여 어제 대비 등락폭·등락률을 미국/한국 줄과 같은 모양으로 표시한다(전일 값을 못 받으면 그 칸만 비움). 자동 테스트 백엔드 237·프론트 164건 전부 통과.</div>
+  </div>
   <div class="entry" data-agent="frontend">
     <h2>접힘 헤더 나스닥100 인라인 시세 — 노출 시간을 선물 거래시간 전체로 확대 <span class="badge ok">완료</span></h2>
     <p class="meta">2026-07-11 · 담당: frontend</p>

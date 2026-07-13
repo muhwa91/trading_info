@@ -1,11 +1,25 @@
 <template>
-  <div :class="compact ? 'flex flex-wrap gap-2 text-xs' : 'flex flex-col sm:flex-row gap-3 px-4 py-3 bg-base-100 border border-hairline rounded-md'">
+  <div :class="compact ? 'grid grid-cols-[auto_auto_auto_auto_auto] items-center gap-x-1 gap-y-0.5 text-xs w-fit' : 'flex flex-col sm:flex-row gap-3 px-4 py-3 bg-base-100 border border-hairline rounded-md'">
 
     <!-- 환율 정보 -->
-    <div :class="compact ? 'flex items-center gap-2 shrink-0' : 'flex items-center gap-2 shrink-0 sm:border-r sm:border-hairline sm:pr-3'">
+    <div :class="compact ? 'col-span-5 grid grid-cols-subgrid items-center' : 'flex items-center gap-2 shrink-0 sm:border-r sm:border-hairline sm:pr-3'">
       <span :class="compact ? 'text-xs font-medium font-mono text-base-content/70' : 'text-sm font-medium font-mono text-base-content/70'">
-        환율 {{ exchangeRate ? Number(exchangeRate.USD_KRW).toFixed(2) : '—' }}
+        환율<template v-if="!compact"> {{ exchangeRate ? Number(exchangeRate.USD_KRW).toFixed(2) : '—' }}</template>
       </span>
+      <span v-if="compact" class="justify-self-end text-xs font-mono text-base-content/70 px-1 py-0.5">
+        {{ exchangeRate ? Number(exchangeRate.USD_KRW).toFixed(2) : '—' }}
+      </span>
+      <!-- 환율 전일 대비 등락폭·등락률 (손익·등락률 열 재사용, prev_close 없으면 미표시 → subgrid로 레이아웃 유지) -->
+      <span
+        v-if="compact && fxDelta !== null"
+        class="col-start-4 justify-self-end ml-2 text-xs font-semibold font-mono rounded-xs px-1 py-0.5"
+        :class="profitColorClass(fxDelta)"
+      >{{ (fxDelta >= 0 ? '+' : '-') + Math.abs(fxDelta).toFixed(2) }}</span>
+      <span
+        v-if="compact && fxDelta !== null"
+        class="col-start-5 justify-self-end text-2xs font-medium font-mono px-2 py-0.5 rounded-xs"
+        :class="profitColorClass(fxDelta)"
+      >{{ formatProfitRate(fxRate) }}</span>
       <span v-if="exchangeRate && !compact" class="text-xs font-mono text-base-content/40">
         {{ fxSourceLabel }} · {{ formatRecordedAt(exchangeRate.recorded_at) }}
       </span>
@@ -19,26 +33,27 @@
     <!-- 보유 없음 -->
     <div
       v-if="!usSummary.hasHoldings && !krSummary.hasHoldings"
-      class="flex items-center"
+      :class="compact ? 'col-span-5' : 'flex items-center'"
     >
-      <span class="text-sm text-base-content/40 font-mono">보유 종목 없음</span>
+      <span :class="compact ? 'text-xs text-base-content/40 font-mono' : 'text-sm text-base-content/40 font-mono'">보유 종목 없음</span>
     </div>
 
     <!-- 미국주식 손익 (미국 = 중립 시장 라벨 → accent 배지) -->
     <div
       v-if="usSummary.hasHoldings"
-      :class="compact ? 'flex items-center gap-2' : 'flex items-center gap-3'"
+      :class="compact ? 'col-span-5 grid grid-cols-subgrid items-center' : 'flex items-center gap-3'"
     >
       <FlagIcon market="US" class="shrink-0" />
-      <span :class="[compact ? 'text-xs font-semibold font-mono text-base-content/80' : 'text-sm font-semibold font-mono text-base-content/80', 'transition-colors duration-260 rounded-xs px-1 py-0.5', flashTint(usFlash)]">
-        {{ usSummary.marketValueUSD.toFixed(2) }}$
+      <span :class="[compact ? 'justify-self-end text-xs font-semibold font-mono text-base-content/80' : 'text-sm font-semibold font-mono text-base-content/80', 'transition-colors duration-260 rounded-xs px-1 py-0.5', flashTint(usFlash)]">
+        {{ usSummary.marketValueUSD.toFixed(2) }}<template v-if="!compact">$</template>
       </span>
+      <span v-if="compact" class="justify-self-start text-xs font-semibold font-mono text-base-content/80">$</span>
       <span
-        :class="[compact ? 'text-xs font-semibold font-mono' : 'text-sm font-semibold font-mono', 'transition-colors duration-260 rounded-xs px-1 py-0.5', profitColorClass(usSummary.profitUSD, 'us'), flashTint(usFlash)]"
+        :class="[compact ? 'justify-self-end ml-2 text-xs font-semibold font-mono' : 'text-sm font-semibold font-mono', 'transition-colors duration-260 rounded-xs px-1 py-0.5', profitColorClass(usSummary.profitUSD, 'us'), flashTint(usFlash)]"
       >{{ formatProfitUSD(usSummary.profitUSD) }}</span>
       <span
         class="text-2xs font-medium font-mono px-2 py-0.5 rounded-xs transition-colors duration-260"
-        :class="[profitColorClass(usSummary.profitUSD, 'us'), flashTint(usFlash)]"
+        :class="[compact && 'justify-self-end', profitColorClass(usSummary.profitUSD, 'us'), flashTint(usFlash)]"
       >{{ formatProfitRate(usSummary.profitRate) }}</span>
     </div>
 
@@ -51,18 +66,19 @@
     <!-- 국내주식 손익 (국내 = 중립 시장 라벨 → accent 배지) -->
     <div
       v-if="krSummary.hasHoldings"
-      :class="compact ? 'flex items-center gap-2' : 'flex items-center gap-3'"
+      :class="compact ? 'col-span-5 grid grid-cols-subgrid items-center' : 'flex items-center gap-3'"
     >
       <FlagIcon market="KR" class="shrink-0" />
-      <span :class="[compact ? 'text-xs font-semibold font-mono text-base-content/80' : 'text-sm font-semibold font-mono text-base-content/80', 'transition-colors duration-260 rounded-xs px-1 py-0.5', flashTint(krFlash)]">
-        {{ formatWon(krSummary.marketValueKRW) }}
+      <span :class="[compact ? 'justify-self-end text-xs font-semibold font-mono text-base-content/80' : 'text-sm font-semibold font-mono text-base-content/80', 'transition-colors duration-260 rounded-xs px-1 py-0.5', flashTint(krFlash)]">
+        {{ compact ? Math.round(krSummary.marketValueKRW).toLocaleString() : formatWon(krSummary.marketValueKRW) }}
       </span>
+      <span v-if="compact" class="justify-self-start text-xs font-semibold font-mono text-base-content/80">원</span>
       <span
-        :class="[compact ? 'text-xs font-semibold font-mono' : 'text-sm font-semibold font-mono', 'transition-colors duration-260 rounded-xs px-1 py-0.5', profitColorClass(krSummary.profitKRW, 'kr'), flashTint(krFlash)]"
+        :class="[compact ? 'justify-self-end ml-2 text-xs font-semibold font-mono' : 'text-sm font-semibold font-mono', 'transition-colors duration-260 rounded-xs px-1 py-0.5', profitColorClass(krSummary.profitKRW, 'kr'), flashTint(krFlash)]"
       >{{ formatProfitWon(krSummary.profitKRW) }}</span>
       <span
         class="text-2xs font-medium font-mono px-2 py-0.5 rounded-xs transition-colors duration-260"
-        :class="[profitColorClass(krSummary.profitKRW, 'kr'), flashTint(krFlash)]"
+        :class="[compact && 'justify-self-end', profitColorClass(krSummary.profitKRW, 'kr'), flashTint(krFlash)]"
       >{{ formatProfitRate(krSummary.profitRate) }}</span>
     </div>
 
@@ -105,6 +121,19 @@ const fxSourceLabel = computed(() => {
   if (src.toLowerCase().includes('yahoo')) return 'Yahoo 환율';
   if (src.includes('db_fallback')) return '최근 환율';
   return '환율';
+});
+
+// 환율 전일 대비 등락폭 (USD_KRW - prev_close). prev_close null/미제공 → null
+const fxDelta = computed(() => {
+  const r = props.exchangeRate;
+  if (!r || r.prev_close == null || r.USD_KRW == null) return null;
+  return Number(r.USD_KRW) - Number(r.prev_close);
+});
+// 환율 등락률(소수 비율) — formatProfitRate 가 ×100 처리. prev_close 0/null → null
+const fxRate = computed(() => {
+  const r = props.exchangeRate;
+  if (!r || !Number(r.prev_close) || r.USD_KRW == null) return null;
+  return (Number(r.USD_KRW) - Number(r.prev_close)) / Number(r.prev_close);
 });
 
 // 미국주식 합계 (달러 기준) — PortfolioDashboard.computed.usSummary 와 동일 로직

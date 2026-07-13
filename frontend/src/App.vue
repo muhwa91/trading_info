@@ -181,7 +181,7 @@
               <svg :class="['h-3.5 w-3.5 text-base-content/60 transition-transform duration-200', indexCollapsed ? '-rotate-90' : '']" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
-              <span class="text-xs font-semibold text-base-content/60 tracking-wider uppercase">{{ indexHeaderLabel }}</span>
+              <span class="text-xs font-semibold text-base-content/60 tracking-wider uppercase">지수</span>
 
               <!-- 접힘 상태 & 세션 활성 지수 인라인 시세 (나스닥100=미국정규장 / 코스피 야간선물=야간선물세션) -->
               <!-- 차트 없음·틱 플래시 없음. 펼치면 카드가 같은 값을 보여주므로 접힘일 때만. -->
@@ -714,18 +714,20 @@ const isKospiNightSession = computed(() => {
   return eveningTradingDay || morningAfterTradingDay;
 });
 
-// 미국 정규장(나스닥) 개장 여부 — 지수 헤더 인라인 NQ 시세 노출 게이트.
-// 백엔드 getUsSession 의 정규장 경계와 동일(ET 09:30~16:00, 평일). ET 타임존 위임으로 DST 자동 처리.
-// isKospiRegularSession 의 KST-폴백과 같은 패턴. NQ=F quote(15초 WS)를 참조해 갱신 주기에 맞춰 재평가.
-// ponytail: 미국 공휴일 체크(getUsSession 의 isUsMarketTradingToday)는 생략 — 공휴일 정규장 시간대에
-//           NQ 숫자가 잠깐 보이는 무해한 오탐뿐. 필요해지면 휴장 캘린더를 프론트에 노출해 게이트 추가.
-const isUsRegularSession = computed(() => {
+// 나스닥100 선물(NQ=F) CME Globex 거래시간 여부 — 지수 헤더 인라인 NQ 시세 노출 게이트.
+// 백엔드 StockController 의 NQ=F session 판정과 동일 경계: KST 기준 휴장창 토 06:00~월 07:00
+// (금 17:00 ET 마감 → 일 18:00 ET 재개). isKospiNightSession 과 같은 패턴 —
+// NQ=F session 필드 있으면 신뢰, 없으면 KST 시계로 폴백.
+const isNqFuturesTrading = computed(() => {
   const nq = indexStockData.value['NQ=F'];
   if (!nq || nq.current_price === null || nq.current_price === undefined) return false;
-  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const dow = et.getDay(); // 0=일 … 6=토
-  const t = et.getHours() * 100 + et.getMinutes();
-  return dow >= 1 && dow <= 5 && t >= 930 && t < 1600;
+  if (nq.session) return nq.session === '거래중';
+  // 데이터/필드 없으면 KST 시간으로 폴백 (백엔드와 동일한 휴장창: 토 06시 이후·일·월 07시 이전)
+  const kst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const dow = kst.getDay(); // 0=일 … 6=토
+  const t = kst.getHours() * 100 + kst.getMinutes();
+  const isClosed = (dow === 6 && t >= 600) || dow === 0 || (dow === 1 && t < 700);
+  return !isClosed;
 });
 
 // 접힘 헤더 인라인 틱 플래시 — 지수별 독립('up'/'down' 260ms 후 해제). StockChart priceFlash 패턴 동일.
@@ -741,28 +743,17 @@ function triggerIndexFlash(ticker, oldP, newP) {
   }, 260); // 설계서 §6: 가격 틱 플래시 260ms 통일
 }
 
-// 접힘 헤더 우측 인라인 시세 목록 — 세션 활성 지수만(나스닥100=미국 정규장 / 코스피 야간선물=야간선물 세션).
+// 접힘 헤더 우측 인라인 시세 목록 — 세션 활성 지수만(나스닥100=선물 거래시간 / 코스피 야간선물=야간선물 세션).
 // KOSPI_NIGHT·NQ=F 스토어 데이터 재사용(새 호출 없음). 펼치면 카드가 같은 값을 보여주므로 접힘일 때만 노출.
 const collapsedInlineQuotes = computed(() => {
   const out = [];
-  if (isUsRegularSession.value && indexStockData.value['NQ=F']) {
+  if (isNqFuturesTrading.value && indexStockData.value['NQ=F']) {
     out.push({ ticker: 'NQ=F', label: '나스닥100' });
   }
   if (isKospiNightSession.value && indexStockData.value['KOSPI_NIGHT']) {
     out.push({ ticker: 'KOSPI_NIGHT', label: '코스피 야간선물' });
   }
   return out;
-});
-
-// 지수 접힘 헤더 라벨 — 세션에 맞춰 코스피 표기 전환(visibleIndexTickers 와 동일 우선순위).
-// 정규장/주간=코스피 · 야간선물 세션=코스피 야간선물 · 장외/휴장=코스피 생략(나스닥만).
-const indexHeaderLabel = computed(() => {
-  const kospi = isKospiRegularSession.value
-    ? '코스피'
-    : isKospiNightSession.value
-      ? '코스피 야간선물'
-      : null;
-  return kospi ? `지수 · 나스닥 / ${kospi}` : '지수 · 나스닥';
 });
 
 // ── watch ──────────────────────────────────────────────────────

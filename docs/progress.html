@@ -74,6 +74,12 @@
   </nav>
 
   <!-- ENTRIES:START -->
+  <div class="entry" data-agent="frontend">
+    <h2>접힘 헤더 나스닥100 인라인 시세 — 노출 시간을 선물 거래시간 전체로 확대 <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-07-11 · 담당: frontend</p>
+    <div class="req"><span class="label">요청 →</span> 지수 헤더를 접었을 때 뜨는 나스닥100 시세가 미국 정규장에만 보였다. 나스닥100 선물은 거의 24시간 거래되니, 선물이 거래되는 시간 내내 보이게 해 달라.</div>
+    <div class="res"><span class="label">처리 →</span> 노출 기준을 미국 정규장(밤 10:30~새벽 5시)에서 선물 거래시간 전체(주말 휴장 토 06시~월 07시만 제외)로 바꿨다. 서버가 주는 거래중/장마감 판정을 그대로 따르게 해 화면과 데이터가 어긋나지 않는다. 자동 테스트 164건 전부 통과.</div>
+  </div>
   <div class="entry" data-agent="frontend backend">
     <h2>치이카와 아이콘 정리 — 파비콘 PNG 전환 + 바탕화면 "주식" 바로가기 <span class="badge ok">완료</span></h2>
     <p class="meta">2026-07-10 · 담당: frontend · backend</p>

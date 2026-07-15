@@ -131,7 +131,7 @@
             <td class="px-2 py-2.5 text-center whitespace-nowrap" @click.stop>
               <span
                 :class="[
-                  'inline-flex items-center justify-center px-2 h-[22px] rounded-xs border text-2xs font-medium leading-tight whitespace-nowrap',
+                  'inline-flex items-center justify-center px-2 h-5.5 rounded-xs border text-2xs font-medium leading-tight whitespace-nowrap',
                   sessionBadgeStyle(itemSessionCode(item))
                 ]"
               >

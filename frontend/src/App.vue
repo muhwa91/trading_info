@@ -123,7 +123,7 @@
            패딩·세로간격은 상수 p-5/space-y-5 로 고정 — 예전 p-3 md:p-5(12↔20)·space-y-4 md:space-y-5
            (16↔20)가 767/768 경계에서 콘텐츠(차트)를 8px 밀고 가용폭을 16px 급변시키던 점프 제거.
            데스크톱 앱(주 사용 폭이 md 이상)이므로 넓은 폭 값(20)을 모든 폭 상수로 채택 → 넓은 폭 감성 불변. -->
-      <main ref="mainScroll" class="flex-1 flex flex-col min-h-0 min-w-0 p-5 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable] space-y-5 bg-base-300">
+      <main ref="mainScroll" class="flex-1 flex flex-col min-h-0 min-w-0 p-5 overflow-y-auto overflow-x-hidden scrollbar-gutter-stable space-y-5 bg-base-300">
 
         <!-- WS 로딩 스켈레톤 -->
         <div v-if="loading" class="flex flex-col space-y-5 animate-pulse">
@@ -304,7 +304,7 @@
               <span
                 v-if="gridSessionLabel"
                 :class="[
-                  'inline-flex items-center justify-center px-2 h-[22px] rounded-xs text-2xs font-medium leading-tight shrink-0 border',
+                  'inline-flex items-center justify-center px-2 h-5.5 rounded-xs text-2xs font-medium leading-tight shrink-0 border',
                   gridSessionLabel === '정규장'
                     ? 'text-ses-open bg-ses-open-weak border-ses-open-line'
                     : (gridSessionLabel === '주간거래' || gridSessionLabel === '프리마켓' || gridSessionLabel === '애프터마켓' || gridSessionLabel === '야간거래' || gridSessionLabel === '거래중')

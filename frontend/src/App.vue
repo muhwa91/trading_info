@@ -187,14 +187,14 @@
               </svg>
               <span class="text-xs font-semibold text-base-content/60 tracking-wider uppercase">지수</span>
 
-              <!-- 접힘 상태 & 세션 활성 지수 인라인 시세 (나스닥100=미국정규장 / 코스피 야간선물=야간선물세션) -->
-              <!-- 차트 없음·틱 플래시 없음. 펼치면 카드가 같은 값을 보여주므로 접힘일 때만. -->
+              <!-- 지수 헤더 인라인 시세. 나스닥100/코스피 종합지수는 접힘일 때만(펼치면 카드 존재),
+                   코스피 야간선물은 차트 카드가 없으므로 야간 세션이면 접힘/펼침 무관 항상 노출(headerInlineQuotes). -->
               <span
-                v-if="indexCollapsed && collapsedInlineQuotes.length"
+                v-if="headerInlineQuotes.length"
                 class="ml-auto flex items-center gap-3 min-w-0 overflow-hidden"
               >
                 <span
-                  v-for="q in collapsedInlineQuotes"
+                  v-for="q in headerInlineQuotes"
                   :key="q.ticker"
                   class="flex items-center gap-2 font-mono leading-none whitespace-nowrap transition-colors duration-260 rounded-xs px-1"
                   :class="indexFlash[q.ticker] === 'up'
@@ -723,16 +723,14 @@ const liveHoldings = computed(() => {
 });
 
 // 시간대별 지수 노출 규칙 (서로 스왑)
-// - NQ=F: 항상
-// - 코스피 종합지수: 정규장(장 열렸을 때)에만
-// - 코스피 야간선물: 야간거래 시간대에만
-// - 정규장도 야간도 아니면(장외·휴장) 코스피 카드 없음 → 나스닥만
+// - NQ=F: 항상 (차트 카드)
+// - 코스피 종합지수: 정규장(장 열렸을 때)에만 (차트 카드)
+// - 코스피 야간선물: 차트 카드 없음 → 야간 세션에 한해 지수 헤더 인라인 시세로만 노출(headerInlineQuotes)
+// - 정규장도 아니면(장외·휴장) 코스피 카드 없음 → 나스닥만
 const visibleIndexTickers = computed(() => {
   const tickers = ['NQ=F'];
   if (isKospiRegularSession.value) {
     tickers.push('KOSPI200');
-  } else if (isKospiNightSession.value) {
-    tickers.push('KOSPI_NIGHT');
   }
   return tickers;
 });
@@ -791,15 +789,16 @@ function triggerIndexFlash(ticker, oldP, newP) {
   }, 260); // 설계서 §6: 가격 틱 플래시 260ms 통일
 }
 
-// 접힘 헤더 우측 인라인 시세 목록 — 세션 활성 지수만(나스닥100=선물 거래시간 / 코스피 야간선물=야간선물 세션).
-// KOSPI_NIGHT·NQ=F 스토어 데이터 재사용(새 호출 없음). 펼치면 카드가 같은 값을 보여주므로 접힘일 때만 노출.
-const collapsedInlineQuotes = computed(() => {
+// 지수 헤더 우측 인라인 시세 목록 — 스토어 데이터 재사용(새 호출 없음).
+// - 나스닥100·코스피 종합지수: 접힘일 때만(펼치면 차트 카드가 같은 값을 보여줌).
+// - 코스피 야간선물: 차트 카드가 없으므로 야간 세션이면 접힘/펼침 무관 항상 헤더에 노출. 낮(장마감)엔 미노출.
+const headerInlineQuotes = computed(() => {
   const out = [];
-  if (isNqFuturesTrading.value && indexStockData.value['NQ=F']) {
+  if (indexCollapsed.value && isNqFuturesTrading.value && indexStockData.value['NQ=F']) {
     out.push({ ticker: 'NQ=F', label: '나스닥100' });
   }
-  // 코스피: 정규장이면 종합지수, 아니면 야간선물(야간 세션일 때). visibleIndexTickers 와 동일 규칙.
-  if (isKospiRegularSession.value && indexStockData.value['KOSPI200']) {
+  // 코스피: 정규장이면 종합지수(접힘일 때만), 아니면 야간선물(야간 세션이면 항상). visibleIndexTickers 스왑 규칙과 정합.
+  if (indexCollapsed.value && isKospiRegularSession.value && indexStockData.value['KOSPI200']) {
     out.push({ ticker: 'KOSPI200', label: '코스피' });
   } else if (isKospiNightSession.value && indexStockData.value['KOSPI_NIGHT']) {
     out.push({ ticker: 'KOSPI_NIGHT', label: '코스피 야간선물' });
@@ -1205,7 +1204,7 @@ function indexDisplayMode(ticker) {
     // 정규장 중이면 차트, 그 외(휴장일·장외)면 전일마감 텍스트
     return isKospiRegularSession.value ? 'chart' : 'quote';
   }
-  // KOSPI_NIGHT: 야간선물은 항상 숫자값 표시
+  // 그 외(휴장일·장외 등): 숫자값(quote) 표시
   return 'quote';
 }
 

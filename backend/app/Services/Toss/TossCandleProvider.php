@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
  *
  * 책임:
  *   - 타임프레임별 토스 호출 전략 (1d → interval=1d, 분봉 → interval=1m 후 집계)
- *   - 페이지네이션 (nextBefore, 최대 5페이지)
+ *   - 페이지네이션 (nextBefore, 최대 20페이지 = 1m 원본 4000봉)
  *   - 봉 정규화 (ISO8601 → Unix timestamp 또는 Y-m-d)
  *   - 분봉 집계 (aggregateCandles)
  *   - 등락 계산 (TossChangeCalculator 위임)
@@ -25,11 +25,26 @@ class TossCandleProvider
 {
     private const CANDLES_ENDPOINT = '/api/v1/candles';
 
-    /** 집계 전 1m 원본 최대 취득 봉 수 — 페이지당 200봉, 최대 5페이지 = 1000봉 */
+    /** 토스 /candles 단건 상한 — count>200 은 빈 응답. 페이지당 200봉 고정. */
     private const MAX_COUNT_PER_REQUEST = 200;
 
-    /** 페이지네이션 최대 루프 횟수 (hard cap) */
-    private const MAX_PAGES = 5;
+    /**
+     * 페이지네이션 최대 루프 횟수 (hard cap) — 200봉 × 20페이지 = 1m 원본 최대 4000봉.
+     * 2026-07-15 10→20 상향(분봉 커버리지 확대, needed 4배 요청). 근거(실측·성능):
+     *   - 토스 US 1m 실소급 한계 ≈ 2070봉(약 1.5거래일, MU 11페이지에서 nextBefore=NULL).
+     *     → US 는 needed 를 4배로 키워도 nextBefore=NULL 로 ~11페이지(2070봉)에서 자연 종료.
+     *       MAX_PAGES=10(2000봉)은 US 를 약간 클리핑했으나, 20 으로 올려 US 자연 상한을 완전 도달.
+     *       (2배→4배 needed 는 US 에 실효 없음 — 이미 2배 시점에 상한 근접.)
+     *   - 국내 1m 은 8000봉+ 소급(사실상 제약 아님) → 국내만 4배가 실효.
+     *   - 그러나 candles 엔드포인트 rate-limit = 200ms/페이지(5TPS). 국내 4배 full(1h 11200봉 = 56페이지)은
+     *     56×200ms ≈ 11초 동기 블로킹 → WS 프리페처(refreshYahooCache, 전송 후 getChartData 동기 호출,
+     *     ~3초 사이클)를 심각히 stall 시킨다. 그래서 20페이지(4000봉, 최악 ~4초)로 캡.
+     * ponytail: 20페이지 = US 자연 상한(2070)을 다 담고 + 국내 1m/3m/5m 4배(≤12페이지)를 full 제공하는
+     *   최소 상한. 10m/30m/1h 는 4배 needed(4800/7200/11200)가 이 4000봉 캡에 걸려 부분만 받는다
+     *   (긴 봉은 봉 자체가 커 4배 필요성 낮음 — 성능 우선). 국내 full 4배가 필요하면 MAX_PAGES 를 올리되
+     *   블로킹 시간을 감수해야 함(업그레이드 경로).
+     */
+    private const MAX_PAGES = 20;
 
     private TossApiClient $client;
     private TossSymbolMapper $mapper;
@@ -122,14 +137,24 @@ class TossCandleProvider
     private function resolveStrategy(string $timeframe): array
     {
         switch ($timeframe) {
-            case '1d':  return ['1d', 60];
-            case '1m':  return ['1m', 400];
-            case '3m':  return ['1m', 400];
-            case '5m':  return ['1m', 600];
-            case '10m': return ['1m', 1200];
-            case '30m': return ['1m', 1800];
-            case '1h':  return ['1m', 2800];
-            default:    return ['1m', 400];
+            // 일봉 ~2년치(약 500 거래일). fetchCandles 가 페이지당 200(토스 단건 상한)씩
+            // before/nextBefore 로 페이지네이션 → 3페이지로 500봉 확보(MAX_PAGES=20 이내).
+            // ponytail: 토스 실측 단건 상한 = 200(count>200 은 빈 응답). 순서·인덱싱 불변(개수만 확대).
+            // 분봉 needed 2026-07-15 baseline 대비 4배 상향(커버리지 확대 요청).
+            //   baseline: 1m/3m 400 · 5m 600 · 10m 1200 · 30m 1800 · 1h 2800
+            //   4배:      1m/3m 1600 · 5m 2400 · 10m 4800 · 30m 7200 · 1h 11200
+            // 실제 취득량은 두 상한에 의해 잘린다(fetchCandles 가 nextBefore=NULL 이면 조기 종료):
+            //   - US: 토스 1m 실소급 한계 ≈ 2070봉 → 어떤 needed 든 ~2070봉에서 멈춤(4배 실효 없음).
+            //   - 국내: 8000봉+ 여유지만 MAX_PAGES=20(4000봉) 캡에 걸림 →
+            //       1m/3m/5m(needed ≤ 2400)은 full 4배 도달, 10m/30m/1h(4800~11200)는 4000봉까지만.
+            case '1d':  return ['1d', 500];
+            case '1m':  return ['1m', 1600];
+            case '3m':  return ['1m', 1600];
+            case '5m':  return ['1m', 2400];
+            case '10m': return ['1m', 4800];
+            case '30m': return ['1m', 7200];
+            case '1h':  return ['1m', 11200];
+            default:    return ['1m', 1600];
         }
     }
 

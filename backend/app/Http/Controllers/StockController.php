@@ -784,8 +784,15 @@ class StockController extends Controller
             $range = '7d';
             $isAggregated = true;
             $intervalSeconds = 3600;
+        } elseif ($timeframe === '1d') {
+            // 일봉: 초기 range 60d 는 나스닥100 선물(NQ=F)·미국 주식 일봉을 ~2개월로 잘라버린다.
+            // Yahoo v8 chart API 는 interval=1d 에서 range 2y 를 지원 → 약 500 거래일봉으로 확대.
+            // (분봉 1m~1h 는 위 분기에서 각자 range 를 유지하므로 여기서 건드리지 않는다.)
+            // max 를 쓰지 않는 이유: NQ=F 는 연속계약이라 아주 먼 과거는 롤오버 왜곡 가능.
+            $interval = '1d';
+            $range = '2y';
         }
-        
+
         try {
             $client = new Client();
             $url = "https://query1.finance.yahoo.com/v8/finance/chart/{$symbol}?interval={$interval}&range={$range}&includePrePost=true";

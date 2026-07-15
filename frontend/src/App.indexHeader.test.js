@@ -78,6 +78,47 @@ describe('isNqFuturesTrading — 선물 거래시간 게이트', () => {
   });
 });
 
+// ── headerInlineQuotes 선택 로직 복제 (App.vue 와 동일) ─────────────────
+// 지수 헤더 인라인 시세에 어떤 지수가 뜨는지 결정.
+// - 나스닥100·코스피 종합지수: 접힘일 때만(펼치면 차트 카드가 값을 보여줌).
+// - 코스피 야간선물: 차트 카드가 없으므로 야간 세션이면 접힘/펼침 무관 항상 노출, 낮엔 미노출.
+// data = 존재 티커 집합(스토어 데이터 유무).
+function headerInlineQuotes(collapsed, nqTrading, kospiRegular, kospiNight, data) {
+  const out = [];
+  if (collapsed && nqTrading && data['NQ=F']) out.push('NQ=F');
+  if (collapsed && kospiRegular && data['KOSPI200']) out.push('KOSPI200');
+  else if (kospiNight && data['KOSPI_NIGHT']) out.push('KOSPI_NIGHT');
+  return out;
+}
+const ALL = { 'NQ=F': {}, 'KOSPI200': {}, 'KOSPI_NIGHT': {} };
+
+describe('headerInlineQuotes — 지수 헤더 인라인 노출 규칙', () => {
+  it('야간 세션 + 펼침 → 야간선물이 헤더에 노출(차트 카드 없이)', () => {
+    expect(headerInlineQuotes(false, false, false, true, ALL)).toEqual(['KOSPI_NIGHT']);
+  });
+
+  it('야간 세션 + 접힘 + NQ 거래중 → 나스닥100 + 야간선물', () => {
+    expect(headerInlineQuotes(true, true, false, true, ALL)).toEqual(['NQ=F', 'KOSPI_NIGHT']);
+  });
+
+  it('정규장(낮) + 펼침 → 헤더 비움(야간선물 미노출, 코스피는 차트 카드로)', () => {
+    expect(headerInlineQuotes(false, false, true, false, ALL)).toEqual([]);
+  });
+
+  it('정규장(낮) + 접힘 → 나스닥100 + 코스피 종합지수(야간선물 없음)', () => {
+    expect(headerInlineQuotes(true, true, true, false, ALL)).toEqual(['NQ=F', 'KOSPI200']);
+  });
+
+  it('장마감/휴장(정규장·야간 모두 아님) → 헤더에 코스피류 없음', () => {
+    expect(headerInlineQuotes(false, false, false, false, ALL)).toEqual([]);
+    expect(headerInlineQuotes(true, false, false, false, ALL)).toEqual([]);
+  });
+
+  it('야간 세션이라도 데이터 없으면 미노출(가드)', () => {
+    expect(headerInlineQuotes(false, false, false, true, { 'NQ=F': {}, 'KOSPI200': {} })).toEqual([]);
+  });
+});
+
 // ── triggerIndexFlash 가드/방향 로직 복제 (App.vue 와 동일) ─────────────
 // PortfolioSummaryBar.triggerFlash 도 동일 가드를 공유한다.
 function flashDirection(oldP, newP) {

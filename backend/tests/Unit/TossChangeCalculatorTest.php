@@ -379,6 +379,82 @@ class TossChangeCalculatorTest extends TestCase
         $this->assertEqualsWithDelta(8.83, $result['change_percent'], 0.05);
     }
 
+    // ──────────────────────────────────────────────────────────────────
+    // 롤오버 가드 ε 완화(0.1%→0.3%) 회귀 — 틱 반올림 갭(2026-07-15 버그수정)
+    //   롤오버된 다음 거래일 기준가는 '종가와 정확히 일치'가 아니라 틱만큼 벌어진다(삼성 0.183%·SK 0.198%).
+    //   0.1% 로는 이 갭을 못 잡아 롤오버를 '미롤오버'로 오판 → 붕괴. 아래 두 케이스는 ε=0.1% 에선 실패,
+    //   ε=0.3% 에서 통과(진짜 회귀 가드). 반대로 갭이 ε 를 넘으면 여전히 미롤오버(과완화 아님)임도 확인.
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * @test
+     * 삼성(005930) 틱 반올림 롤오버: price-limits 273,500 vs 오늘 종가 273,000 → 갭 0.183%(<0.3%)
+     * → 롤오버 감지 → candles[1](어제 종가) 263,000 폴백 → +3.80%.
+     * ε=0.1% 였다면 0.183%>0.1% 라 '미롤오버' 오판 → 273,500 기준으로 −0.18% 붕괴(회귀 가드).
+     */
+    public function testGetPrevClose_KrTickRoundingRollover_Samsung_DetectsAndFallsBack(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));  // 장마감
+        $this->sessionMock->method('getKrSession')->willReturn('장마감');
+        $this->sessionMock->method('isKrTradingDay')->willReturn(true);
+
+        // price-limits (355,500+191,500)/2 = 273,500 · 오늘 종가(plateau) 273,000 → 갭 0.183%
+        $this->clientMock->method('get')->willReturnCallback(
+            $this->krClosedResponder(['273000', '263000'], ['355500', '191500'], '273000')
+        );
+
+        // 롤오버 감지 → price-limits 273,500 버리고 candles[1] 263,000 유지
+        $this->assertSame(263000.0, $this->calculator->getPrevClose('005930'));
+
+        $result = $this->calculator->calculate('005930', 273000.0);
+        $this->assertSame(263000.0, $result['prev_close']);
+        $this->assertEqualsWithDelta(3.80, $result['change_percent'], 0.05);  // −0.18% 붕괴 아님
+    }
+
+    /**
+     * @test
+     * SK(034730) 틱 반올림 롤오버: price-limits 2,022,000 vs 오늘 종가 2,018,000 → 갭 0.198%(<0.3%)
+     * → 롤오버 감지 → candles[1] 1,913,000 폴백 → +5.49%. ε=0.1% 였다면 −0.20% 붕괴.
+     */
+    public function testGetPrevClose_KrTickRoundingRollover_Sk_DetectsAndFallsBack(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
+        $this->sessionMock->method('getKrSession')->willReturn('장마감');
+        $this->sessionMock->method('isKrTradingDay')->willReturn(true);
+
+        // price-limits (2,624,600+1,419,400)/2 = 2,022,000 · 오늘 종가(plateau) 2,018,000 → 갭 0.198%
+        $this->clientMock->method('get')->willReturnCallback(
+            $this->krClosedResponder(['2018000', '1913000'], ['2624600', '1419400'], '2018000')
+        );
+
+        $this->assertSame(1913000.0, $this->calculator->getPrevClose('034730'));
+
+        $result = $this->calculator->calculate('034730', 2018000.0);
+        $this->assertSame(1913000.0, $result['prev_close']);
+        $this->assertEqualsWithDelta(5.49, $result['change_percent'], 0.05);
+    }
+
+    /**
+     * @test
+     * 과완화 아님(경계 가드): 갭이 ε(0.3%)를 넘으면 여전히 미롤오버 → price-limits 유지.
+     * price-limits 274,000 vs 오늘 종가 273,000 → 갭 0.366%(>0.3%) → 미롤오버 → 274,000 유지
+     * (candles[1] 263,000 로 새지 않음). 0.3% 가 '모든 근접 기준가를 삼키는' 과도 완화가 아님을 증명.
+     */
+    public function testGetPrevClose_KrGapAboveEpsilon_KeepsPriceLimits(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
+        $this->sessionMock->method('getKrSession')->willReturn('장마감');
+        $this->sessionMock->method('isKrTradingDay')->willReturn(true);
+
+        // price-limits (356,500+191,500)/2 = 274,000 · 오늘 종가(plateau) 273,000 → 갭 0.366%(>0.3%)
+        $this->clientMock->method('get')->willReturnCallback(
+            $this->krClosedResponder(['273000', '263000'], ['356500', '191500'], '273000')
+        );
+
+        // 미롤오버 → price-limits 274,000 유지(candles[1] 263,000 아님)
+        $this->assertSame(274000.0, $this->calculator->getPrevClose('005930'));
+    }
+
     /** @test */
     public function testGetPrevClose_OnlyOneCandle_ReturnsNull(): void
     {

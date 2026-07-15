@@ -367,6 +367,8 @@
               :current-price="chartModalItem.current_price ?? null"
               :change-amount="chartModalItem.change_amount ?? null"
               :change-percent="chartModalItem.change_percent ?? null"
+              :regular-change-percent="chartModalItem.regular_change_percent ?? null"
+              :us-session="chartModalItem.us_session || ''"
               :candles="chartCandles"
               :session="chartModalItem.session_badge ? sessionBadgeToLabel(chartModalItem.session_badge) : ''"
               :timeframe="chartSelectedTimeframe"
@@ -1434,6 +1436,10 @@ async function fetchChartCandles() {
         current_price: data.current_price ?? chartModalItem.value.current_price,
         change_amount: data.change_amount ?? chartModalItem.value.change_amount,
         change_percent: data.change_percent ?? chartModalItem.value.change_percent,
+        regular_change_percent: data.regular_change_percent !== undefined
+          ? (data.regular_change_percent ?? chartModalItem.value.regular_change_percent)
+          : chartModalItem.value.regular_change_percent,
+        us_session: data.us_session ?? chartModalItem.value.us_session,
         session: data.session ?? chartModalItem.value.session,
       };
     }

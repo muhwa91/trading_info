@@ -54,8 +54,8 @@ class TossOverseasPriceFetcherTest extends TestCase
     {
         // Phase 4: US 종목도 배치에 포함돼야 한다 (Phase 3: skipped)
         $this->calculatorMock
-            ->method('calculate')
-            ->willReturn(['change_amount' => -2.5, 'change_percent' => -1.2, 'prev_close' => 210.0]);
+            ->method('calculateUsSplit')
+            ->willReturn(['change_amount' => -2.5, 'change_percent' => -1.2, 'regular_change_amount' => null, 'regular_change_percent' => null]);
 
         $this->clientMock
             ->expects($this->once())
@@ -81,8 +81,8 @@ class TossOverseasPriceFetcherTest extends TestCase
     {
         // US 캐시 키는 `kis_realtime_price_us_{ticker}` 여야 한다
         $this->calculatorMock
-            ->method('calculate')
-            ->willReturn(['change_amount' => 1.0, 'change_percent' => 0.5, 'prev_close' => 100.0]);
+            ->method('calculateUsSplit')
+            ->willReturn(['change_amount' => 1.0, 'change_percent' => 0.5, 'regular_change_amount' => null, 'regular_change_percent' => null]);
 
         $this->clientMock
             ->method('get')
@@ -98,6 +98,9 @@ class TossOverseasPriceFetcherTest extends TestCase
         $usCache = Cache::get('kis_realtime_price_us_MU');
         $this->assertNotNull($usCache, 'US 캐시 키 kis_realtime_price_us_MU 가 존재해야 함');
         $this->assertSame(101.0, $usCache['price']);
+
+        // 연장세션 분리 필드가 US 캐시에 포함돼야 한다 (계약 chart-regular-ext-split)
+        $this->assertArrayHasKey('regular_change_percent', $usCache, 'US 캐시에 regular_change_percent 키가 있어야 함');
 
         // Phase 4: US 캐시에 regular_close 키가 포함돼야 한다
         // (Yahoo 네트워크 없는 테스트 환경에선 null 허용, 키 존재 여부만 검증)
@@ -145,6 +148,9 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->calculatorMock
             ->method('calculate')
             ->willReturn(['change_amount' => 0.0, 'change_percent' => 0.0, 'prev_close' => 100.0]);
+        $this->calculatorMock
+            ->method('calculateUsSplit')
+            ->willReturn(['change_amount' => 0.0, 'change_percent' => 0.0, 'regular_change_amount' => null, 'regular_change_percent' => null]);
 
         $this->clientMock
             ->expects($this->once())
@@ -229,8 +235,8 @@ class TossOverseasPriceFetcherTest extends TestCase
     public function testFetchOverseasSingle_TossSuccess_CachesAndReturns(): void
     {
         $this->calculatorMock
-            ->method('calculate')
-            ->willReturn(['change_amount' => -2.5, 'change_percent' => -1.2, 'prev_close' => 210.0]);
+            ->method('calculateUsSplit')
+            ->willReturn(['change_amount' => -2.5, 'change_percent' => -1.2, 'regular_change_amount' => null, 'regular_change_percent' => null]);
 
         // Toss API 응답 (regular_close Yahoo 조회는 내부적으로 시도하나 네트워크 없으므로 null 반환)
         $this->clientMock

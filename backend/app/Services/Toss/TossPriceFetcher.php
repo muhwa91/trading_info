@@ -188,45 +188,46 @@ class TossPriceFetcher
                 $appSymbol = $mapped['appSymbol'];
                 $market    = $mapped['market'];
 
-                // KR 정규장 마감 후 현재가 = 오늘 정규장 종가로 고정(시간외 lastPrice 무시).
-                //   토스 앱과 동일 표시. 정규장 중·휴장·개장 전이면 null → lastPrice 유지.
-                //   US 는 프리/애프터 시간외를 그대로 보여줘야 하므로 미적용.
-                if ($market === 'KR') {
+                if ($market === 'US') {
+                    // US regular_close(당일 정규장 종가) — 핫패스는 캐시만 읽는다(HTTP 없음, H-2).
+                    //   실제 Yahoo 페치는 warmRegularCloses() 가 핫패스 밖(WS step6)에서 out-of-band 로 수행.
+                    $regularClose = $this->readRegularCloseCache($appSymbol);
+
+                    // 통합/정규장 등락 분리 (연장세션 차트 헤더 2줄) — change_percent 는 '통합'.
+                    $split = $this->changeCalculator->calculateUsSplit($tossSymbol, $lastPrice, $regularClose);
+
+                    $result = [
+                        'price'                  => $lastPrice,
+                        'change_amount'          => $split['change_amount'],
+                        'change_percent'         => $split['change_percent'],
+                        'regular_change_amount'  => $split['regular_change_amount'],
+                        'regular_change_percent' => $split['regular_change_percent'],
+                        'regular_close'          => $regularClose,
+                        'provider'               => 'toss',  // 현재가 실제 출처 — 토스 배치 성공
+                    ];
+
+                    $cacheKey    = "kis_realtime_price_us_{$appSymbol}";
+                    $fallbackKey = "kis_last_successful_overseas_price_{$appSymbol}";
+                } else {
+                    // KR 정규장 마감 후 현재가 = 오늘 정규장 종가로 고정(시간외 lastPrice 무시).
+                    //   토스 앱과 동일 표시. 정규장 중·휴장·개장 전이면 null → lastPrice 유지.
                     $krClose = $this->changeCalculator->getKrRegularClose($tossSymbol);
                     if ($krClose !== null) {
                         $lastPrice = $krClose;
                     }
-                }
 
-                // 등락 계산 (TossChangeCalculator: 국내 기준 자정 TTL 캐싱)
-                //   현재가를 종가로 고정하면 등락(종가 − price-limits 기준가)도 자동 정합.
-                $change        = $this->changeCalculator->calculate($tossSymbol, $lastPrice);
-                $changeAmount  = $change['change_amount'];
-                $changePercent = $change['change_percent'];
+                    // 등락 계산 (TossChangeCalculator: 국내 기준 자정 TTL 캐싱)
+                    //   현재가를 종가로 고정하면 등락(종가 − price-limits 기준가)도 자동 정합.
+                    $change = $this->changeCalculator->calculate($tossSymbol, $lastPrice);
 
-                // US 종목은 regular_close(최근 완료 정규장 종가)를 포함.
-                // H-2 최적화: 현재가 핫패스에서 Yahoo HTTP 동기 호출을 제거한다.
-                //   regular_close 는 하루 단위로 천천히 변하는 값이므로, 핫패스에선
-                //   캐시(yahoo_regular_close_*)만 읽고(HTTP 없음), cold 면 폴백 캐시 → null.
-                //   실제 Yahoo 페치는 warmRegularCloses() 가 핫패스 밖(WS step6)에서 out-of-band 로 수행.
-                $regularClose = null;
-                if ($market === 'US') {
-                    $regularClose = $this->readRegularCloseCache($appSymbol);
-                }
+                    $result = [
+                        'price'          => $lastPrice,
+                        'change_amount'  => $change['change_amount'],
+                        'change_percent' => $change['change_percent'],
+                        'regular_close'  => null,
+                        'provider'       => 'toss',  // 현재가 실제 출처 — 토스 배치 성공
+                    ];
 
-                $result = [
-                    'price'          => $lastPrice,
-                    'change_amount'  => $changeAmount,
-                    'change_percent' => $changePercent,
-                    'regular_close'  => $regularClose,
-                    'provider'       => 'toss',  // 현재가 실제 출처 — 토스 배치 성공
-                ];
-
-                // 마켓별 하위호환 캐시 키 — StockController·프론트 무변경
-                if ($market === 'US') {
-                    $cacheKey    = "kis_realtime_price_us_{$appSymbol}";
-                    $fallbackKey = "kis_last_successful_overseas_price_{$appSymbol}";
-                } else {
                     $cacheKey    = "kis_realtime_price_{$appSymbol}";
                     $fallbackKey = "kis_last_successful_price_{$appSymbol}";
                 }
@@ -297,18 +298,20 @@ class TossPriceFetcher
                 $lastPrice = isset($item['lastPrice']) ? (float) $item['lastPrice'] : null;
 
                 if ($lastPrice !== null && $lastPrice > 0) {
-                    $change        = $this->changeCalculator->calculate($tossSymbol, $lastPrice);
-                    $changeAmount  = $change['change_amount'];
-                    $changePercent = $change['change_percent'];
-
+                    // REST 단건 경로 — 블로킹 Yahoo 조회 허용(핫패스 아님). regular_close 정본 취득.
                     $regularClose = $this->fetchYahooRegularClose($appSymbol);
 
+                    // 통합/정규장 등락 분리 (연장세션 2줄) — fetchDomestic 과 동형.
+                    $split = $this->changeCalculator->calculateUsSplit($tossSymbol, $lastPrice, $regularClose);
+
                     $result = [
-                        'price'          => $lastPrice,
-                        'change_amount'  => $changeAmount,
-                        'change_percent' => $changePercent,
-                        'regular_close'  => $regularClose,
-                        'provider'       => 'toss',  // 현재가 실제 출처 — 토스 단건 성공
+                        'price'                  => $lastPrice,
+                        'change_amount'          => $split['change_amount'],
+                        'change_percent'         => $split['change_percent'],
+                        'regular_change_amount'  => $split['regular_change_amount'],
+                        'regular_change_percent' => $split['regular_change_percent'],
+                        'regular_close'          => $regularClose,
+                        'provider'               => 'toss',  // 현재가 실제 출처 — 토스 단건 성공
                     ];
 
                     Cache::put($cacheKey, $result, self::PRICE_CACHE_TTL);

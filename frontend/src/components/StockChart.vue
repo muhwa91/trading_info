@@ -26,6 +26,14 @@
               ]"
             >{{ formattedChangePercent }}</span>
           </div>
+          <!-- US 연장세션: '정규장' 등락률 보조 줄(작고 보조적으로) — HoldingsPanel 2줄 표기와 동형 -->
+          <span
+            v-if="showUSExtChange"
+            :class="[
+              'text-2xs font-medium font-mono leading-tight opacity-75',
+              regularChangePercent >= 0 ? 'text-up' : 'text-down'
+            ]"
+          >정규장 {{ formattedRegularChangePercent }}</span>
         </div>
 
         <!-- 우: 현재가 + 등락액 블록 — 4컬럼 grid [가격숫자 | 통화기호 | 화살표 | 등락숫자]. -->
@@ -276,6 +284,16 @@ const props = defineProps({
     type: Number,
     default: null
   },
+  // US 연장세션 정규장 등락률(당일 정규장 종가 vs 직전거래일 종가) — 보조 줄용. KR·지수·정규장은 null.
+  regularChangePercent: {
+    type: Number,
+    default: null
+  },
+  // US 세션 문자열(PRE/REGULAR/AFT/EXT_NIGHT/CLOSED). 연장세션일 때만 정규장 보조 줄을 켠다.
+  usSession: {
+    type: String,
+    default: ''
+  },
   candles: {
     type: Array,
     required: true
@@ -467,6 +485,20 @@ const formattedChangePercent = computed(() => {
   if (props.changePercent === null) return '0.00%';
   const sign = props.changePercent >= 0 ? '+' : '';
   return `${sign}${props.changePercent.toFixed(2)}%`;
+});
+
+// US 연장 세션(프리/애프터/야간)에서만 '정규장' 등락률 보조 줄을 노출한다(HoldingsPanel.showUSExtBreakdown 과 동형).
+// 정규장·장마감·KR·지수, 또는 regular_change_percent 부재 시엔 1줄 유지(회귀 방지).
+const showUSExtChange = computed(() => {
+  if (isKorean.value || isIndex.value) return false;
+  if (props.regularChangePercent === null) return false;
+  return ['PRE', 'AFT', 'EXT_NIGHT'].includes(props.usSession);
+});
+
+const formattedRegularChangePercent = computed(() => {
+  if (props.regularChangePercent === null) return null;
+  const sign = props.regularChangePercent >= 0 ? '+' : '';
+  return `${sign}${props.regularChangePercent.toFixed(2)}%`;
 });
 
 // 평단 태그 표시 좌표 — 현재가 태그와 겹치면(가격 근접) 밀어내 글씨 겹침 방지.

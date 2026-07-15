@@ -358,7 +358,13 @@ class StockController extends Controller
                 $content['current_price'] = $price;
                 $content['change_amount'] = $kisPrice['change_amount'];
                 $content['change_percent'] = $kisPrice['change_percent'];
-                
+                // US 연장세션 정규장/통합 분리 (차트 헤더 2줄). 프리페처(calculateUsSplit)가 채운 값.
+                //   change_* = 통합(현재가 vs 직전거래일 정규장 종가) · regular_* = 정규장(당일 종가 vs 직전거래일)
+                //   정규장·장마감·cold 면 regular_* 는 null → 프론트 1줄. us_session 은 아래에서 신선값으로 세팅.
+                $content['regular_change_amount']  = $kisPrice['regular_change_amount'] ?? null;
+                $content['regular_change_percent'] = $kisPrice['regular_change_percent'] ?? null;
+                $content['regular_close']          = $kisPrice['regular_close'] ?? null;
+
                 if (!$isDaily) {
                     $lastYahooTime = (int)end($content['candles'])['time'];
                     $accumulated1m = $this->accumulateOverseasRealTimePrice($ticker, $price, $lastYahooTime, $isFreshKisPrice);
@@ -423,6 +429,8 @@ class StockController extends Controller
             // 세션 라벨은 getUsMarketSessionInfo 가 주말·공휴일·주간거래(20:00~04:00 ET)를 모두 판정한다.
             // 주간거래는 다음 거래일로 이어지는 세션이라 'NY 오늘=거래일'로 막으면 안 된다(과거 휴장 오판 버그).
             $content['session'] = $session;
+            // 프론트 2줄 게이트용 US 세션 코드(PRE/REGULAR/AFT/EXT_NIGHT/CLOSED). 신선한 요청 시각 기준.
+            $content['us_session'] = $this->usSessionCode($session);
             // 차트 베이스(Toss/Yahoo)를 source 에 반영하되, 현재가의 실제 출처도 정직하게 표기한다.
             // $content['source'] 는 캐시된 차트 데이터가 이미 가지고 있는 베이스 라벨
             // ('Toss (1d)', 'Yahoo Finance (1d)' 등). $kisPrice['provider'] 와 $isFreshKisPrice 로
@@ -1370,6 +1378,22 @@ class StockController extends Controller
     private function getUsMarketSessionInfo($timestamp)
     {
         return $this->sessionService->getUsSession((int)$timestamp);
+    }
+
+    /**
+     * getUsSession()의 한글 세션명을 프론트(StockChart) 2줄 게이트용 영문 코드로 매핑한다.
+     * 프론트는 PRE/AFT/EXT_NIGHT 일 때만 '정규장' 보조 줄을 켠다.
+     */
+    private function usSessionCode(string $session): string
+    {
+        $map = [
+            '프리마켓'   => 'PRE',
+            '정규장'     => 'REGULAR',
+            '애프터마켓' => 'AFT',
+            '주간거래'   => 'EXT_NIGHT',
+        ];
+
+        return $map[$session] ?? 'CLOSED';  // 장마감
     }
 
     private function isUsMarketOpen($timestamp)

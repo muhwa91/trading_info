@@ -43,6 +43,12 @@ class TossPriceFetcherTest extends TestCase
             $this->calculatorMock
         );
 
+        // US 경로는 calculateUsSplit 로 등락을 계산한다(정규장/장마감엔 calculate() 위임).
+        // 기본 스텁(0 등락)을 깔아 US 배치 테스트가 통과하도록 한다 — 개별 테스트는 필요 시 재정의.
+        $this->calculatorMock
+            ->method('calculateUsSplit')
+            ->willReturn(['change_amount' => 0.0, 'change_percent' => 0.0, 'regular_change_amount' => null, 'regular_change_percent' => null]);
+
         // 매 테스트 전 캐시 초기화
         Cache::flush();
     }

@@ -74,6 +74,12 @@
   </nav>
 
   <!-- ENTRIES:START -->
+  <div class="entry" data-agent="frontend backend debug">
+    <h2>미국 종목 차트에 정규장/시간외 등락률 따로 표시 + 원화 환율 통일 <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-07-16 · 담당: frontend · backend · debug</p>
+    <div class="req"><span class="label">요청 →</span> 미국 애프터장 시간엔 차트 등락률에 시간외 변동이 섞여 헷갈린다. 보유종목 요약처럼 차트에도 "정규장 등락률"을 따로 나눠서 보여 달라.</div>
+    <div class="done"><span class="label">처리 →</span> 미국 종목 차트 카드 헤더를 연장세션(프리·애프터·야간)에 "통합(시간외 포함) / 정규장" 2줄로 분리 표시(보유종목과 같은 방식). 점검 과정에서 ①프리마켓·야간엔 당일 정규장이 없어 뜨던 가짜 등락 노이즈 차단 ②차트 원화와 보유종목표 원화가 서로 다른 환율을 써서 어긋나던 문제를 같은(토스) 환율로 통일 — 두 곳 원화가 이제 정확히 일치. 4단계 점검(테스트·리뷰·버그·보안) 통과.</div>
+  </div>
   <div class="entry" data-agent="backend debug">
     <h2>저녁에 국내 등락률이 갑자기 붕괴할 수 있던 잠재 문제 차단 — 롤오버 판정 여유값 완화 <span class="badge ok">완료</span></h2>
     <p class="meta">2026-07-15 · 담당: backend · debug</p>

@@ -321,3 +321,58 @@ describe('동일값 중복 틱 방어 — candles watch 분기', () => {
     expect(tracker.getUpdateCalls()).toHaveLength(0);
   });
 });
+
+// ── US 연장세션 정규장 등락률 2줄 표시 게이트 ─────────────────────────────
+// StockChart.vue 의 showUSExtChange / formattedRegularChangePercent 로직을 독립 복제.
+// (isKorean·isIndex·regularChangePercent·usSession 분기만 순수 검증)
+
+function showUSExtChange({ isKorean, isIndex, regularChangePercent, usSession }) {
+  if (isKorean || isIndex) return false;
+  if (regularChangePercent === null) return false;
+  return ['PRE', 'AFT', 'EXT_NIGHT'].includes(usSession);
+}
+
+function formattedRegularChangePercent(regularChangePercent) {
+  if (regularChangePercent === null) return null;
+  const sign = regularChangePercent >= 0 ? '+' : '';
+  return `${sign}${regularChangePercent.toFixed(2)}%`;
+}
+
+describe('showUSExtChange — 정규장 보조 줄 게이트', () => {
+  const usExt = { isKorean: false, isIndex: false, regularChangePercent: -2.1, usSession: 'AFT' };
+
+  it('US 연장세션(AFT/PRE/EXT_NIGHT) + 정규장값 있으면 2줄을 켠다', () => {
+    for (const s of ['PRE', 'AFT', 'EXT_NIGHT']) {
+      expect(showUSExtChange({ ...usExt, usSession: s })).toBe(true);
+    }
+  });
+
+  it('정규장(REGULAR)·장마감(CLOSED)이면 1줄 유지', () => {
+    expect(showUSExtChange({ ...usExt, usSession: 'REGULAR' })).toBe(false);
+    expect(showUSExtChange({ ...usExt, usSession: 'CLOSED' })).toBe(false);
+  });
+
+  it('KR 종목·지수는 세션 무관 1줄 유지', () => {
+    expect(showUSExtChange({ ...usExt, isKorean: true })).toBe(false);
+    expect(showUSExtChange({ ...usExt, isIndex: true })).toBe(false);
+  });
+
+  it('regular_change_percent 부재(null)면 1줄 유지 (회귀 방지)', () => {
+    expect(showUSExtChange({ ...usExt, regularChangePercent: null })).toBe(false);
+  });
+});
+
+describe('formattedRegularChangePercent — 정규장 등락률 포맷', () => {
+  it('양수엔 + 부호, 소수 2자리', () => {
+    expect(formattedRegularChangePercent(1.5)).toBe('+1.50%');
+    expect(formattedRegularChangePercent(0)).toBe('+0.00%');
+  });
+
+  it('음수는 부호 없이 - 그대로', () => {
+    expect(formattedRegularChangePercent(-8.42)).toBe('-8.42%');
+  });
+
+  it('null 이면 null 반환', () => {
+    expect(formattedRegularChangePercent(null)).toBeNull();
+  });
+});

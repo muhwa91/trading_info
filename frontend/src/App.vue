@@ -428,9 +428,11 @@
                   :current-price="gridStockData[idx].current_price"
                   :change-amount="gridStockData[idx].change_amount"
                   :change-percent="gridStockData[idx].change_percent"
+                  :regular-change-percent="gridStockData[idx].regular_change_percent ?? null"
+                  :us-session="gridStockData[idx].us_session || ''"
                   :candles="gridStockData[idx].candles"
                   :session="gridStockData[idx].session || ''"
-                  :usd-krw-rate="usdKrwRate"
+                  :usd-krw-rate="chartUsdKrwRate"
                   :average-price="getAveragePriceForTicker(ticker)"
                   @timeframe-change="handleTimeframeChange(idx, $event)"
                   @header-grab="gridDragHandleIdx = idx"
@@ -530,10 +532,12 @@
               :current-price="gridChartModal.currentPrice"
               :change-amount="gridChartModal.changeAmount"
               :change-percent="gridChartModal.changePercent"
+              :regular-change-percent="gridChartModal.regularChangePercent"
+              :us-session="gridChartModal.usSession"
               :candles="gridChartModal.candles"
               :session="gridChartModal.session"
               :timeframe="gridChartModal.timeframe"
-              :usd-krw-rate="usdKrwRate"
+              :usd-krw-rate="chartUsdKrwRate"
               :average-price="getAveragePriceForTicker(gridChartModal.ticker)"
               @timeframe-change="onGridChartTimeframeChange"
             />
@@ -609,6 +613,11 @@ watch(animateEnabled, (v) => setGridAnimate(v));
 let _animateReenableTimer = null;
 // ── 포트폴리오 대시보드 ────────────────────────────────────────
 const dashboardData = ref(null);       // { summary, holdings, watchlist, exchange_rate }
+// 차트 원화 환산 환율: 헤더·보유종목표와 동일한 토스(대시보드) 환율로 통일.
+// 대시보드 미로드 초기에만 Yahoo usdKrwRate 로 폴백(빈 화면 방지).
+const chartUsdKrwRate = computed(() =>
+  dashboardData.value?.exchange_rate?.USD_KRW ?? usdKrwRate.value
+);
 const dashboardLoading = ref(false);
 const dashboardPollTimer = ref(null);
 
@@ -626,6 +635,8 @@ const gridChartModal = reactive({
   currentPrice: null,
   changeAmount: null,
   changePercent: null,
+  regularChangePercent: null,
+  usSession: '',
   session: '',
   loading: false,
   error: false,
@@ -1332,6 +1343,8 @@ function openGridChartModal(ticker, idx) {
   gridChartModal.currentPrice = stockData ? stockData.current_price : null;
   gridChartModal.changeAmount = stockData ? stockData.change_amount : null;
   gridChartModal.changePercent = stockData ? stockData.change_percent : null;
+  gridChartModal.regularChangePercent = stockData ? (stockData.regular_change_percent ?? null) : null;
+  gridChartModal.usSession = (stockData && stockData.us_session) ? stockData.us_session : '';
   gridChartModal.session = (stockData && stockData.session) ? stockData.session : '';
   gridChartModal.loading = false;
   gridChartModal.error = false;
@@ -1365,6 +1378,8 @@ async function fetchGridChartCandles() {
     if (data.current_price !== undefined) gridChartModal.currentPrice = data.current_price ?? gridChartModal.currentPrice;
     if (data.change_amount !== undefined) gridChartModal.changeAmount = data.change_amount ?? gridChartModal.changeAmount;
     if (data.change_percent !== undefined) gridChartModal.changePercent = data.change_percent ?? gridChartModal.changePercent;
+    if (data.regular_change_percent !== undefined) gridChartModal.regularChangePercent = data.regular_change_percent ?? gridChartModal.regularChangePercent;
+    if (data.us_session !== undefined) gridChartModal.usSession = data.us_session ?? gridChartModal.usSession;
     if (data.session !== undefined) gridChartModal.session = data.session ?? gridChartModal.session;
     startGridChartPoll();
   } catch (e) {

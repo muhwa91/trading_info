@@ -36,6 +36,9 @@ class TossChangeCalculator
     /** 국내 정규장 종가(현재가 고정용) 캐시 키 접두 */
     private const KR_CLOSE_PREFIX = 'toss_kr_regclose_';
 
+    /** US 직전거래일 정규장 종가(day-over-day 기준, 롤포워드 이전) 캐시 키 접두 — 연장세션 통합/정규장 분리용 */
+    private const PREV_REGULAR_PREFIX = 'toss_prev_regular_close_';
+
     /** KR 정규장 마감 시각(KST, HHMM). 이 시각 초과 첫 분봉부터 마감 동시호가 종가가 찍힌다. */
     private const KR_REGULAR_CLOSE_HHMM = 1530;
 
@@ -187,9 +190,191 @@ class TossChangeCalculator
         return $close;
     }
 
+    /**
+     * US 종목 '통합'/'정규장' 등락률을 분리 계산한다 (연장세션 차트 헤더 2줄용).
+     *
+     * 계약(02-계약.md, chart-regular-ext-split):
+     *   - 통합(change_*)    = (현재가[시간외 포함] − 직전거래일 정규장 종가) / 직전거래일 정규장 종가 × 100
+     *   - 정규장(regular_*) = (당일 정규장 종가        − 직전거래일 정규장 종가) / 직전거래일 정규장 종가 × 100
+     *
+     * 연장세션(프리·애프터·주간거래)에서만 통합/정규장을 분리한다:
+     *   현재 애프터/주간거래는 calculate()가 prevClose를 '오늘 정규장 종가'로 롤포워드해 change_percent 가
+     *   '시간외 변동분'이 되지만, 이 메서드는 롤포워드 이전 기준(직전거래일 정규장 종가=getUsPrevRegularClose)으로
+     *   '통합'을 계산한다. 정규장 종가(regularClose)는 호출부가 캐시에서 읽어 넘긴다(HTTP 없음).
+     *
+     * 정규장·장마감(또는 직전거래일 종가 cold): 기존 calculate() 값을 그대로 쓰고 regular_* 는 null →
+     *   프론트는 1줄 유지(회귀 없음). 정규장 중엔 통합=정규장이라 어차피 같은 값이다.
+     *
+     * 연장세션이라도 '당일 정규장 봉'이 없으면(프리마켓·주간거래 자정후) regular_* = null(1줄):
+     *   당일 정규장 종가가 아직 없어 regularClose(Yahoo)와 prevRegular(candles[0])가 같은 날 종가라
+     *   크로스소스 잔차·ET 자정 불연속만 남기 때문. 당일 정규장 봉 유무는 getUsPrevRegularClose 가
+     *   $hasTodayRegularBar(참조)로 알려준다(캐시 히트에도 유효 — 값과 함께 캐싱).
+     *
+     * @param  string      $tossSymbol  US 앱심볼(=토스심볼, 대문자)
+     * @param  float       $lastPrice   현재가(시간외 포함 라이브가)
+     * @param  float|null  $regularClose 당일 정규장 종가(yahoo_regular_close 캐시). cold 면 null.
+     * @return array{change_amount:float,change_percent:float,regular_change_amount:float|null,regular_change_percent:float|null}
+     */
+    public function calculateUsSplit(string $tossSymbol, float $lastPrice, ?float $regularClose): array
+    {
+        $session    = $this->session->getUsSession(Carbon::now()->getTimestamp());
+        $isExtended = in_array($session, ['프리마켓', '애프터마켓', '주간거래'], true);
+
+        if ($isExtended) {
+            $hasTodayRegularBar = false;
+            $prevRegular        = $this->getUsPrevRegularClose($tossSymbol, $hasTodayRegularBar);
+            if ($prevRegular !== null && $prevRegular > 0.0) {
+                // 통합 = 시간외 현재가 vs 직전거래일 정규장 종가
+                $changeAmount  = $lastPrice - $prevRegular;
+                $changePercent = $changeAmount / $prevRegular * 100.0;
+
+                // 정규장 = 당일 정규장 종가 vs 직전거래일 정규장 종가.
+                //   당일 정규장 봉이 있을 때(애프터·주간거래 자정전)만 계산한다. 당일 정규장 봉이 없으면
+                //   (프리마켓·주간거래 자정후) regularClose(Yahoo)와 prevRegular(candles[0])가 '같은 날 종가'라
+                //   크로스소스 잔차(정규장 −0.1%대 노이즈)만 남고, ET 자정에 기준이 candles[1]→candles[0]로
+                //   전진하며 불연속 점프도 생긴다 → regular_* = null 로 두어 프론트가 1줄로 degrade.
+                //   (regularClose cold 여도 null → 1줄.)
+                $regularChangeAmount  = null;
+                $regularChangePercent = null;
+                if ($hasTodayRegularBar && $regularClose !== null && $regularClose > 0.0) {
+                    $regularChangeAmount  = $regularClose - $prevRegular;
+                    $regularChangePercent = ($regularClose - $prevRegular) / $prevRegular * 100.0;
+                }
+
+                return [
+                    'change_amount'          => round($changeAmount, 4),
+                    'change_percent'         => round($changePercent, 2),
+                    'regular_change_amount'  => $regularChangeAmount !== null ? round($regularChangeAmount, 4) : null,
+                    'regular_change_percent' => $regularChangePercent !== null ? round($regularChangePercent, 2) : null,
+                ];
+            }
+            // 직전거래일 종가 cold → 아래 기존 calculate() 로 graceful 폴백(1줄).
+        }
+
+        // 정규장·장마감(또는 연장세션 cold): 기존 등락 그대로 — 현행 유지(회귀 없음).
+        //   단, change_percent 는 계약(02-계약, 소수 2자리)에 맞춰 여기서만 재반올림한다.
+        //   calculate() 자체는 round(4) 유지(KR 등 다른 소비처가 그 정밀도에 의존) — US split 폴백 반환 지점에서만 정규화.
+        //   change_amount 는 정상 연장세션 경로도 round(4)라 그대로 두면 이미 일치.
+        $base = $this->calculate($tossSymbol, $lastPrice);
+
+        return [
+            'change_amount'          => $base['change_amount'],
+            'change_percent'         => round($base['change_percent'], 2),
+            'regular_change_amount'  => null,
+            'regular_change_percent' => null,
+        ];
+    }
+
+    /**
+     * US '직전거래일 정규장 종가'(day-over-day 기준)를 반환한다. 캐시 우선, miss 시 /candles 호출.
+     *
+     * calculate()의 롤포워드 이전 $prevClose 와 동일한 선택 규칙을 쓴다:
+     *   오늘(NY) 정규장 봉 존재 → candles[1](어제 종가) · 라이브(오늘봉 없음) → candles[0] · 장마감 → candles[1].
+     * calculate()의 prev_close 캐시(롤포워드된 값·16:05 ET TTL)와 분리된 별도 캐시/TTL 을 쓴다.
+     * TTL = 다음 ET 자정 — 자정에 '직전거래일' 기준이 전진(candles[1]↔candles[0])하기 때문.
+     *
+     * KR·지수는 null.
+     *
+     * @param  bool|null  $isTodayBar  (참조 out) 당일 정규장 봉 존재 여부. 캐시된 플래그라 히트에도 유효.
+     *                                 프리마켓·주간거래 자정후엔 false(당일 정규장 미개장/미완결).
+     */
+    public function getUsPrevRegularClose(string $tossSymbol, ?bool &$isTodayBar = null): ?float
+    {
+        $isTodayBar = false;
+
+        if ($this->mapper->market($tossSymbol) !== 'US') {
+            return null;
+        }
+
+        $cacheKey = self::PREV_REGULAR_PREFIX . $tossSymbol;
+        $cached   = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            $isTodayBar = (bool) ($cached['today_bar'] ?? false);
+            $close      = (float) ($cached['close'] ?? 0.0);
+
+            return $close > 0.0 ? $close : null;  // sentinel(0) → null
+        }
+
+        return $this->fetchAndCacheUsPrevRegularClose($tossSymbol, $cacheKey, $isTodayBar);
+    }
+
     // ──────────────────────────────────────────────────────────────────
     // 내부 전용
     // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * US 직전거래일 정규장 종가를 /candles(1d, count=2)로 조회해 캐시 후 반환.
+     *
+     * 선택 규칙은 fetchAndCachePrevClose() 의 '롤포워드 이전 $prevClose' 와 동일:
+     *   오늘봉 존재 → candles[1] · 라이브(오늘봉 없음) → candles[0] · 장마감 → candles[1].
+     * 실패·봉부족 시 null. 이때 짧은 TTL 로 sentinel(close=0) 캐싱 → 연장세션 매 WS 사이클(~3초)마다
+     *   /candles 를 재호출하는 핫패스 재유입을 막고, 다음 미스에 자가치유(getKrRegularClose 와 동일 패턴).
+     *
+     * 캐시 포맷 = ['close'=>float, 'today_bar'=>bool]: 당일 정규장 봉 유무(today_bar)를 값과 함께 담아
+     *   캐시 히트에도 calculateUsSplit 이 정규장 줄 표시 여부를 알 수 있게 한다.
+     */
+    private function fetchAndCacheUsPrevRegularClose(string $tossSymbol, string $cacheKey, ?bool &$isTodayBar = null): ?float
+    {
+        $isTodayBar = false;
+        try {
+            $response = $this->client->get(self::CANDLES_ENDPOINT, [
+                'symbol'   => $tossSymbol,
+                'interval' => '1d',
+                'count'    => 2,
+            ]);
+
+            $candles = $this->extractCandles($response);
+            if ($candles === null || count($candles) < 2) {
+                // 봉부족 → sentinel 캐싱(짧은 TTL). 핫패스 /candles 재유입 방지.
+                Cache::put($cacheKey, ['close' => 0.0, 'today_bar' => false], self::KR_CLOSE_FAIL_TTL);
+                return null;
+            }
+
+            // 최신 봉 먼저 (timestamp 내림차순)
+            usort($candles, function (array $a, array $b): int {
+                return strcmp((string) ($b['timestamp'] ?? ''), (string) ($a['timestamp'] ?? ''));
+            });
+
+            $latestDate = Carbon::parse((string) ($candles[0]['timestamp'] ?? ''))
+                ->setTimezone('America/New_York')->toDateString();
+            $isTodayBar = $latestDate === Carbon::now('America/New_York')->toDateString();
+
+            if ($isTodayBar) {
+                $prevRegular = $candles[1]['closePrice'] ?? null;                          // 오늘봉 존재 → 어제 종가
+            } elseif ($this->session->getUsSession(Carbon::now()->getTimestamp()) !== '장마감') {
+                $prevRegular = $candles[0]['closePrice'] ?? null;                          // 라이브(프리·애프터·주간) → 직전거래일 종가
+            } else {
+                $prevRegular = $candles[1]['closePrice'] ?? null;                          // 장마감 → 전전일(직전거래일 하루 등락 유지)
+            }
+
+            $prevRegular = $prevRegular !== null ? (float) $prevRegular : null;
+            if ($prevRegular === null || $prevRegular <= 0.0) {
+                Cache::put($cacheKey, ['close' => 0.0, 'today_bar' => false], self::KR_CLOSE_FAIL_TTL);
+                $isTodayBar = false;
+                return null;
+            }
+
+            Cache::put($cacheKey, ['close' => $prevRegular, 'today_bar' => $isTodayBar], $this->secondsUntilNextEtMidnight());
+
+            return $prevRegular;
+        } catch (\Throwable $e) {
+            Log::error("[TossChangeCalculator] {$tossSymbol} US 직전거래일 정규장 종가 조회 실패: " . $e->getMessage());
+            Cache::put($cacheKey, ['close' => 0.0, 'today_bar' => false], self::KR_CLOSE_FAIL_TTL);
+            $isTodayBar = false;
+            return null;
+        }
+    }
+
+    /**
+     * 다음 ET(America/New_York) 자정까지 남은 초. 최솟값 300초.
+     */
+    private function secondsUntilNextEtMidnight(): int
+    {
+        $nyTz   = new \DateTimeZone('America/New_York');
+        $target = new \DateTime('tomorrow', $nyTz);  // 다음 ET 00:00
+
+        return max($target->getTimestamp() - time(), 300);
+    }
 
     /**
      * 오늘(KST) 국내 정규장 종가를 1m 분봉의 '마감 직후 plateau'에서 추출. 못 구하면 null.

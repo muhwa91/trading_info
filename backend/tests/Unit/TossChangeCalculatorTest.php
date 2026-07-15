@@ -1431,4 +1431,295 @@ class TossChangeCalculatorTest extends TestCase
         // KR 정규장 → price-limits (341,500+184,500)/2 = 263,000 (yahoo 999999 무영향)
         $this->assertSame(263000.0, $this->calculator->getPrevClose('005930'));
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // calculateUsSplit() — 연장세션 통합/정규장 등락 분리 (chart-regular-ext-split)
+    //   통합    = (현재가[시간외] − 직전거래일 정규장 종가) / 직전거래일 종가 × 100
+    //   정규장  = (당일 정규장 종가 − 직전거래일 정규장 종가) / 직전거래일 종가 × 100
+    //   직전거래일 종가 = candles[1](오늘봉 존재) / candles[0](라이브 오늘봉 없음) — 롤포워드 이전 기준.
+    // ──────────────────────────────────────────────────────────────────
+
+    /** US 1d 2봉 응답 헬퍼(최신 먼저). */
+    private function usDaily(string $latestDate, string $latestClose, string $prevDate, string $prevClose): array
+    {
+        return ['result' => ['candles' => [
+            ['timestamp' => "{$latestDate}T00:00:00.000-04:00", 'closePrice' => $latestClose, 'currency' => 'USD'],
+            ['timestamp' => "{$prevDate}T00:00:00.000-04:00", 'closePrice' => $prevClose, 'currency' => 'USD'],
+        ]]];
+    }
+
+    /**
+     * @test
+     * 애프터마켓: 오늘(7/14) 정규장 봉 존재 → 직전거래일 종가 = candles[1](7/13=937).
+     * 현재가 995(시간외), 당일 정규장 종가 983.12.
+     *   통합    = (995 − 937)/937 = +6.19%
+     *   정규장  = (983.12 − 937)/937 = +4.92%
+     * (기존 calculate() 의 '시간외분' 롤포워드가 아니라 '통합'으로 바뀌는 것이 요구사항.)
+     */
+    public function testCalculateUsSplit_AfterMarket_SplitsUnifiedAndRegular(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));  // 애프터
+        $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
+
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-14', '983.12', '2026-07-13', '937.00'));
+
+        $split = $this->calculator->calculateUsSplit('MU', 995.0, 983.12);
+
+        $this->assertEqualsWithDelta(6.19, $split['change_percent'], 0.02);          // 통합
+        $this->assertEqualsWithDelta(4.92, $split['regular_change_percent'], 0.02);  // 정규장
+        $this->assertEqualsWithDelta(58.0, $split['change_amount'], 0.01);           // 995 − 937
+        $this->assertEqualsWithDelta(46.12, $split['regular_change_amount'], 0.01);  // 983.12 − 937
+    }
+
+    /**
+     * @test
+     * 프리마켓: 오늘 정규장 봉 없음 + 라이브 → 직전거래일 종가 = candles[0](어제=991.64).
+     * 통합 = (969.03 − 991.64)/991.64 = −2.28%.
+     *
+     * 당일 정규장 봉이 없으므로(프리마켓) 정규장 줄 = null(프론트 1줄). regularClose(Yahoo)와
+     * prevRegular(candles[0])는 '같은 날 종가'라 둘을 빼면 크로스소스 잔차만 남기 때문.
+     * → regularClose 를 prevRegular 와 '다른 값'(991.50)으로 주입해, 이 노이즈(≈−0.014%)가
+     *   regular_* 로 새지 않고 null 로 차단됨을 검증한다(동일값 주입이던 기존 테스트는 이 결함을 못 잡음).
+     */
+    public function testCalculateUsSplit_PreMarket_UsesLatestBarBase(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-10 08:00:00', 'America/New_York'));  // 프리
+        $this->sessionMock->method('getUsSession')->willReturn('프리마켓');
+
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-09', '991.64', '2026-07-08', '948.80'));
+
+        // regularClose=991.50 ≠ prevRegular=991.64 (크로스소스 잔차 주입)
+        $split = $this->calculator->calculateUsSplit('MU', 969.03, 991.50);
+
+        $this->assertLessThan(0, $split['change_percent']);
+        $this->assertEqualsWithDelta(-2.28, $split['change_percent'], 0.02);          // 통합
+        $this->assertNull($split['regular_change_percent'], '당일 정규장 봉 없음(프리마켓) → 정규장 줄 null(노이즈 차단)');
+        $this->assertNull($split['regular_change_amount']);
+    }
+
+    /**
+     * @test
+     * 주간거래 자정후(NY 이른 새벽): 당일(7/15) 정규장 봉 없음 → candles[0](7/14=983.12) 기준.
+     * 애프터·주간거래 자정전(오늘봉 존재)과 달리 정규장 줄 = null(프론트 1줄) — 자정후엔 regularClose 와
+     * prevRegular 가 같은 날(7/14) 종가라 잔차·ET 자정 불연속만 남는다. 통합만 살린다.
+     * regularClose(983.00)≠prevRegular(983.12) 주입으로 노이즈가 안 새는지 검증.
+     */
+    public function testCalculateUsSplit_OvernightAfterMidnight_NoTodayBar_RegularNull(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-15 02:00:00', 'America/New_York'));  // 주간거래 자정후
+        $this->sessionMock->method('getUsSession')->willReturn('주간거래');
+
+        // 최신 봉 = 7/14(직전 정규장 종가) → 오늘(7/15) 봉 없음 → isTodayBar=false → candles[0]=983.12
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-14', '983.12', '2026-07-13', '937.00'));
+
+        $split = $this->calculator->calculateUsSplit('MU', 990.0, 983.00);
+
+        $this->assertNull($split['regular_change_percent'], '당일 정규장 봉 없음(자정후) → 정규장 줄 null');
+        $this->assertNull($split['regular_change_amount']);
+        $this->assertEqualsWithDelta(0.70, $split['change_percent'], 0.02);  // 통합 (990−983.12)/983.12
+    }
+
+    /**
+     * @test
+     * 정규장: 연장세션 아님 → 기존 calculate() 값 사용(통합=정규장), regular_* 는 null(프론트 1줄).
+     * 오늘(7/10) 봉 존재 → candles[1](7/9=991.64) 기준. 현재가 985 → 약 −0.67%.
+     */
+    public function testCalculateUsSplit_RegularSession_FallsBackToCalculate_NullRegular(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-10 11:00:00', 'America/New_York'));  // 정규장
+        $this->sessionMock->method('getUsSession')->willReturn('정규장');
+
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-10', '985.00', '2026-07-09', '991.64'));
+
+        $split = $this->calculator->calculateUsSplit('MU', 985.0, 985.0);
+
+        $this->assertNull($split['regular_change_percent'], '정규장은 regular_* 를 null 로 둬 프론트 1줄 유지');
+        $this->assertNull($split['regular_change_amount']);
+        $this->assertLessThan(0, $split['change_percent']);  // 991.64 대비 하락
+    }
+
+    /**
+     * @test
+     * 장마감: 연장세션 아님 → 기존 calculate() 값(직전거래일 하루 등락 유지), regular_* null.
+     */
+    public function testCalculateUsSplit_Closed_FallsBackToCalculate_NullRegular(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-11 12:00:00', 'America/New_York'));  // 토요일 장마감
+        $this->sessionMock->method('getUsSession')->willReturn('장마감');
+
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-10', '985.00', '2026-07-09', '991.64'));
+
+        $split = $this->calculator->calculateUsSplit('MU', 985.0, null);
+
+        $this->assertNull($split['regular_change_percent']);
+        $this->assertLessThan(0, $split['change_amount']);  // 금 종가 985 vs 전전일 991.64
+    }
+
+    /**
+     * @test
+     * 폴백 경로(calculate() 경유)도 change_percent 를 소수 2자리로 정규화해 계약(02-계약)과 통일한다.
+     * calculate() 자체는 round(4) 를 반환하지만, calculateUsSplit 폴백 반환 지점에서 round(2) 로 정규화되어야 한다.
+     * (985−991.64)/991.64×100 = −0.6696(round4) → 계약 −0.67(round2).
+     */
+    public function testCalculateUsSplit_Fallback_NormalizesChangePercentToTwoDecimals(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-11 12:00:00', 'America/New_York'));  // 토요일 장마감
+        $this->sessionMock->method('getUsSession')->willReturn('장마감');
+
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-10', '985.00', '2026-07-09', '991.64'));
+
+        $split = $this->calculator->calculateUsSplit('MU', 985.0, null);
+
+        $this->assertSame(-0.67, $split['change_percent'], '폴백 change_percent 는 계약대로 소수 2자리여야 한다(round4 −0.6696 아님)');
+    }
+
+    /**
+     * @test
+     * regularClose cold(null) + 연장세션: 통합은 계산하되 정규장 줄은 null(프론트 1줄 degrade).
+     */
+    public function testCalculateUsSplit_ExtendedButRegularCloseCold_RegularNull(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
+        $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
+
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-14', '983.12', '2026-07-13', '937.00'));
+
+        $split = $this->calculator->calculateUsSplit('MU', 995.0, null);  // regularClose cold
+
+        $this->assertEqualsWithDelta(6.19, $split['change_percent'], 0.02);  // 통합은 계산됨
+        $this->assertNull($split['regular_change_percent']);                 // 정규장 줄 degrade
+    }
+
+    /**
+     * @test
+     * getUsPrevRegularClose: KR·지수는 null (US 전용).
+     */
+    public function testGetUsPrevRegularClose_NonUs_ReturnsNull(): void
+    {
+        $this->clientMock->expects($this->never())->method('get');
+
+        $this->assertNull($this->calculator->getUsPrevRegularClose('005930'));
+    }
+
+    /**
+     * @test
+     * getUsPrevRegularClose: 캐시 히트 시 API 미호출. 캐시 포맷 = ['close'=>float,'today_bar'=>bool].
+     */
+    public function testGetUsPrevRegularClose_CacheHit_NoApiCall(): void
+    {
+        Cache::put('toss_prev_regular_close_MU', ['close' => 937.0, 'today_bar' => true], 3600);
+        $this->clientMock->expects($this->never())->method('get');
+
+        $isTodayBar = false;
+        $this->assertSame(937.0, $this->calculator->getUsPrevRegularClose('MU', $isTodayBar));
+        $this->assertTrue($isTodayBar, '캐시된 today_bar 플래그가 참조로 반환되어야 한다(히트에도 유효)');
+    }
+
+    /**
+     * @test
+     * getUsPrevRegularClose: 봉 부족(<2)이면 null 을 반환하고 짧은 TTL 로 sentinel 을 캐싱해,
+     * 다음 사이클에 /candles 를 재호출하지 않는다(연장세션 핫패스 재유입 방지). get 은 정확히 1회.
+     */
+    public function testGetUsPrevRegularClose_InsufficientCandles_CachesSentinel(): void
+    {
+        $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
+
+        // 봉 1개만 → <2 → null. sentinel 캐시 덕에 두 번째 호출은 API 를 다시 치지 않는다.
+        $this->clientMock->expects($this->once())->method('get')->willReturn([
+            'result' => ['candles' => [
+                ['timestamp' => '2026-07-14T00:00:00.000-04:00', 'closePrice' => '983.12', 'currency' => 'USD'],
+            ]],
+        ]);
+
+        $this->assertNull($this->calculator->getUsPrevRegularClose('MU'));
+        $this->assertNull($this->calculator->getUsPrevRegularClose('MU'));  // sentinel 히트 → API 미호출
+    }
+
+    /**
+     * @test
+     * 주간거래(EXT_NIGHT, 미국 야간=KR 저녁 세션)도 연장세션 → 통합/정규장 2줄로 분리해야 한다.
+     * 애프터마켓과 동일 candle 선택(오늘 정규장봉 완결 → candles[1]=직전거래일 937).
+     * 이 기능이 겨냥한 핵심 세션인데 기존 스위트엔 프리·애프터만 있어 회귀 사각지대였다.
+     */
+    public function testCalculateUsSplit_OvernightSession_SplitsUnifiedAndRegular(): void
+    {
+        // NY 2026-07-14 22:00 ET = 주간거래(20:00~04:00). 오늘봉(7/14) 완결 → candles[1]=7/13.
+        Carbon::setTestNow(Carbon::parse('2026-07-14 22:00:00', 'America/New_York'));
+        $this->sessionMock->method('getUsSession')->willReturn('주간거래');
+
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-14', '983.12', '2026-07-13', '937.00'));
+
+        $split = $this->calculator->calculateUsSplit('MU', 995.0, 983.12);
+
+        $this->assertEqualsWithDelta(6.19, $split['change_percent'], 0.02);          // 통합 (995−937)/937
+        $this->assertEqualsWithDelta(4.92, $split['regular_change_percent'], 0.02);  // 정규장 (983.12−937)/937
+        $this->assertNotNull($split['regular_change_percent'], '주간거래도 연장세션이라 2줄이어야 한다');
+    }
+
+    /**
+     * @test
+     * getUsPrevRegularClose 신규 캐시 TTL 은 '다음 ET 자정' 만료여야 한다(자정에 직전거래일 기준 전진).
+     * calculate() 의 prev_close 캐시(16:05 ET TTL)와 분리된 별도 TTL 임을 회귀 가드한다.
+     *
+     * 주의: secondsUntilNextEtMidnight() 는 네이티브 new \DateTime('tomorrow', ET)·time() 기반이라
+     *       setTestNow 로 고정되지 않는다 → 동일 알고리즘을 재현해 대조한다(실시간 안전).
+     */
+    public function testGetUsPrevRegularClose_Ttl_ExpiresAtNextEtMidnight(): void
+    {
+        // 라이브(애프터) + 과거 날짜 봉 → isTodayBar=false → candles[0](991.64) 취득·캐시.
+        $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
+
+        $capturedTtl = null;
+        Cache::shouldReceive('get')->andReturnNull();
+        Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
+            $capturedTtl = $ttl;
+            return true;
+        });
+
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-09', '991.64', '2026-07-08', '948.80'));
+
+        $this->assertSame(991.64, $this->calculator->getUsPrevRegularClose('MU'));
+        $this->assertNotNull($capturedTtl, '직전거래일 종가는 캐시에 저장되어야 한다');
+
+        // 프로덕션과 동일 알고리즘 재현 (다음 ET 자정, 300초 하한)
+        $nyTz     = new \DateTimeZone('America/New_York');
+        $target   = new \DateTime('tomorrow', $nyTz);
+        $expected = max($target->getTimestamp() - time(), 300);
+
+        $this->assertGreaterThanOrEqual(300, $capturedTtl, 'TTL 하한 300초');
+        $this->assertEqualsWithDelta($expected, $capturedTtl, 2, 'getUsPrevRegularClose TTL 은 다음 ET 자정 만료여야 한다');
+
+        // 16:05 ET TTL(calculate 캐시)과는 다르다 — 두 캐시가 섞이지 않았는지 가드.
+        $close1605 = new \DateTime('today 16:05', $nyTz);
+        if ($close1605->getTimestamp() <= time()) {
+            $close1605 = new \DateTime('tomorrow 16:05', $nyTz);
+        }
+        $ttl1605 = max($close1605->getTimestamp() - time(), 300);
+        $this->assertNotEqualsWithDelta($ttl1605, $capturedTtl, 60, 'getUsPrevRegularClose TTL 이 16:05 ET 기준이면 안 된다');
+    }
+
+    /**
+     * @test
+     * 연장세션이지만 직전거래일 종가 취득 실패(<2봉 → getUsPrevRegularClose null)면
+     * 기존 calculate() 로 graceful 폴백 → regular_* null(프론트 1줄), 통합도 calculate() 경유.
+     * getUsPrevRegularClose 의 '봉 부족 → null' 경로와 calculateUsSplit 의 cold 폴백을 함께 가드한다.
+     */
+    public function testCalculateUsSplit_ExtendedButPrevRegularCold_FallsBackToCalculate(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
+        $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
+
+        // 1봉만 반환 → getUsPrevRegularClose·calculate()의 getPrevClose 모두 <2봉이라 null
+        $this->clientMock->method('get')->willReturn([
+            'result' => ['candles' => [
+                ['timestamp' => '2026-07-14T00:00:00.000-04:00', 'closePrice' => '983.12', 'currency' => 'USD'],
+            ]],
+        ]);
+
+        $split = $this->calculator->calculateUsSplit('MU', 995.0, 983.12);
+
+        $this->assertNull($split['regular_change_percent'], 'prevRegular cold 면 정규장 줄 없음(1줄)');
+        $this->assertNull($split['regular_change_amount']);
+        $this->assertSame(0.0, $split['change_percent'], 'prevClose 도 <2봉 → graceful 0');
+    }
 }

@@ -438,6 +438,25 @@ class TossChangeCalculator
                 return null;
             }
 
+            // US 시간외(애프터마켓·주간거래) 기준가 롤포워드 (2026-07-15 버그수정):
+            //   위 분기 1(isTodayBar)은 candles[1](어제 종가)을 기준가로 잡는다 — US '정규장 중 장중 등락'엔 옳다.
+            //   그러나 정규장 마감 후(애프터·주간거래)엔 오늘 정규장 봉이 이미 완결이라 isTodayBar 가 true 로 남는데,
+            //   현재가는 시간외가라 기준가를 '오늘 정규장 종가'로 전진시켜야 정합하다(어제 종가 대비 → 부호까지 반전).
+            //   실측: MU 애프터 기준가 937(7/13 종가, stale) → +4.22% 오표기. 정답 983.12(7/14 종가) 대비 -0.67%.
+            //   오늘 정규장 종가 = yahoo_regular_close_{ticker}(regular_close 워머의 정본 — 애프터엔 오늘 종가 반환, 드리프트프리).
+            //   candles[0].close 는 US 1d 봉이 시간외 체결로 재집계·드리프트할 수 있어 쓰지 않는다(KR 일봉 드리프트 전례).
+            //   캐시 cold 시엔 candles[1](기존 동작) 유지 — graceful. 정규장 중(정규장)엔 스킵해 장중 등락을 보존한다.
+            //   프리마켓은 isTodayBar=false 라 위 분기 2(candles[0])로 이미 정상 → 이 롤포워드가 필요 없다.
+            if ($isTodayBar && $isUsMarket
+                && $this->session->getUsSession(Carbon::now()->getTimestamp()) !== '정규장') {
+                $regularClose = $this->readUsRegularClose($tossSymbol);
+                if ($regularClose !== null) {
+                    $prevClose = $regularClose;
+                } else {
+                    Log::debug("[TossChangeCalculator] {$tossSymbol} US 시간외 롤포워드: yahoo_regular_close cold → candles[1] 유지");
+                }
+            }
+
             // 국내 기준가 교체:
             //   토스 앱 등락은 candles 종가가 아니라 '당일 거래소 기준가'에 대해 계산된다.
             //   한국 가격제한폭은 기준가에 대칭 → (상한가+하한가)/2 = 당일 기준가 (candles[1].close 와 분리됨).
@@ -594,6 +613,34 @@ class TossChangeCalculator
         return $isUsMarket
             ? $this->session->getUsSession($nowTs) !== '장마감'
             : $this->session->getKrSession($nowTs) === '정규장';
+    }
+
+    /**
+     * US '오늘 정규장 종가'를 캐시에서만 읽는다(HTTP 없음). 없으면 null.
+     *
+     * TossPriceFetcher::readRegularCloseCache() 와 동일 키·우선순위를 재사용한다:
+     *   1) yahoo_regular_close_{ticker} — regular_close 워머가 채우는 정본. 애프터마켓엔 오늘 정규장 종가.
+     *   2) kis_last_successful_overseas_price_{ticker}.regular_close — 24h 폴백.
+     *   3) null — 둘 다 cold(호출부는 candles[1] 유지).
+     *
+     * US 티커는 tossSymbol == 앱 심볼(대문자)이라 캐시 키가 일치한다(TossSymbolMapper::normalize 대문자화).
+     */
+    private function readUsRegularClose(string $ticker): ?float
+    {
+        $cached = Cache::get("yahoo_regular_close_{$ticker}");
+        if ($cached !== null && (float) $cached > 0.0) {
+            return (float) $cached;
+        }
+
+        $fallback = Cache::get("kis_last_successful_overseas_price_{$ticker}");
+        if (is_array($fallback)
+            && isset($fallback['regular_close'])
+            && (float) $fallback['regular_close'] > 0.0
+        ) {
+            return (float) $fallback['regular_close'];
+        }
+
+        return null;
     }
 
     /**

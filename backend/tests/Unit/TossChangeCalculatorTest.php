@@ -1155,4 +1155,204 @@ class TossChangeCalculatorTest extends TestCase
 
         $this->assertSame(2082000.0, $this->calculator->getKrRegularClose('000660'));
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // US 시간외(애프터마켓) 기준가 롤포워드 (2026-07-15 버그수정 회귀 가드)
+    //   정규장 마감 후엔 오늘 정규장 봉이 이미 완결(isTodayBar=true)이라 candles[1](어제 종가)이
+    //   stale 기준가가 된다. 현재가는 시간외가 → 기준가를 '오늘 정규장 종가'(yahoo_regular_close_{ticker})로
+    //   전진시켜야 정합. 정규장 중·프리마켓·KR 은 미발동(불변).
+    //
+    //   US 판정: candle currency='USD' → isUsMarket=true (mapper 불필요).
+    //   readUsRegularClose 는 yahoo_regular_close_{tossSymbol} → kis_...regular_close → null 순.
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * US 오늘봉(정규장 완결) + 어제봉 2봉 응답 헬퍼. currency=USD 로 isUsMarket 유도.
+     *
+     * @param string $today       오늘(정규장 완결) 종가
+     * @param string $prev         직전 candle(candles[1]) 종가 = stale 후보
+     * @param string $todayDate    오늘 NY 날짜
+     * @param string $prevDate     직전 candle NY 날짜
+     */
+    private function usTodayBarCandles(string $today, string $prev, string $todayDate = '2026-07-14', string $prevDate = '2026-07-13'): array
+    {
+        return ['result' => ['candles' => [
+            ['timestamp' => "{$todayDate}T00:00:00.000-04:00", 'closePrice' => $today, 'volume' => '200', 'currency' => 'USD'],
+            ['timestamp' => "{$prevDate}T00:00:00.000-04:00", 'closePrice' => $prev, 'volume' => '100', 'currency' => 'USD'],
+        ]]];
+    }
+
+    /**
+     * @test
+     * MU 애프터마켓: isTodayBar=true(오늘 정규장봉 완결) + yahoo_regular_close 존재
+     * → 기준가 = yahoo_regular_close(983.12), candles[1](937, 7/13 stale) 아님.
+     * 실측: 기준가 937 이면 현재가 976.5 가 +4.22% 로 오표기 → 정답 983.12 대비 -0.67%.
+     */
+    public function testGetPrevClose_UsAfterMarket_UsesYahooRegularClose(): void
+    {
+        // NY 2026-07-14 17:00 ET = 애프터마켓(16:00~20:00). 오늘봉(7/14) 완결.
+        Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
+        $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
+
+        // 오늘 정규장 종가(yahoo 워머 정본) — candles[1] 937 은 stale(7/13)
+        Cache::put('yahoo_regular_close_MU', 983.12, 3600);
+        $this->clientMock->method('get')->willReturn($this->usTodayBarCandles('983.12', '937.00'));
+
+        // 기준가 = yahoo_regular_close 983.12 (candles[1] 937 로 롤포워드 미적용이면 실패)
+        $prevClose = $this->calculator->getPrevClose('MU');
+        $this->assertSame(983.12, $prevClose);
+
+        // 현재가 976.5 → 983.12 대비 -0.67% (stale 937 이면 +4.22% 로 부호 반전)
+        $result = $this->calculator->calculate('MU', 976.5);
+        $this->assertSame(983.12, $result['prev_close']);
+        $this->assertLessThan(0, $result['change_amount']);
+        $this->assertEqualsWithDelta(-0.67, $result['change_percent'], 0.05);
+    }
+
+    /**
+     * @test
+     * 애프터 종료~KST 자정 사이(getUsSession='장마감')에도 오늘봉(isTodayBar=true)이면 롤포워드 발동.
+     * #1(애프터마켓)과 동일 로직 — 세션만 '장마감'으로 바꾼 회귀 가드. 롤포워드 게이트는
+     * "정규장 아님"이라 '장마감'도 포함 → 기준가 = yahoo_regular_close(오늘 종가), candles[1](어제) 아님.
+     */
+    public function testGetPrevClose_UsMarketClosedSameDay_UsesYahooRegularClose(): void
+    {
+        // NY 2026-07-14 20:30 ET = 애프터 종료(20:00) 직후 '장마감'. 오늘봉(7/14) 여전히 완결.
+        Carbon::setTestNow(Carbon::parse('2026-07-14 20:30:00', 'America/New_York'));
+        $this->sessionMock->method('getUsSession')->willReturn('장마감');
+
+        // 오늘 정규장 종가(yahoo 워머 정본) — candles[1] 937 은 stale(7/13)
+        Cache::put('yahoo_regular_close_MU', 983.12, 3600);
+        $this->clientMock->method('get')->willReturn($this->usTodayBarCandles('983.12', '937.00'));
+
+        // 기준가 = yahoo_regular_close 983.12 (candles[1] 937 로 롤포워드 미적용이면 실패)
+        $this->assertSame(983.12, $this->calculator->getPrevClose('MU'));
+    }
+
+    /**
+     * @test
+     * SKHY(저유동 ADR) 애프터마켓: candles[1] 이 수일 전 종가(152.35)인데 yahoo_regular_close 는
+     * 오늘 종가(193.92) → 기준가 = 193.92 로 큰 stale gap(+27%) 방지.
+     */
+    public function testGetPrevClose_UsAfterMarket_LowLiquidityAdrGap_UsesYahoo(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
+        $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
+
+        // candles[1] = 7/9(수일 전) 152.35 · yahoo_regular_close = 오늘(7/14) 193.92
+        Cache::put('yahoo_regular_close_SKHY', 193.92, 3600);
+        $this->clientMock->method('get')->willReturn(
+            $this->usTodayBarCandles('193.92', '152.35', '2026-07-14', '2026-07-09')
+        );
+
+        // 롤포워드로 152.35(stale) 대신 193.92(오늘 종가) 기준 → 큰 gap 방지
+        $this->assertSame(193.92, $this->calculator->getPrevClose('SKHY'));
+
+        // 현재가 194.0 → 193.92 대비 거의 0%(정합). 152.35 기준이면 +27.3% 로 폭발.
+        $result = $this->calculator->calculate('SKHY', 194.0);
+        $this->assertSame(193.92, $result['prev_close']);
+        $this->assertEqualsWithDelta(0.0, $result['change_percent'], 0.5);
+    }
+
+    /**
+     * @test
+     * yahoo_regular_close cold + kis_...regular_close 폴백 존재 → kis 폴백값으로 롤포워드.
+     * readUsRegularClose 2순위(kis_last_successful_overseas_price_{ticker}.regular_close) 검증.
+     */
+    public function testGetPrevClose_UsAfterMarket_YahooCold_UsesKisFallbackRegularClose(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
+        $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
+
+        // yahoo 캐시 없음 → kis 24h 폴백의 regular_close(983.12) 사용
+        Cache::put('kis_last_successful_overseas_price_MU', ['regular_close' => 983.12], 3600);
+        $this->clientMock->method('get')->willReturn($this->usTodayBarCandles('983.12', '937.00'));
+
+        $this->assertSame(983.12, $this->calculator->getPrevClose('MU'));
+    }
+
+    /**
+     * @test
+     * 캐시 cold 폴백: yahoo·kis 둘 다 없으면 롤포워드 미적용 → 기존 candles[1](어제 종가) 유지(graceful).
+     */
+    public function testGetPrevClose_UsAfterMarket_CacheCold_KeepsCandlePrevClose(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
+        $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
+
+        // yahoo_regular_close·kis 폴백 둘 다 cold → readUsRegularClose null → candles[1] 유지
+        $this->clientMock->method('get')->willReturn($this->usTodayBarCandles('983.12', '937.00'));
+
+        // 롤포워드 skip → candles[1] = 937 (전일 종가) 그대로
+        $this->assertSame(937.0, $this->calculator->getPrevClose('MU'));
+    }
+
+    /**
+     * @test
+     * 불변: US 정규장 중(getUsSession='정규장')엔 롤포워드 미발동 → 기준가 = candles[1](어제 종가).
+     * yahoo_regular_close 캐시가 있어도 무시해야 장중 등락(어제 종가 대비)이 보존된다.
+     */
+    public function testGetPrevClose_UsRegularSession_NoRollForward_UsesCandlePrev(): void
+    {
+        // NY 2026-07-14 11:00 ET = 정규장. 오늘봉(7/14) 진행중 → isTodayBar=true.
+        Carbon::setTestNow(Carbon::parse('2026-07-14 11:00:00', 'America/New_York'));
+        $this->sessionMock->method('getUsSession')->willReturn('정규장');
+
+        // 롤포워드가 (잘못) 발동하면 995.00 이 잡힌다 — 아래 assert 로 미발동 확인
+        Cache::put('yahoo_regular_close_MU', 995.00, 3600);
+        $this->clientMock->method('get')->willReturn($this->usTodayBarCandles('983.12', '937.00'));
+
+        // 정규장 → candles[1] 937 기준(오늘 장중 등락). yahoo 995 로 새지 않아야 함.
+        $this->assertSame(937.0, $this->calculator->getPrevClose('MU'));
+    }
+
+    /**
+     * @test
+     * 불변: US 프리마켓(isTodayBar=false, 오늘봉 미생성)엔 candles[0](어제 종가) 경로 그대로.
+     * 롤포워드는 isTodayBar 조건이라 미발동 — yahoo_regular_close 캐시가 있어도 candles[0] 유지.
+     */
+    public function testGetPrevClose_UsPreMarket_NoRollForward_UsesCandleZero(): void
+    {
+        // NY 2026-07-14 08:00 ET = 프리마켓. 오늘봉(7/14) 아직 없음 → 최신 봉 7/11(금).
+        Carbon::setTestNow(Carbon::parse('2026-07-14 08:00:00', 'America/New_York'));
+        $this->sessionMock->method('getUsSession')->willReturn('프리마켓');
+
+        // 프리마켓에서 롤포워드가 새면 995 가 잡힌다 — 미발동 확인
+        Cache::put('yahoo_regular_close_MU', 995.00, 3600);
+        $this->clientMock->method('get')->willReturn([
+            'result' => ['candles' => [
+                ['timestamp' => '2026-07-11T00:00:00.000-04:00', 'closePrice' => '983.12', 'volume' => '200', 'currency' => 'USD'],
+                ['timestamp' => '2026-07-10T00:00:00.000-04:00', 'closePrice' => '937.00', 'volume' => '100', 'currency' => 'USD'],
+            ]],
+        ]);
+
+        // isTodayBar=false + 라이브(프리마켓) → candles[0] = 983.12(어제=금 종가). yahoo 995 무영향.
+        $this->assertSame(983.12, $this->calculator->getPrevClose('MU'));
+    }
+
+    /**
+     * @test
+     * 불변: KR 종목은 US 전용 롤포워드에 무영향. yahoo_regular_close_{ticker} 캐시가 있어도
+     * KR 경로(price-limits/candles)만 타야 한다.
+     */
+    public function testGetPrevClose_KrSymbol_UnaffectedByUsRollForward(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-15 10:00:00', 'Asia/Seoul'));
+        $this->sessionMock->method('getKrSession')->willReturn('정규장');
+
+        // KR 종목인데 (우연히) yahoo 캐시가 있어도 롤포워드 US 게이트에 안 걸려야 함
+        Cache::put('yahoo_regular_close_005930', 999999.0, 3600);
+        $this->clientMock->method('get')->willReturnCallback(function (string $path) {
+            if ($path === self::PRICE_LIMITS) {
+                return ['result' => ['upperLimitPrice' => '341500', 'lowerLimitPrice' => '184500']];
+            }
+            return ['result' => ['candles' => [
+                ['timestamp' => '2026-07-14T00:00:00.000+09:00', 'closePrice' => '270000', 'currency' => 'KRW'],
+                ['timestamp' => '2026-07-13T00:00:00.000+09:00', 'closePrice' => '265000', 'currency' => 'KRW'],
+            ]]];
+        });
+
+        // KR 정규장 → price-limits (341,500+184,500)/2 = 263,000 (yahoo 999999 무영향)
+        $this->assertSame(263000.0, $this->calculator->getPrevClose('005930'));
+    }
 }

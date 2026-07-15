@@ -46,7 +46,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(TossChangeCalculator::class, function ($app) {
             return new TossChangeCalculator(
                 $app->make(TossApiClient::class),
-                $app->make(TossSymbolMapper::class)
+                $app->make(TossSymbolMapper::class),
+                $app->make(MarketSessionService::class)
             );
         });
 

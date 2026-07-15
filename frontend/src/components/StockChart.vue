@@ -26,17 +26,6 @@
               ]"
             >{{ formattedChangePercent }}</span>
           </div>
-          <!-- 2행: 보조 배지 그룹 (MAX·실적) — 통일된 스타일로 한 줄 -->
-          <div class="flex items-center gap-1 flex-wrap">
-            <span
-              v-if="!isIndex && maxPrice !== null"
-              class="px-1.5 py-0.5 rounded-xs text-2xs font-medium font-mono text-base-content/55 bg-base-200/60 border border-hairline-strong leading-tight shrink-0"
-            >MAX {{ formattedMaxPrice }}</span>
-            <span
-              v-if="earningsDate"
-              class="earnings-badge px-1.5 py-0.5 rounded-xs text-2xs font-medium font-mono text-accent bg-accent-weak border border-accent-line leading-tight shrink-0"
-            >실적 {{ earningsDate }}</span>
-          </div>
         </div>
 
         <!-- 우: 현재가 + 등락액 블록 — 4컬럼 grid [가격숫자 | 통화기호 | 화살표 | 등락숫자]. -->
@@ -89,48 +78,61 @@
         </div>
       </div>
 
-      <!-- 줄2: 컴팩트 타임프레임 셀렉트 — 400px 미만에서만 표시 -->
-      <div class="flex items-center timeframe-row4">
-        <!-- 좁을 때(카드 폭 400px 미만) 타임프레임 셀렉트 — 우측 정렬 -->
-        <select
-          class="timeframe-select-compact ml-auto mr-2 input input-xs bg-base-200 border border-hairline rounded-sm font-medium font-mono text-2xs text-base-content/70 focus:outline-none focus:border-accent cursor-pointer"
-          :value="selectedTimeframe"
-          @change.stop="changeTimeframe($event.target.value)"
-          @mousedown.stop
-          aria-label="타임프레임 선택"
-        >
-          <option
-            v-for="tf in timeframes"
-            :key="tf.value"
-            :value="tf.value"
-          >{{ tf.label }}</option>
-        </select>
-      </div>
+      <!-- 줄2: 보조 배지(MAX·실적) 좌 + 타임프레임 우 (넓으면 버튼 그리드, 좁으면 컴팩트 셀렉트) -->
+      <div class="flex items-center justify-between gap-2">
+        <!-- 좌: 보조 배지 그룹 (MAX·실적) -->
+        <div class="flex items-center gap-1 flex-wrap min-w-0">
+          <span
+            v-if="!isIndex && maxPrice !== null"
+            class="px-1.5 py-0.5 rounded-xs text-2xs font-medium font-mono text-base-content/55 bg-base-200/60 border border-hairline-strong leading-tight shrink-0"
+          >MAX {{ formattedMaxPrice }}</span>
+          <span
+            v-if="earningsDate"
+            class="earnings-badge px-1.5 py-0.5 rounded-xs text-2xs font-medium font-mono text-accent bg-accent-weak border border-accent-line leading-tight shrink-0"
+          >실적 {{ earningsDate }}</span>
+        </div>
 
-      <!-- 와이드용 타임프레임 버튼 그리드 (넓은 폭에서만 표시) -->
-      <div class="timeframe-row flex items-center justify-between border-t border-hairline pt-2">
-        <span class="text-2xs text-base-content/35 font-medium uppercase tracking-widest font-mono">Timeframe</span>
+        <!-- 우(넓은 폭): 타임프레임 버튼 그리드 -->
+        <div class="timeframe-row items-center shrink-0">
+          <div class="tabs tabs-boxed bg-base-200 p-0.5 rounded-sm border border-hairline">
+            <button
+              v-for="tf in timeframes"
+              :key="tf.value"
+              @click.stop="changeTimeframe(tf.value)"
+              @mousedown.stop
+              :class="[
+                'tab tab-xs rounded-sm font-medium transition-colors duration-120 cursor-pointer text-2xs',
+                selectedTimeframe === tf.value
+                  ? 'tab-active bg-surface-raised border border-accent-line text-base-content'
+                  : 'text-base-content/35 hover:text-base-content/70 border border-transparent'
+              ]"
+            >{{ tf.label }}</button>
+          </div>
+        </div>
 
-        <!-- 버튼 그리드 -->
-        <div class="tabs tabs-boxed bg-base-200 p-0.5 rounded-sm border border-hairline">
-          <button
-            v-for="tf in timeframes"
-            :key="tf.value"
-            @click.stop="changeTimeframe(tf.value)"
+        <!-- 우(좁은 폭, 400px 미만): 컴팩트 셀렉트 -->
+        <div class="timeframe-row4 items-center shrink-0">
+          <select
+            class="timeframe-select-compact input input-xs bg-base-200 border border-hairline rounded-sm font-medium font-mono text-2xs text-base-content/70 focus:outline-none focus:border-accent cursor-pointer"
+            :value="selectedTimeframe"
+            @change.stop="changeTimeframe($event.target.value)"
             @mousedown.stop
-            :class="[
-              'tab tab-xs rounded-sm font-medium transition-colors duration-120 cursor-pointer text-2xs',
-              selectedTimeframe === tf.value
-                ? 'tab-active bg-surface-raised border border-accent-line text-base-content'
-                : 'text-base-content/35 hover:text-base-content/70 border border-transparent'
-            ]"
-          >{{ tf.label }}</button>
+            aria-label="타임프레임 선택"
+          >
+            <option
+              v-for="tf in timeframes"
+              :key="tf.value"
+              :value="tf.value"
+            >{{ tf.label }}</option>
+          </select>
         </div>
       </div>
     </div>
 
     <!-- Chart Canvas Wrapper -->
-    <div class="flex-1 w-full relative min-h-42.5 flex" ref="chartWrapper">
+    <!-- min-h-0: flex-1 이 카드 잔여 높이(카드-헤더)에 맞게 축소되도록 허용. 과거 min-h-42.5(170px) 는
+         짧은 4차트 카드에서 헤더+170px 가 카드 높이를 넘겨 overflow-hidden 에 하단(시간축)이 잘렸다. -->
+    <div class="flex-1 w-full relative min-h-0 flex" ref="chartWrapper">
       <!-- Lightweight Chart container (차트+y축은 래퍼폭 - OVERLAY_GUTTER, 우측 거터에 오버레이 위치) -->
       <div class="h-full w-full" ref="chartContainer"></div>
 
@@ -160,7 +162,7 @@
         v-if="!isIndex && avgPrice !== null && avgPriceCoordinate !== null"
         class="readout-tag absolute z-20 flex flex-col items-center justify-center px-1 pointer-events-none select-none font-mono leading-none border-y border-l rounded-l-xs bg-accent-weak border-accent-line text-accent"
         :style="{
-          top: avgPriceCoordinate + 'px',
+          top: avgTagCoordinate + 'px',
           right: CHART_GUTTER + 'px',
           transform: 'translateY(-50%)',
           width: priceAxisWidth + 'px',
@@ -250,7 +252,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { createChart, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
-import { isCoordinateVisible } from '../utils/chartHelpers.js';
+import { isCoordinateVisible, resolveAvgTagCoordinate } from '../utils/chartHelpers.js';
 
 // ── props ──────────────────────────────────────────────────────────────────
 const props = defineProps({
@@ -466,6 +468,12 @@ const formattedChangePercent = computed(() => {
   const sign = props.changePercent >= 0 ? '+' : '';
   return `${sign}${props.changePercent.toFixed(2)}%`;
 });
+
+// 평단 태그 표시 좌표 — 현재가 태그와 겹치면(가격 근접) 밀어내 글씨 겹침 방지.
+// 최소 간격 = 태그 높이 + 2px(두 30px 박스가 안 포개지려면 중심 간격 ≥ 30px).
+const avgTagCoordinate = computed(() =>
+  resolveAvgTagCoordinate(avgPriceCoordinate.value, priceCoordinate.value, OVERLAY_HEIGHT + 2)
+);
 
 // ── methods ────────────────────────────────────────────────────────────────
 function initChart() {

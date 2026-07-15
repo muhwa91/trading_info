@@ -116,6 +116,14 @@
   font-size: 16px;
 }
 
+/* ── 콘텐츠 하한폭 ─────────────────────────────────────
+   창을 440px 미만으로 줄이면 헤더 요약바(환율/미국/한국 3행)·사이드바가 찌그러지므로,
+   그 밑으로는 더 줄지 않고 가로 스크롤이 생기게 한다(레이아웃 붕괴 방지).
+   치이카와 오피스 body min-width 패턴 동일. 앱 루트가 overflow-hidden 이라 body 에 건다. */
+body {
+  min-width: 440px;
+}
+
 /* ── 수치 정렬 보장 — tabular-nums 강제 ─────────────── */
 .font-mono {
   font-variant-numeric: tabular-nums;
@@ -170,6 +178,18 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-accent-line);
+}
+
+/* ── 창 리사이즈 중 transition 억제 ─────────────────
+   md(768px) 등 브레이크포인트 경계에서 width/height 유틸(w-full↔md:w-72,
+   h-64↔md:h-full, grid-cols-1↔md:grid-cols-2)이 바뀔 때 transition-all 이 그
+   점프를 애니메이션해 사이드바/그리드가 미끄러지거나 흔들리는(767~768px 대역
+   미세조정 시 매 픽셀 재flip → 깜빡임) 현상을 막는다. App.vue 가 리사이즈 동안
+   html.win-resizing 을 동기 토글하며, 멎으면(150ms) 해제해 collapse 애니는 유지. */
+html.win-resizing *,
+html.win-resizing *::before,
+html.win-resizing *::after {
+  transition: none !important;
 }
 
 /* ── 마이크로 인터랙션 (진입 페이드만 유지) ──────── */

@@ -74,6 +74,48 @@
   </nav>
 
   <!-- ENTRIES:START -->
+  <div class="entry" data-agent="debug backend">
+    <h2>국내 등락률·현재가를 토스와 똑같이 — 기준가 교체 + 시간외 빼고 종가 고정 <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-07-15 · 담당: debug · backend</p>
+    <div class="req"><span class="label">요청 →</span> 국내 종목 등락률이 토스와 달랐다(하이닉스: 토스는 어제보다 +169,000원 = +8.83%인데 앱은 +7.26%). 그리고 국내는 장 끝난 뒤 시간외 가격 말고 종가만 보여 달라.</div>
+    <div class="res"><span class="label">처리 →</span> ①원인은 "어제 종가" 기준값이 달랐던 것 — 토스는 거래소가 정한 기준가(가격제한폭의 중간값)를 쓰는데 우리는 어제 봉 종가를 써서 어긋났다. 토스와 같은 기준가로 바꿨다(하이닉스 1,913,000·삼성 263,000, 토스 일치). ②장 마감 후에는 시간외로 흔들리는 값 대신 정규장 종가에 고정(하이닉스 2,082,000). 앱을 껐다 켜도 같은 종가가 나오게 분봉 마감값을 쓴다. 결과: 삼성 +6.27%·하이닉스 +8.83%로 토스와 정확히 일치. 자동 테스트 통과.</div>
+  </div>
+  <div class="entry" data-agent="backend">
+    <h2>미국 "주간거래" 시세 실측 — 토스가 낮 시간대 체결을 실시간으로 따라오는지 확인 <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-07-15 · 담당: backend</p>
+    <div class="req"><span class="label">요청 →</span> 토스로 시세 공급처를 바꾼 뒤 남아 있던 마지막 확인 — 미국 정규장이 열리기 전 우리 낮 시간대(주간거래, Blue Ocean ATS)에도 토스가 실제 체결가를 실시간으로 보여주는지, 그리고 어제 종가 표시가 정확한지 실제로 재 봐 달라.</div>
+    <div class="res"><span class="label">처리 →</span> 낮 12:31~12:38에 애플·엔비디아·테슬라를 3분 간격 3번 관측. 토스 가격이 매번 최신 시각으로 올라오며 실제로 움직였다(정지 아님) — 낮 체결을 실시간으로 따라오는 것 확인. 야후는 이 시간대를 아예 멈춰 있어(공백), 우리 앱이 토스를 먼저 쓰는 현재 설계가 옳음을 재확인. 어제 종가 표시도 정확. 앱 토큰은 그대로 공유해 써서 접속 사고 없음. 이로써 미국 3개 세션(정규장·시간외·주간거래) 실측 모두 종료.</div>
+  </div>
+  <div class="entry" data-agent="frontend">
+    <h2>화면 다듬기 3건 — 사이드바 튐 제거·차트 토글 아이콘화·평단 라벨 겹침 수정 <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-07-15 · 담당: frontend</p>
+    <div class="req"><span class="label">요청 →</span> ① 창을 줄일 때 좌측 사이드바가 위아래로 출렁여 흉하다 ② 1차트/4차트 버튼을 글자 대신 아이콘으로 ③ 차트의 평균단가 라벨이 현재가 라벨과 글씨가 겹쳐 보인다.</div>
+    <div class="res"><span class="label">처리 →</span> ① 창 크기 조절 중에는 사이드바 애니메이션을 잠시 꺼 출렁임을 없앴다(접기/펴기 애니는 유지). ② 1차트=단일 사각형, 4차트=2×2 격자 아이콘으로 교체(설명 라벨은 마우스 올리면 표시). ③ 원인은 현재가·평단가 가격이 가까울 때 두 라벨이 포개진 것 — 평단 라벨만 살짝 비켜나게 해 겹침을 없앴다(점선 위치는 실제 가격 그대로). 자동 테스트 162건·빌드 통과.</div>
+  </div>
+  <div class="entry" data-agent="frontend">
+    <h2>차트 개수를 버튼으로 직접 선택 — "1차트 / 4차트" 토글 <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-07-15 · 담당: frontend</p>
+    <div class="req"><span class="label">요청 →</span> 창 폭을 조금만 늘려도 차트가 자동으로 한 줄에 2개씩 재배치되어 불편했다. 버튼 두 개(1차트씩/4차트씩)로 직접 고르게 해 달라.</div>
+    <div class="res"><span class="label">처리 →</span> 폭에 따라 자동으로 열이 바뀌던 방식을 없애고, 그리드 상단에 "1차트"(세로로 크게)·"4차트"(2×2) 토글 버튼을 달았다. 선택은 저장되어 새로고침해도 유지되고, 기본은 1차트. 자동 테스트 154건·빌드 통과.</div>
+  </div>
+  <div class="entry" data-agent="backend debug qa">
+    <h2>장 열리기 전에도 어제 등락률이 보이게 개선 + 유령 서버 정리 <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-07-15 · 담당: backend · debug · qa</p>
+    <div class="req"><span class="label">요청 →</span> 한국장이 열리기 전 아침에 보면 모든 종목이 +0(+0.00%)으로 초기화되어 있었다. 장이 열리기 전에는 어제 얼마나 올랐는지 계속 보이게 해 달라.</div>
+    <div class="res"><span class="label">처리 →</span> 장이 닫혀 있는 동안에는 그저께 종가를 기준으로 삼아 "어제 하루 등락"이 유지되게 바꾸고, 장이 열리는 순간 자동으로 오늘 등락 기준으로 전환되게 했다(자동 테스트 4건 추가, 총 243건 통과). 확인 중 예전 코드로 도는 유령 서버가 살아남아 값을 되덮던 문제도 발견해 전부 정리하고, 재시작 절차를 유령이 안 남는 방식으로 고쳤다. 삼성전자 +4.08%·SK하이닉스 +6.18%·SOL +2.06%로 어제 등락이 정상 표시.</div>
+  </div>
+  <div class="entry" data-agent="main qa">
+    <h2>미국 애프터마켓 실측 — 시세 추적·기준가 로직 정상 확인 <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-07-15 · 담당: main · qa</p>
+    <div class="req"><span class="label">요청 →</span> 미리 약속해 둔 실측 2건 중 하나 — 미국 장 마감 후(애프터마켓) 시간대에 앱이 시세를 제대로 받아오는지 30분간 관찰.</div>
+    <div class="res"><span class="label">처리 →</span> 5분 간격 7회 관찰 결과 토스 시세가 시간외 체결을 실시간으로 따라오고(다른 소스와 오차 0.03% 이내), 등락 기준가도 당일 확정 종가를 정확히 반영했다. 어제 고친 기준가 캐시 만료 시각도 설계대로 정확히 작동함을 확인. 남은 실측은 평일 낮 시간대 1건.</div>
+  </div>
+  <div class="entry" data-agent="debug backend qa">
+    <h2>미국 등락률이 토스와 다르게 나오던 문제 수정 (하루 지난 기준가 사용) <span class="badge ok">완료</span></h2>
+    <p class="meta">2026-07-14 · 담당: debug · backend · qa</p>
+    <div class="req"><span class="label">요청 →</span> 밤에 미국 정규장이 열린 직후, 화면의 오르내림(+/−)이 토스 앱과 달랐다(마이크론이 실제로는 +3%인데 화면은 −1.45%). 왜 다른지 확인해 달라.</div>
+    <div class="res"><span class="label">처리 →</span> 원인은 등락률의 기준이 되는 "어제 종가"를 하루 지난 값으로 계산한 것. 미국장은 한국 시간으로 자정을 넘겨 열리는데, 저장해 둔 어제 종가가 자정이 지나도 안 지워져 하루 전 값이 그대로 쓰였다. 미국 종목은 미국 장 마감 시각에 맞춰 지워지도록 고치고 자동 테스트 2건을 추가(총 239건 통과). 수정 후 마이크론 +2.5%로 토스와 일치 확인.</div>
+  </div>
   <div class="entry" data-agent="backend frontend">
     <h2>헤더 손익 요약 — 3행 열 정렬 + 환율 전일 대비 등락 표시 <span class="badge ok">완료</span></h2>
     <p class="meta">2026-07-14 · 담당: backend · frontend</p>

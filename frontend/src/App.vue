@@ -21,9 +21,6 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
             </svg>
           </div>
-
-          <!-- 앱 이름 -->
-          <span class="hidden sm:block text-base font-bold font-mono tracking-tight text-base-content/60 shrink-0">Stockpit</span>
         </div>
 
         <!-- 손익 요약 바 (헤더에 통합 — 환율·미국/국내 손익) -->
@@ -90,7 +87,8 @@
       <!-- UnifiedWatchlist 사이드바 -->
       <aside
         :class="[
-          'relative transition-all duration-300 shrink-0 flex flex-col bg-base-100',
+          'relative shrink-0 flex flex-col bg-base-100',
+          'transition-all duration-300',
           isSidebarCollapsed
             ? 'w-full md:w-0 h-0 md:h-full border-0'
             : [
@@ -119,10 +117,16 @@
       </aside>
 
       <!-- 메인 패널 -->
-      <main ref="mainScroll" class="flex-1 flex flex-col min-h-0 min-w-0 p-3 md:p-5 overflow-y-auto overflow-x-hidden space-y-4 md:space-y-5 bg-base-300">
+      <!-- scrollbar-gutter:stable — md(768px) 경계에서 세로 스크롤바 유무에 따라 콘텐츠 폭이
+           통째로 시프트(우측 여백 급변)하던 것을 막는다. 스크롤바 자리를 항상 예약해 767/768
+           여백을 동일하게 유지. 스크롤바 스타일은 전역 ::-webkit-scrollbar(4px)를 그대로 사용.
+           패딩·세로간격은 상수 p-5/space-y-5 로 고정 — 예전 p-3 md:p-5(12↔20)·space-y-4 md:space-y-5
+           (16↔20)가 767/768 경계에서 콘텐츠(차트)를 8px 밀고 가용폭을 16px 급변시키던 점프 제거.
+           데스크톱 앱(주 사용 폭이 md 이상)이므로 넓은 폭 값(20)을 모든 폭 상수로 채택 → 넓은 폭 감성 불변. -->
+      <main ref="mainScroll" class="flex-1 flex flex-col min-h-0 min-w-0 p-5 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable] space-y-5 bg-base-300">
 
         <!-- WS 로딩 스켈레톤 -->
-        <div v-if="loading" class="flex flex-col space-y-4 md:space-y-5 animate-pulse">
+        <div v-if="loading" class="flex flex-col space-y-5 animate-pulse">
           <!-- 보유표 스켈레톤 -->
           <div class="card bg-base-100 border border-hairline rounded-md overflow-hidden p-4">
             <div class="flex items-center justify-between mb-3">
@@ -157,7 +161,7 @@
           </div>
         </div>
 
-        <div v-else class="flex flex-col space-y-4 md:space-y-5">
+        <div v-else class="flex flex-col space-y-5">
 
           <!-- ① 보유 상세 패널 (최상단, 스크롤해도 상단 고정) -->
           <div class="sticky top-0 z-30">
@@ -308,13 +312,44 @@
                       : 'text-base-content/40 bg-base-200/40 border-base-content/10'
                 ]"
               >{{ gridSessionLabel }}</span>
+
+              <!-- 차트 열 수 토글(1차트=세로 1열/크게 · 4차트=2×2). 반응형 자동 배치 대신 명시 선택 -->
+              <div class="tabs tabs-boxed bg-base-200 p-0.5 rounded-sm border border-hairline gap-0 ml-auto">
+                <button
+                  v-for="c in [{ v: 1, label: '1차트씩 크게 보기' }, { v: 2, label: '4차트씩 보기' }]"
+                  :key="c.v"
+                  type="button"
+                  @click="gridCols = c.v"
+                  :class="[
+                    'tab rounded-sm transition-colors duration-120 cursor-pointer px-3 py-1 flex items-center justify-center',
+                    gridCols === c.v
+                      ? 'tab-active bg-surface-raised border border-accent-line text-base-content'
+                      : 'text-base-content/45 hover:text-base-content/70 border border-transparent'
+                  ]"
+                  :aria-pressed="gridCols === c.v"
+                  :aria-label="c.label"
+                  :title="c.label"
+                >
+                  <!-- 1차트: 단일 큰 사각형 -->
+                  <svg v-if="c.v === 1" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <rect x="4" y="4" width="16" height="16" rx="2" />
+                  </svg>
+                  <!-- 4차트: 2×2 그리드 -->
+                  <svg v-else class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <rect x="4" y="4" width="7" height="7" rx="1" />
+                    <rect x="13" y="4" width="7" height="7" rx="1" />
+                    <rect x="4" y="13" width="7" height="7" rx="1" />
+                    <rect x="13" y="13" width="7" height="7" rx="1" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <div
-              v-auto-animate
+              ref="gridAnimateRef"
               @mouseup="gridDragHandleIdx = null"
               @mouseleave="gridDragHandleIdx = null"
               :class="[
-                'grid gap-4 shrink-0 items-start transition-all duration-300',
+                'grid gap-4 shrink-0 items-start transition-all duration-300 overflow-x-auto custom-scrollbar',
                 gridColsClass
               ]"
             >
@@ -333,10 +368,10 @@
               @dragleave="onGridDragLeave(idx)"
               @drop="onGridDrop(idx)"
               :class="[
-                'group relative card bg-base-100 border transition-colors duration-120 overflow-hidden rounded-md',
+                'group relative card bg-base-100 border transition-colors duration-120 overflow-hidden rounded-md min-w-130',
                 isGridClosed(idx)
                   ? 'h-60'
-                  : (activeGridTickersCount === 1 ? 'h-80 sm:h-96 lg:h-120' : 'h-72 sm:h-80 lg:h-110'),
+                  : (gridCols === 1 ? 'h-80 sm:h-96 lg:h-120' : 'h-72 sm:h-80 lg:h-110'),
                 gridDragOverIdx === idx
                   ? 'border-accent ring-1 ring-accent'
                   : (activeGridIndex === idx
@@ -517,7 +552,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue';
+import { useAutoAnimate } from '@formkit/auto-animate/vue';
 import StockChart from './components/StockChart.vue';
 import PortfolioSummaryBar from './components/PortfolioSummaryBar.vue';
 import HoldingsPanel from './components/HoldingsPanel.vue';
@@ -552,6 +588,25 @@ const sidebarPosition = ref(localStorage.getItem('sidebarPosition') || 'left');
 const isSidebarCollapsed = ref(localStorage.getItem('isSidebarCollapsed') === 'true');
 const indexCollapsed = ref(localStorage.getItem('indexCollapsed') === 'true'); // 지수(나스닥·코스피) 영역 접힘 여부
 const gridMarket = ref(localStorage.getItem('gridMarket') === 'US' ? 'US' : 'KR'); // 하단 그리드 시장 필터(국내/미국)
+const gridCols = ref(localStorage.getItem('gridCols') === '2' ? 2 : 1); // 하단 그리드 열 수(1=세로 1열/차트 크게, 2=2×2). 기본 1.
+// 창 리사이즈 중에는 모든 transition 을 끈다 — md(768px) 브레이크포인트 경계에서
+// 사이드바/그리드의 width·height 클래스(w-full↔md:w-72, h-64↔md:h-full 등)가 바뀔 때
+// transition-all 이 그 점프를 300ms 애니메이션해 생기는 흔들림/깜빡임(특히 767~768px 대역
+// 미세조정 시 매 픽셀 재flip)을 막는다. 리사이즈가 멎으면(150ms) 다시 켜 collapse 애니는 유지.
+// documentElement 클래스는 '동기' 적용이라 Vue 렌더 지연 없이 브라우저가 transition 을
+// 시작하기 전에 확실히 반영되고, 사이드바뿐 아니라 그리드(md:grid-cols-2 등)까지 함께 덮는다.
+let _resizeSettleTimer = null;
+let _onWindowResize = null;
+// auto-animate 리사이즈 게이팅 — 창 리사이즈 동안 FLIP(Web Animations API) 재생을 끈다.
+// auto-animate 는 리스트 추가/삭제/재정렬용인데, 전역 ResizeObserver 가 매 리사이즈 틱마다
+// 등록 부모의 자식을 FLIP 재생해 md(768px) 경계에서 레이아웃이 흔들린다. WAAPI 는 CSS
+// transition:none(win-resizing)으로 못 막으므로 setEnabled 로 직접 끈다. 자식(관심종목·보유표)은
+// 이 ref 를 inject 해 각자 setEnabled 를 토글한다(중복 리스너 없이 App 단일 리사이즈 핸들러로 제어).
+const animateEnabled = ref(true);
+provide('animateEnabled', animateEnabled);
+const [gridAnimateRef, setGridAnimate] = useAutoAnimate({ duration: 200, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
+watch(animateEnabled, (v) => setGridAnimate(v));
+let _animateReenableTimer = null;
 // ── 포트폴리오 대시보드 ────────────────────────────────────────
 const dashboardData = ref(null);       // { summary, holdings, watchlist, exchange_rate }
 const dashboardLoading = ref(false);
@@ -589,18 +644,11 @@ const activeGridTickersCount = computed(() => {
   return gridTickers.value.filter(t => t !== '').length;
 });
 
-// 등록 개수별 데스크탑 열 수 매핑 (Tailwind purge 방지: 클래스 리터럴로 기재)
-// 1→1열 / 2→2열 / 3→3열 / 4→2열(2×2) / 5→3열 / 6→3열 / 7이상→3열 폴백
-const GRID_COLS_MAP = {
-  1: 'grid-cols-1',
-  2: 'grid-cols-1 md:grid-cols-2',
-  3: 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3',
-  4: 'grid-cols-1 md:grid-cols-2',
-  5: 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3',
-  6: 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3',
-};
+// 열 수는 사용자가 명시 선택(1=세로 1열/차트 크게, 2=2×2). 창 폭에 따라 멋대로 2열이 되던
+// 반응형 자동 배치는 제거. 2열 모드도 좁은 폭(모바일/Capacitor)에선 md: 하한으로 1열로 자연 강등.
+// (Tailwind purge 방지: 클래스 리터럴로 기재)
 const gridColsClass = computed(() => {
-  return GRID_COLS_MAP[activeGridTickersCount.value] ?? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
+  return gridCols.value === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1';
 });
 
 // 현재 그리드 시장의 세션 라벨(정규장/주간거래/장마감 등). 같은 시장이면 모든 카드가 동일하므로
@@ -750,7 +798,10 @@ const collapsedInlineQuotes = computed(() => {
   if (isNqFuturesTrading.value && indexStockData.value['NQ=F']) {
     out.push({ ticker: 'NQ=F', label: '나스닥100' });
   }
-  if (isKospiNightSession.value && indexStockData.value['KOSPI_NIGHT']) {
+  // 코스피: 정규장이면 종합지수, 아니면 야간선물(야간 세션일 때). visibleIndexTickers 와 동일 규칙.
+  if (isKospiRegularSession.value && indexStockData.value['KOSPI200']) {
+    out.push({ ticker: 'KOSPI200', label: '코스피' });
+  } else if (isKospiNightSession.value && indexStockData.value['KOSPI_NIGHT']) {
     out.push({ ticker: 'KOSPI_NIGHT', label: '코스피 야간선물' });
   }
   return out;
@@ -772,6 +823,10 @@ watch(indexCollapsed, (val) => {
 
 watch(gridMarket, (val) => {
   localStorage.setItem('gridMarket', val);
+});
+
+watch(gridCols, (val) => {
+  localStorage.setItem('gridCols', val);
 });
 
 // 그리드는 DB 관심종목(dbWatchlistSymbols)이 유일한 소스다.
@@ -1372,6 +1427,23 @@ onMounted(() => {
     }
   };
   document.addEventListener('keydown', _gridChartKeyDown);
+
+  // 리사이즈 중 transition off (디바운스 150ms) — 브레이크포인트 경계 튐/깜빡임 방지.
+  // documentElement 클래스 토글은 동기라 리사이즈 프레임의 style-recalc 전에 반영된다.
+  _onWindowResize = () => {
+    document.documentElement.classList.add('win-resizing');
+    animateEnabled.value = false; // 리사이즈 시작 → auto-animate FLIP 억제(3곳 동시)
+    clearTimeout(_resizeSettleTimer);
+    _resizeSettleTimer = setTimeout(() => {
+      document.documentElement.classList.remove('win-resizing');
+    }, 150);
+    // auto-animate 재활성은 마지막 FLIP(200ms)과 겹쳐 튀지 않도록 리사이즈 종료 후 250ms 뒤.
+    clearTimeout(_animateReenableTimer);
+    _animateReenableTimer = setTimeout(() => {
+      animateEnabled.value = true;
+    }, 250);
+  };
+  window.addEventListener('resize', _onWindowResize);
 });
 
 onBeforeUnmount(() => {
@@ -1381,6 +1453,10 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', _onVisibilityChange);
   document.removeEventListener('keydown', _gridChartKeyDown);
   if (_flashResetTimer) clearTimeout(_flashResetTimer);
+  if (_onWindowResize) window.removeEventListener('resize', _onWindowResize);
+  clearTimeout(_resizeSettleTimer);
+  clearTimeout(_animateReenableTimer);
+  document.documentElement.classList.remove('win-resizing');
 });
 </script>
 

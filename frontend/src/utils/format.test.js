@@ -21,6 +21,10 @@ import {
   formatPrice,
   profitColorClass,
   displayName,
+  usdParts,
+  wonParts,
+  profitUsdParts,
+  profitWonParts,
 } from './format.js';
 
 // displayName 테스트용 최소 SEARCHABLE_STOCKS 스텁
@@ -238,6 +242,65 @@ describe('formatPrice', () => {
 
   it('KRW 0 → "0원"', () => {
     expect(formatPrice('KRW', 0)).toBe('0원');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// 숫자/단위 분리 (compact 헤더 세로 정렬용) — usdParts/wonParts/profit*Parts
+// 핵심: 숫자열(우측)·단위열(좌측) 분리로 원/$/원 세로 정렬. null → 단위 없이 대시.
+// ──────────────────────────────────────────────────────────────────
+
+describe('usdParts (값·부호없음·달러)', () => {
+  it('값 → { num: "15,924.00", unit: "$" }', () => {
+    expect(usdParts(15924)).toEqual({ num: '15,924.00', unit: '$' });
+  });
+  it('환율값 소수 2자리 유지', () => {
+    expect(usdParts(1491.2)).toEqual({ num: '1,491.20', unit: '$' });
+  });
+  it('0 → "0.00"', () => {
+    expect(usdParts(0)).toEqual({ num: '0.00', unit: '$' });
+  });
+  it('null → { num: "—", unit: "" } (단위 없이 대시)', () => {
+    expect(usdParts(null)).toEqual({ num: '—', unit: '' });
+  });
+});
+
+describe('wonParts (값·부호없음·원화)', () => {
+  it('값 → { num: "3,638,800", unit: "원" }', () => {
+    expect(wonParts(3638800)).toEqual({ num: '3,638,800', unit: '원' });
+  });
+  it('소수 반올림', () => {
+    expect(wonParts(100.7)).toEqual({ num: '101', unit: '원' });
+  });
+  it('null → 단위 없는 대시', () => {
+    expect(wonParts(null)).toEqual({ num: '—', unit: '' });
+  });
+});
+
+describe('profitUsdParts (손익·부호항상·달러)', () => {
+  it('음수 → { num: "-2308.00", unit: "$" }', () => {
+    expect(profitUsdParts(-2308)).toEqual({ num: '-2308.00', unit: '$' });
+  });
+  it('양수 부호 표시', () => {
+    expect(profitUsdParts(12.5)).toEqual({ num: '+12.50', unit: '$' });
+  });
+  it('0 → "+0.00"', () => {
+    expect(profitUsdParts(0)).toEqual({ num: '+0.00', unit: '$' });
+  });
+  it('null → 단위 없는 대시(신호 아님)', () => {
+    expect(profitUsdParts(null)).toEqual({ num: '—', unit: '' });
+  });
+});
+
+describe('profitWonParts (손익·부호항상·원화)', () => {
+  it('음수 → { num: "-1,166,000", unit: "원" }', () => {
+    expect(profitWonParts(-1166000)).toEqual({ num: '-1,166,000', unit: '원' });
+  });
+  it('양수 부호+콤마', () => {
+    expect(profitWonParts(30000)).toEqual({ num: '+30,000', unit: '원' });
+  });
+  it('null → 단위 없는 대시', () => {
+    expect(profitWonParts(null)).toEqual({ num: '—', unit: '' });
   });
 });
 

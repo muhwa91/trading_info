@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { isCoordinateVisible } from './chartHelpers.js';
+import { isCoordinateVisible, resolveAvgTagCoordinate } from './chartHelpers.js';
 
 // ─────────────────────────────────────────────
 // null / undefined — 항상 false
@@ -200,5 +200,55 @@ describe('isCoordinateVisible — 극단값·엣지케이스', () => {
 
   it('coord가 소수(예: 300.5), chartHeight 300 → false', () => {
     expect(isCoordinateVisible(300.5, 300)).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────
+// resolveAvgTagCoordinate — 평단 태그 겹침 회피
+// 현재가 태그와 평단 태그가 가까우면(가격 근접) 평단 태그를 밀어내
+// 두 리드아웃 라벨 글씨가 포개지지 않게 한다.
+// ─────────────────────────────────────────────
+
+describe('resolveAvgTagCoordinate — 겹침 회피', () => {
+  const GAP = 32; // OVERLAY_HEIGHT(30) + 2
+
+  it('평단 좌표가 null 이면 null', () => {
+    expect(resolveAvgTagCoordinate(null, 100, GAP)).toBeNull();
+    expect(resolveAvgTagCoordinate(undefined, 100, GAP)).toBeNull();
+  });
+
+  it('현재가 좌표가 null 이면 평단 좌표 그대로(겹칠 상대 없음)', () => {
+    expect(resolveAvgTagCoordinate(100, null, GAP)).toBe(100);
+    expect(resolveAvgTagCoordinate(100, undefined, GAP)).toBe(100);
+  });
+
+  it('충분히 떨어져 있으면(간격 ≥ minGap) 그대로 둔다', () => {
+    expect(resolveAvgTagCoordinate(200, 100, GAP)).toBe(200); // 아래로 100 떨어짐
+    expect(resolveAvgTagCoordinate(50, 100, GAP)).toBe(50);   // 위로 50 떨어짐
+  });
+
+  it('간격이 정확히 minGap 이면 그대로(경계 포함)', () => {
+    expect(resolveAvgTagCoordinate(132, 100, GAP)).toBe(132);
+    expect(resolveAvgTagCoordinate(68, 100, GAP)).toBe(68);
+  });
+
+  it('아래쪽으로 겹치면 현재가 + minGap 으로 밀어낸다', () => {
+    expect(resolveAvgTagCoordinate(110, 100, GAP)).toBe(132);
+    expect(resolveAvgTagCoordinate(120, 100, GAP)).toBe(132);
+  });
+
+  it('위쪽으로 겹치면 현재가 - minGap 으로 밀어낸다', () => {
+    expect(resolveAvgTagCoordinate(90, 100, GAP)).toBe(68);
+    expect(resolveAvgTagCoordinate(80, 100, GAP)).toBe(68);
+  });
+
+  it('완전히 동일한 좌표면 아래로 분리한다(겹침 최악 케이스)', () => {
+    expect(resolveAvgTagCoordinate(100, 100, GAP)).toBe(132);
+  });
+
+  it('밀어낸 뒤에는 최소 간격이 보장된다', () => {
+    const cur = 100;
+    const adjusted = resolveAvgTagCoordinate(105, cur, GAP);
+    expect(Math.abs(adjusted - cur)).toBeGreaterThanOrEqual(GAP);
   });
 });

@@ -43,10 +43,26 @@
           {{ holdings.length }}
         </span>
       </div>
+      <!-- 우측: 환율 인라인 + 보유 추가 버튼 -->
+      <div class="flex items-center gap-3 min-w-0">
+      <!-- 환율 인라인 시세 (지수 헤더 인라인 시세와 동일 톤: 라벨+값+등락) -->
+      <span
+        v-if="exchangeRate && exchangeRate.USD_KRW != null"
+        class="flex items-center gap-1.5 font-mono leading-none whitespace-nowrap min-w-0"
+        :class="fxDelta !== null ? profitColorClass(fxDelta) : 'text-base-content/70'"
+      >
+        <span class="text-2xs font-medium text-base-content/40 tracking-wider shrink-0">환율</span>
+        <span class="text-sm font-semibold shrink-0">{{ fxValueDisplay }}</span>
+        <span v-if="fxDelta !== null" class="text-2xs font-medium shrink-0">
+          {{ fxDelta >= 0 ? '▲' : '▼' }}
+          {{ (fxDelta >= 0 ? '+' : '') + fxDelta.toFixed(2) }}
+          ({{ formatProfitRate(fxRate) }})
+        </span>
+      </span>
       <!-- 보유 추가 버튼 -->
       <button
         @click="openHoldingModal()"
-        class="btn btn-xs btn-primary font-semibold gap-1 rounded-sm cursor-pointer transition-colors duration-120"
+        class="btn btn-xs btn-primary font-semibold gap-1 rounded-sm cursor-pointer transition-colors duration-120 shrink-0"
         aria-label="보유 종목 추가"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -54,6 +70,7 @@
         </svg>
         추가
       </button>
+      </div>
     </div>
 
     <!-- 빈 상태 -->
@@ -70,7 +87,8 @@
     </div>
 
     <!-- 보유 종목 테이블 -->
-    <div v-else v-show="!holdingsCollapsed" class="overflow-x-auto custom-scrollbar">
+    <!-- rounded-b-md: 스크롤 요소 자신이 하단 라운딩을 가져야 가로 스크롤바가 카드 라운드 코너 밖으로 새지 않음(크로미움: 중첩 스크롤바는 조상 overflow-hidden 라운드 클립을 무시) -->
+    <div v-else v-show="!holdingsCollapsed" class="overflow-x-auto custom-scrollbar rounded-b-md">
       <table class="w-full min-w-215" role="table" aria-label="보유 종목 목록">
         <thead>
           <tr class="text-2xs font-semibold text-base-content/35 tracking-wide uppercase border-b border-hairline bg-base-200">
@@ -90,7 +108,7 @@
             <th class="text-center px-4 py-3 font-semibold whitespace-nowrap">관리</th>
           </tr>
         </thead>
-        <tbody v-auto-animate>
+        <tbody ref="tbodyAnimateRef">
           <tr
             v-for="item in orderedHoldings"
             :key="item.portfolio_id"
@@ -590,7 +608,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount, inject } from 'vue';
+import { useAutoAnimate } from '@formkit/auto-animate/vue';
 import axios from 'axios';
 import { confirm as confirmDialog } from '../composables/useConfirm.js';
 import StockChart from './StockChart.vue';
@@ -706,6 +725,13 @@ let chartPollTimer = null;
 
 // ── 템플릿 ref ────────────────────────────────────────────────
 const holdingSearchContainer = ref(null);
+
+// auto-animate: 보유표 tbody 행 추가/삭제/재정렬(드래그 스왑) FLIP.
+// 창 리사이즈 중에는 App 이 provide 한 animateEnabled 를 false 로 내려 FLIP 을 끈다
+// (md 경계 흔들림 방지). 드래그 스왑·추가/삭제 시엔 리사이즈가 없어 켜진 상태 → FLIP 정상.
+const [tbodyAnimateRef, setTbodyAnimate] = useAutoAnimate({ duration: 200, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
+const animateEnabled = inject('animateEnabled', ref(true));
+watch(animateEnabled, (v) => setTbodyAnimate(v));
 
 // ── 세션 배지: 타임존 기반 실시간 30초 갱신 ──────────────────
 
@@ -1054,6 +1080,27 @@ function onRowClick(item) {
 const orderVersion = ref(0);
 
 // ── computed ──────────────────────────────────────────────────
+
+// 환율 인라인 표시 (지수 헤더 인라인 시세와 동일 톤). PortfolioSummaryBar 의 fx 계산과 동일 방식.
+// 값 "1,491.20" + 전일 대비 델타/등락률(있으면). prev_close 없으면 값만.
+const fxValueDisplay = computed(() => {
+  const v = props.exchangeRate?.USD_KRW;
+  if (v == null) return '—';
+  return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+});
+// 전일 대비 등락폭 (USD_KRW - prev_close). prev_close null/미제공 → null (등락 생략)
+const fxDelta = computed(() => {
+  const r = props.exchangeRate;
+  if (!r || r.prev_close == null || r.USD_KRW == null) return null;
+  return Number(r.USD_KRW) - Number(r.prev_close);
+});
+// 등락률(소수 비율) — formatProfitRate 가 ×100 처리. prev_close 0/null → null
+const fxRate = computed(() => {
+  const r = props.exchangeRate;
+  if (!r || !Number(r.prev_close) || r.USD_KRW == null) return null;
+  return (Number(r.USD_KRW) - Number(r.prev_close)) / Number(r.prev_close);
+});
+
 const holdingFormMarket = computed(() => {
   if (editingHolding.value) return editingHolding.value.market;
   return holdingForm.value.market;

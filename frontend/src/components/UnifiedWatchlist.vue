@@ -154,7 +154,7 @@
     </div>
 
     <!-- 종목 목록 -->
-    <div v-auto-animate class="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar" role="list" aria-label="통합 관심 종목 목록">
+    <div ref="listAnimateRef" class="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar" role="list" aria-label="통합 관심 종목 목록">
 
       <!-- 초기 로딩 스켈레톤 (items 아직 없을 때) -->
       <div v-if="actionLoading && items.length === 0" class="space-y-2 animate-pulse p-1">
@@ -266,7 +266,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount, inject } from 'vue';
+import { useAutoAnimate } from '@formkit/auto-animate/vue';
 import axios from 'axios';
 import { confirm as confirmDialog } from '../composables/useConfirm.js';
 import FlagIcon from './FlagIcon.vue';
@@ -400,6 +401,13 @@ const emit = defineEmits([
 // ── 템플릿 ref ───────────────────────────────────────────────────
 
 const searchContainer = ref(null);
+
+// auto-animate: 관심종목 리스트 추가/삭제/재정렬 FLIP.
+// 창 리사이즈 중에는 App 이 provide 한 animateEnabled 를 false 로 내려 FLIP 을 끈다
+// (md 경계 흔들림 방지). 리사이즈가 아닌 추가/삭제 상황에서는 켜진 상태라 FLIP 정상 동작.
+const [listAnimateRef, setListAnimate] = useAutoAnimate({ duration: 200, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
+const animateEnabled = inject('animateEnabled', ref(true));
+watch(animateEnabled, (v) => setListAnimate(v));
 
 // ── 반응형 상태 (data) ───────────────────────────────────────────
 

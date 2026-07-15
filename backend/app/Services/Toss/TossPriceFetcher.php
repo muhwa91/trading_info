@@ -188,7 +188,18 @@ class TossPriceFetcher
                 $appSymbol = $mapped['appSymbol'];
                 $market    = $mapped['market'];
 
+                // KR 정규장 마감 후 현재가 = 오늘 정규장 종가로 고정(시간외 lastPrice 무시).
+                //   토스 앱과 동일 표시. 정규장 중·휴장·개장 전이면 null → lastPrice 유지.
+                //   US 는 프리/애프터 시간외를 그대로 보여줘야 하므로 미적용.
+                if ($market === 'KR') {
+                    $krClose = $this->changeCalculator->getKrRegularClose($tossSymbol);
+                    if ($krClose !== null) {
+                        $lastPrice = $krClose;
+                    }
+                }
+
                 // 등락 계산 (TossChangeCalculator: 국내 기준 자정 TTL 캐싱)
+                //   현재가를 종가로 고정하면 등락(종가 − price-limits 기준가)도 자동 정합.
                 $change        = $this->changeCalculator->calculate($tossSymbol, $lastPrice);
                 $changeAmount  = $change['change_amount'];
                 $changePercent = $change['change_percent'];
@@ -381,6 +392,12 @@ class TossPriceFetcher
 
         if ($lastPrice === null || $lastPrice <= 0) {
             return Cache::get($fallbackKey);
+        }
+
+        // KR 정규장 마감 후 현재가 = 오늘 정규장 종가로 고정(시간외 무시) — fetchDomestic 과 동일 규칙.
+        $krClose = $this->changeCalculator->getKrRegularClose($tossSymbol);
+        if ($krClose !== null) {
+            $lastPrice = $krClose;
         }
 
         $change        = $this->changeCalculator->calculate($tossSymbol, $lastPrice);

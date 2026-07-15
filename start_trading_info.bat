@@ -12,25 +12,22 @@ echo ====================================================
 echo  trading_info 주식 모니터링 서비스 시작 중...
 echo ====================================================
 
-:: 1. 백엔드 API 서버 (Port 8000)
-netstat -o -n -a | findstr :8000 > nul
-if %errorlevel% equ 0 (
-    echo [OK] Laravel API 서버가 이미 실행 중입니다. ^(Port 8000^)
-) else (
-    echo [..] Laravel API 서버 시작 중...
-    start "trading_info API" /min cmd /c "cd /d "%BACKEND%" && php artisan serve --port=8000"
-)
+:: 0. 멱등 재시작 보장 — 먼저 기존 백엔드 PHP 프로세스를 커맨드라인 기준으로 전수 종료.
+::    (stop_trading_info.bat 와 동일 로직. 포트 리스너 kill 은 non-listening stale 데몬을
+::     놓쳐 구 코드가 공유 캐시를 되쓰는 사고가 있었음.)
+echo [..] 기존 백엔드 PHP 프로세스 정리 중 (artisan serve / agent:serve / server.php)...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$b=[regex]::Escape('%BACKEND%'); Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'php.exe' -and $_.CommandLine -and ($_.CommandLine -match 'artisan (serve|agent:serve)' -or $_.CommandLine -match $b) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+timeout /t 1 /nobreak > nul
 
-:: 2. 백엔드 웹소켓 서버 (Port 8080)
-netstat -o -n -a | findstr :8080 > nul
-if %errorlevel% equ 0 (
-    echo [OK] WebSocket 서버가 이미 실행 중입니다. ^(Port 8080^)
-) else (
-    echo [..] WebSocket 에이전트 서버 시작 중...
-    start "trading_info WS" /min cmd /c "cd /d "%BACKEND%" && php artisan agent:serve"
-)
+:: 1. 백엔드 API 서버 (Port 8000) — 위에서 정리했으므로 무조건 새로 시작
+echo [..] Laravel API 서버 시작 중...
+start "trading_info API" /min cmd /c "cd /d "%BACKEND%" && php artisan serve --port=8000"
 
-:: 3. 프론트엔드 개발 서버 (Port 5173)
+:: 2. 백엔드 웹소켓 서버 (Port 8080) — 위에서 정리했으므로 무조건 새로 시작
+echo [..] WebSocket 에이전트 서버 시작 중...
+start "trading_info WS" /min cmd /c "cd /d "%BACKEND%" && php artisan agent:serve"
+
+:: 3. 프론트엔드 개발 서버 (Port 5173) — node 프로세스라 정리 대상 아님, 중복 실행만 방지
 netstat -o -n -a | findstr :5173 > nul
 if %errorlevel% equ 0 (
     echo [OK] Vite 개발 서버가 이미 실행 중입니다. ^(Port 5173^)

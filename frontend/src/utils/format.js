@@ -78,6 +78,43 @@ export function formatPrice(currency, value) {
   return `${Number(value).toFixed(2)}$`;
 }
 
+// ── 숫자/단위 분리 (compact 헤더 서브그리드 세로 정렬용) ────────────────
+// 숫자 열(우측정렬 tabular)과 단위 열(좌측정렬 고정폭)을 별도 그리드 트랙에
+// (2026-07-15: 8열 소수점 분리 시도 → 롤백. 숫자 전체 우측정렬 + 단위 별도 열 유지.)
+// 넣기 위해 { num, unit } 로 분리 반환. → 단위(원/$/원)의 좌측 edge가 한 열에
+// 세로 정렬되고 숫자는 우측 정렬돼 자릿수가 맞는다(02-계약 §D·§K).
+// 겹침은 컨테이너 w-max·whitespace-nowrap·부모 overflow-x-auto 로 구조적 차단.
+// null/undefined → { num: '—', unit: '' } (단위 없이 대시만).
+
+/** 값(부호 없음)·달러: "15,924.00" + "$" */
+export function usdParts(value) {
+  if (value === null || value === undefined) return { num: '—', unit: '' };
+  return {
+    num: Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    unit: '$',
+  };
+}
+
+/** 값(부호 없음)·원화: "3,638,800" + "원" */
+export function wonParts(value) {
+  if (value === null || value === undefined) return { num: '—', unit: '' };
+  return { num: Math.round(Number(value)).toLocaleString(), unit: '원' };
+}
+
+/** 손익(부호 항상)·달러: "-2308.00" + "$" */
+export function profitUsdParts(value) {
+  if (value === null || value === undefined) return { num: '—', unit: '' };
+  const n = Number(value);
+  return { num: `${n >= 0 ? '+' : '-'}${Math.abs(n).toFixed(2)}`, unit: '$' };
+}
+
+/** 손익(부호 항상)·원화: "-1,166,000" + "원" */
+export function profitWonParts(value) {
+  if (value === null || value === undefined) return { num: '—', unit: '' };
+  const n = Number(value);
+  return { num: `${n >= 0 ? '+' : '-'}${Math.round(Math.abs(n)).toLocaleString()}`, unit: '원' };
+}
+
 // ── 시각 포맷 ──────────────────────────────────────────────────────
 
 /**

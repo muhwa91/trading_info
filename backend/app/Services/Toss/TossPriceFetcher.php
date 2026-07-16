@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Toss;
 
 use GuzzleHttp\Client;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -51,14 +52,19 @@ class TossPriceFetcher
     private TossSymbolMapper $mapper;
     private TossChangeCalculator $changeCalculator;
 
+    /** Yahoo 폴백 조회용 HTTP 클라이언트. 선택 주입 — 테스트에서 MockHandler 로 갈아끼워 네트워크 없이 검증한다(TossChangeCalculator 와 동일 패턴). */
+    private Client $http;
+
     public function __construct(
         TossApiClient $client,
         TossSymbolMapper $mapper,
-        TossChangeCalculator $changeCalculator
+        TossChangeCalculator $changeCalculator,
+        ?Client $http = null
     ) {
         $this->client           = $client;
         $this->mapper           = $mapper;
         $this->changeCalculator = $changeCalculator;
+        $this->http             = $http ?? new Client();
     }
 
     /**
@@ -518,7 +524,7 @@ class TossPriceFetcher
         }
 
         try {
-            $httpClient = new Client();
+            $httpClient = $this->http;
             // range=5d + includePrePost: meta.regularMarketPrice 가 세션별 정규장 기준가를 정확히 반영
             $url = self::YAHOO_CHART_URL . urlencode($symbol) . '?interval=1d&range=5d&includePrePost=true';
 
@@ -558,7 +564,6 @@ class TossPriceFetcher
             //   (warmRegularCloses 가 Cache::has 면 skip → 16:00 새 종가를 영영 페치 안 함).
             //   → 만료 기준을 '다음 16:05 ET(정규장 마감 직후)'로 옮겨, 워머가 애프터마켓에
             //     처음 진입할 때 regularMarketPrice(=오늘 확정 종가)로 한 번 교체되게 한다.
-            $nyTz        = new \DateTimeZone('America/New_York');
             $marketState = $meta['marketState'] ?? null;
 
             if ($marketState === 'REGULAR' || $marketState === null) {
@@ -568,13 +573,27 @@ class TossPriceFetcher
                 //   고착을 막는다(긴 TTL 로 잘못된 값을 박는 것보다 안전).
                 $ttl = 300;
             } else {
-                // PRE / POST / CLOSED 등 — 다음 정규장 마감 직후(16:05 ET)에 만료.
-                //   오늘 16:05 가 아직 안 지났으면 오늘, 지났으면 내일 16:05 로.
-                $target = new \DateTime('today 16:05', $nyTz);
-                if ($target->getTimestamp() <= time()) {
-                    $target = new \DateTime('tomorrow 16:05', $nyTz);
+                // PRE / POST / CLOSED 등 — regularMarketPrice 의 '의미가 바뀌는 다음 경계'에 만료.
+                //   경계는 16:05 하나가 아니라 둘이다(2026-07-17 수정). 16:05 만 보면 PRE 에 기록한
+                //   '어제 종가'가 09:30(정규장 개시)을 넘겨 최대 8h 고착한다 — 워머는 Cache::has 면 skip,
+                //   fetchYahooRegularClose 는 cache-first 라 그 사이 아무도 안 고친다. 그 결과
+                //   DashboardController 의 US 평가(readRegularCloseCache)가 미국 정규장 내내 어제 종가에
+                //   묶이고, 16:05 엔 TossChangeCalculator 롤포워드의 오염 급원이 된다.
+                //   → 09:30(라이브가로 의미 전환)·16:05(당일 종가 확정) 중 먼저 오는 쪽에 만료.
+                //   하한 없음(max(...,1)): 300초 하한은 그 자체가 경계를 5분 넘겨 살아남는 stale 의 원인이다
+                //   (TossChangeCalculator US·KR 경로에서 동일 근거로 제거·검증됨).
+                //   시각은 Carbon::now()(테스트 시 setTestNow 반영) 기준 — time() 은 고정시각 검증이 불가능하다.
+                $now   = Carbon::now('America/New_York');
+                $nowTs = $now->getTimestamp();
+                $next  = null;
+                foreach ([[9, 30], [16, 5]] as [$h, $m]) {
+                    $t = $now->copy()->setTime($h, $m);
+                    if ($t->getTimestamp() <= $nowTs) {
+                        $t->addDay();
+                    }
+                    $next = $next === null ? $t->getTimestamp() : min($next, $t->getTimestamp());
                 }
-                $ttl = max($target->getTimestamp() - time(), 300);
+                $ttl = max($next - $nowTs, 1);
             }
 
             Cache::put($cacheKey, $price, $ttl);
@@ -598,7 +617,7 @@ class TossPriceFetcher
     private function fetchYahooCurrentPrice(string $symbol): ?array
     {
         try {
-            $httpClient = new Client();
+            $httpClient = $this->http;
             $url        = self::YAHOO_CHART_URL . urlencode($symbol) . '?interval=1d&range=5d&includePrePost=true';
 
             $res  = $httpClient->get($url, [

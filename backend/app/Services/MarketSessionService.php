@@ -60,7 +60,7 @@ class MarketSessionService
         }
 
         // 데이 세션(프리/정규/애프터)은 'NY 오늘'이 거래일일 때만 — 공휴일이면 장마감
-        if (!$this->isUsMarketTradingToday()) {
+        if (!$this->isUsMarketTradingToday($timestamp)) {
             return '장마감';
         }
 
@@ -104,54 +104,61 @@ class MarketSessionService
     // ──────────────────────────────────────────────────────────────────────────
 
     /**
-     * Yahoo Finance SPY meta 로 오늘(NY)이 미국 거래일인지 판정한다.
+     * 주어진 timestamp(기본: 현재) 의 NY 날짜가 미국 거래일인지 판정한다.
      *
      * Cache 키 `us_trading_day_{Y-m-d}` 는 StockController 와 공유된다.
+     * Yahoo SPY meta 는 '지금'의 거래일만 알려주므로, 오늘이 아닌 날짜는 주말 폴백으로만 판정한다.
      * API 실패 시 폴백: 주말 여부(평일=거래일 가정) — 공휴일 하드코딩 없음.
      */
-    public function isUsMarketTradingToday(): bool
+    public function isUsMarketTradingToday(?int $timestamp = null): bool
     {
-        $nyTz     = new \DateTimeZone('America/New_York');
-        $todayNy  = (new \DateTime('now', $nyTz))->format('Y-m-d');
-        $cacheKey = "us_trading_day_{$todayNy}";
+        $nyTz    = new \DateTimeZone('America/New_York');
+        $refDt   = new \DateTime($timestamp !== null ? "@{$timestamp}" : 'now');
+        $refDt->setTimezone($nyTz);
+        $refNy   = $refDt->format('Y-m-d');
+        $todayNy = (new \DateTime('now', $nyTz))->format('Y-m-d');
+
+        $cacheKey = "us_trading_day_{$refNy}";
 
         $cached = Cache::get($cacheKey);
         if ($cached !== null) {
             return (bool)$cached;
         }
 
-        try {
-            $client = new Client();
-            // SPY 는 NYSE Arca 상장 ETF — 가벼운 1d/1d 요청으로 meta 만 취득
-            $url = 'https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1d';
-            $response = $client->get($url, [
-                'headers' => ['User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'],
-                'timeout' => 5,
-            ]);
-            $data = json_decode($response->getBody()->getContents(), true);
+        // Yahoo SPY meta 는 '지금'의 거래 세션만 알려준다 — NY 오늘일 때만 조회, 그 외는 폴백.
+        if ($refNy === $todayNy) {
+            try {
+                $client = new Client();
+                // SPY 는 NYSE Arca 상장 ETF — 가벼운 1d/1d 요청으로 meta 만 취득
+                $url = 'https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1d';
+                $response = $client->get($url, [
+                    'headers' => ['User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'],
+                    'timeout' => 5,
+                ]);
+                $data = json_decode($response->getBody()->getContents(), true);
 
-            $regularStart = $data['chart']['result'][0]['meta']['currentTradingPeriod']['regular']['start'] ?? null;
-            if ($regularStart !== null) {
-                $startDt = new \DateTime("@{$regularStart}");
-                $startDt->setTimezone($nyTz);
-                $startNyDate = $startDt->format('Y-m-d');
+                $regularStart = $data['chart']['result'][0]['meta']['currentTradingPeriod']['regular']['start'] ?? null;
+                if ($regularStart !== null) {
+                    $startDt = new \DateTime("@{$regularStart}");
+                    $startDt->setTimezone($nyTz);
+                    $startNyDate = $startDt->format('Y-m-d');
 
-                $isTradingDay = ($startNyDate === $todayNy);
+                    $isTradingDay = ($startNyDate === $todayNy);
 
-                // 오늘 자정(NY)까지 캐싱
-                $midnight = new \DateTime('tomorrow', $nyTz);
-                $ttl = $midnight->getTimestamp() - time();
-                Cache::put($cacheKey, $isTradingDay, max($ttl, 300));
+                    // 오늘 자정(NY)까지 캐싱
+                    $midnight = new \DateTime('tomorrow', $nyTz);
+                    $ttl = $midnight->getTimestamp() - time();
+                    Cache::put($cacheKey, $isTradingDay, max($ttl, 300));
 
-                return $isTradingDay;
+                    return $isTradingDay;
+                }
+            } catch (\Exception $e) {
+                Log::warning('MarketSessionService::isUsMarketTradingToday: Yahoo fetch 실패, 주말 폴백 사용: ' . $e->getMessage());
             }
-        } catch (\Exception $e) {
-            Log::warning('MarketSessionService::isUsMarketTradingToday: Yahoo fetch 실패, 주말 폴백 사용: ' . $e->getMessage());
         }
 
-        // 폴백: 주말 여부로만 판정 — 짧게 캐싱해 API 회복 시 갱신
-        $nyDow    = (int)(new \DateTime('now', $nyTz))->format('N');
-        $isWeekday = ($nyDow <= 5);
+        // 폴백: 요청 날짜의 주말 여부로만 판정 — 짧게 캐싱해 API 회복 시 갱신
+        $isWeekday = ((int)$refDt->format('N')) <= 5;
         Cache::put($cacheKey, $isWeekday, 300);
         return $isWeekday;
     }
@@ -178,9 +185,10 @@ class MarketSessionService
             return (bool)$cached;
         }
 
-        // 토스 캘린더로 배치 조회 (앞뒤 7일)
-        $opened = $this->fetchTossOpenedDays($dateStr);
+        // 토스 캘린더로 확정 가능한 날짜 조회 (전 영업일 ~ 다음 영업일)
+        $opened = $this->fetchTossOpenedDays();
         if (!empty($opened)) {
+            // 확정값만 담기므로 7일 캐싱 안전 (폴백 추정치는 아래에서 30분만 캐싱)
             foreach ($opened as $d => $isOpen) {
                 Cache::put("kis_trading_day_{$d}", $isOpen, 60 * 60 * 24 * 7);
             }
@@ -210,45 +218,82 @@ class MarketSessionService
     /**
      * 토스 마켓캘린더 API → [Ymd => 거래일여부(bool)] 맵 반환.
      *
-     * baseDateStr 기준 앞뒤 7일치를 한 번에 조회해 여러 날짜를 한 번에 캐싱한다.
+     * 응답은 from/to 를 무시하고 **오늘 기준 3일**만 준다:
+     *   { result: { today:{date,integrated}, previousBusinessDay:{...}, nextBusinessDay:{...} } }
+     *   integrated !== null → 거래일 · integrated === null → 휴장.
+     *
+     * 이 3일에서 **확정** 가능한 날짜만 맵에 담는다:
+     *   - previousBusinessDay.date / nextBusinessDay.date → 거래일(true)
+     *   - today → integrated 유무로 true/false
+     *   - prev < d < today, today < d < next → 그 사이엔 영업일이 없으므로 비거래일(false)
+     * 그 밖의 날짜는 담지 않는다(호출부가 폴백으로 처리).
+     *
      * API 실패 또는 응답 형식 미인식 시 빈 배열 반환.
+     *
+     * @return array<string,bool>
      */
-    private function fetchTossOpenedDays(string $baseDateStr): array
+    private function fetchTossOpenedDays(): array
     {
         try {
-            // baseDateStr 기준 앞뒤 7일 범위 조회
-            $baseTs   = mktime(0, 0, 0, (int)substr($baseDateStr, 4, 2), (int)substr($baseDateStr, 6, 2), (int)substr($baseDateStr, 0, 4));
-            $fromDate = date('Ymd', $baseTs - 7 * 86400);
-            $toDate   = date('Ymd', $baseTs + 7 * 86400);
-
-            $data = $this->tossApiClient->get('/api/v1/market-calendar/KR', [
-                'from' => $fromDate,
-                'to'   => $toDate,
-            ]);
+            // from/to 는 서버가 무시한다(실측) — 항상 '오늘' 기준 3일치가 온다.
+            $data = $this->tossApiClient->get('/api/v1/market-calendar/KR');
 
             if (empty($data)) {
                 return [];
             }
 
-            // 응답에서 거래일 배열 추출 (키 이름 유연하게)
-            $tradingDays = $data['tradingDays'] ?? $data['openDates'] ?? $data['data']['tradingDays'] ?? null;
-            if (!is_array($tradingDays)) {
+            $result    = $data['result'] ?? null;
+            $todayDate = $this->toYmd($result['today']['date'] ?? null);
+            if (!is_array($result) || $todayDate === null) {
                 Log::warning('MarketSessionService: 토스 캘린더 응답 형식 미인식', ['keys' => array_keys($data)]);
                 return [];
             }
 
-            // 범위 내 모든 날짜에 대해 거래일 여부 맵 생성
-            $map        = [];
-            $tradingSet = array_flip($tradingDays); // YYYYMMDD 키로 빠른 룩업
-            $current    = $fromDate;
-            while ($current <= $toDate) {
-                $map[$current] = isset($tradingSet[$current]);
-                $current = date('Ymd', mktime(0, 0, 0, (int)substr($current, 4, 2), (int)substr($current, 6, 2) + 1, (int)substr($current, 0, 4)));
+            $prevDate = $this->toYmd($result['previousBusinessDay']['date'] ?? null);
+            $nextDate = $this->toYmd($result['nextBusinessDay']['date'] ?? null);
+
+            $map = [];
+            if ($prevDate !== null) {
+                $map[$prevDate] = true;
+                $this->fillNonTradingGap($map, $prevDate, $todayDate);
             }
+            $map[$todayDate] = ($result['today']['integrated'] ?? null) !== null;
+            if ($nextDate !== null) {
+                $this->fillNonTradingGap($map, $todayDate, $nextDate);
+                $map[$nextDate] = true;
+            }
+
             return $map;
         } catch (\Exception $e) {
             Log::error('MarketSessionService: 토스 캘린더 조회 실패: ' . $e->getMessage());
             return [];
+        }
+    }
+
+    /**
+     * 토스 응답의 'Y-m-d' 날짜 문자열 → 'Ymd'. 형식이 아니면 null.
+     */
+    private function toYmd($date): ?string
+    {
+        if (!is_string($date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return null;
+        }
+
+        return str_replace('-', '', $date);
+    }
+
+    /**
+     * $from 과 $to (둘 다 Ymd, 배타) 사이의 날짜를 비거래일로 채운다.
+     * 연속한 두 영업일 사이 = 휴장 확정.
+     *
+     * @param  array<string,bool>  $map
+     */
+    private function fillNonTradingGap(array &$map, string $from, string $to): void
+    {
+        $cursor = date('Ymd', strtotime($from . ' +1 day'));
+        while ($cursor < $to) {
+            $map[$cursor] = false;
+            $cursor = date('Ymd', strtotime($cursor . ' +1 day'));
         }
     }
 }

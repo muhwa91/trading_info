@@ -8,6 +8,9 @@ use App\Services\MarketSessionService;
 use App\Services\Toss\TossApiClient;
 use App\Services\Toss\TossChangeCalculator;
 use App\Services\Toss\TossSymbolMapper;
+use GuzzleHttp\Client;
+use GuzzleHttp\Promise\FulfilledPromise;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
@@ -47,14 +50,76 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     // ──────────────────────────────────────────────────────────────────
+    // KR 기준가 = Yahoo 정규장 종가 — 테스트 대역(hermetic)
+    //   2026-07-17 계약: 기준가(D) == Yahoo {코드}.KS 일봉 종가(D−1).
+    //   Client 를 주입하지 않으면 프로덕션이 진짜 Yahoo 를 때린다(실측: 005930 → 278000.0 을
+    //   실제로 물어왔다). KR 경로를 타는 테스트는 반드시 아래 대역을 4번째 인자로 주입한다.
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Yahoo v8 chart 일봉 대역 Guzzle 클라이언트.
+     *
+     * MockHandler(고정 큐) 대신 콜러블 핸들러를 쓴다 — 스윕은 호출 수가 수백 회라 큐를 못 쓰고,
+     * 프로덕션이 .KS → .KQ 순으로 재시도해 호출 수가 가변이기 때문. 요청 URI 와 무관하게 같은
+     * 시계열을 주므로 .KS 에서 바로 히트한다(.KQ 는 호출되지 않음 — 코스피 종목 표본과 일치).
+     *
+     * 빈 맵([])을 주면 '해당일 봉 없음' → 프로덕션의 Yahoo 실패 폴백 경로가 열린다.
+     *
+     * @param array<string,float> $closesByDate  ['Y-m-d'(KST) => 정규장 종가]
+     */
+    private function krYahooClient(array $closesByDate): Client
+    {
+        $handler = function () use ($closesByDate): FulfilledPromise {
+            $timestamps = [];
+            $closes     = [];
+            foreach ($closesByDate as $date => $close) {
+                // 프로덕션은 timestamp 를 KST 날짜로 환산해 매칭한다 → 그 날 장중 시각이면 무엇이든 무방.
+                $timestamps[] = Carbon::parse("{$date} 15:30", 'Asia/Seoul')->getTimestamp();
+                $closes[]     = $close;
+            }
+
+            $body = json_encode(['chart' => ['result' => [[
+                'timestamp'  => $timestamps,
+                'indicators' => ['quote' => [['close' => $closes]]],
+            ]]]]);
+
+            return new FulfilledPromise(new Response(200, [], $body));
+        };
+
+        return new Client(['handler' => $handler]);
+    }
+
+    /**
+     * $this->calculator 를 Yahoo 대역이 주입된 인스턴스로 교체한다(KR 경로 테스트용 1줄 준비).
+     *
+     * @param array<string,float> $closesByDate  ['Y-m-d'(KST) => 정규장 종가] · [] = Yahoo 실패 재현
+     */
+    private function useKrYahoo(array $closesByDate): void
+    {
+        $this->calculator = new TossChangeCalculator(
+            $this->clientMock,
+            new TossSymbolMapper(),
+            $this->sessionMock,
+            $this->krYahooClient($closesByDate)
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────
     // calculate() — 등락 계산
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
+    /**
+     * @test
+     * KR 상승: 기준가 = Yahoo 정규장 종가(6/23) — 토스 1d 봉 종가(70,500)가 아니다.
+     * 토스 종가를 일부러 다른 값으로 둬 '어느 소스가 이겼는지'가 결과에 드러나게 한다.
+     */
     public function testCalculate_PositiveChange(): void
     {
-        // 최신 봉(06-24)이 "오늘 진행중 봉"인 시나리오 → 시간 고정
+        // 최신 봉(06-24)이 "오늘 진행중 봉"인 시나리오 → 시간 고정 (분기 1: candles[1]=6/23 이 기준 거래일)
         Carbon::setTestNow(Carbon::parse('2026-06-24 10:00:00', 'Asia/Seoul'));
+
+        // Yahoo 6/23 정규장 종가 70,000 (토스 1d 봉 종가 70,500 은 시간외 드리프트 오염값)
+        $this->useKrYahoo(['2026-06-23' => 70000.0]);
 
         // 실측 응답 구조: result.candles 배열, 최신(index 0) → 오래된(index 1)
         $this->clientMock
@@ -71,17 +136,23 @@ class TossChangeCalculatorTest extends TestCase
 
         $result = $this->calculator->calculate('005930', 71500.0);
 
-        // prevClose = 70500 (index 1 = 오래된 봉), change = 71500 - 70500 = 1000
-        $this->assertSame(1000.0, $result['change_amount']);
+        // 기준가 = Yahoo 70,000 (토스 70,500 아님) → change = 71,500 − 70,000 = 1,500
+        $this->assertSame(70000.0, $result['prev_close']);
+        $this->assertSame(1500.0, $result['change_amount']);
         $this->assertGreaterThan(0, $result['change_percent']);
-        $this->assertSame(70500.0, $result['prev_close']);
     }
 
-    /** @test */
+    /**
+     * @test
+     * KR 하락: 기준가 = Yahoo 정규장 종가(6/23) → 부호가 토스 종가 기준과 갈린다.
+     * 토스 1d(71,000) 기준이면 −1,000, Yahoo(71,500) 기준이면 −1,500 — 오염 소스 복귀 시 여기서 잡힌다.
+     */
     public function testCalculate_NegativeChange(): void
     {
         // 최신 봉(06-24)이 "오늘 진행중 봉"인 시나리오 → 시간 고정
         Carbon::setTestNow(Carbon::parse('2026-06-24 10:00:00', 'Asia/Seoul'));
+
+        $this->useKrYahoo(['2026-06-23' => 71500.0]);
 
         $this->clientMock
             ->method('get')
@@ -96,8 +167,9 @@ class TossChangeCalculatorTest extends TestCase
 
         $result = $this->calculator->calculate('005930', 70000.0);
 
-        // prevClose = 71000 (index 1), change = 70000 - 71000 = -1000
-        $this->assertSame(-1000.0, $result['change_amount']);
+        // 기준가 = Yahoo 71,500 (토스 71,000 아님) → change = 70,000 − 71,500 = −1,500
+        $this->assertSame(71500.0, $result['prev_close']);
+        $this->assertSame(-1500.0, $result['change_amount']);
         $this->assertLessThan(0, $result['change_percent']);
     }
 
@@ -131,328 +203,122 @@ class TossChangeCalculatorTest extends TestCase
         $this->assertSame(70500.0, $prevClose);
     }
 
-    /** @test */
+    /**
+     * @test
+     * 캐시 miss → /candles + Yahoo 호출 → 캐시 저장. 두 번째 호출은 캐시 히트라 두 경로 모두 미호출.
+     * (호출 횟수를 세어 '캐시가 실제로 먹었는지'를 못박는다 — 같은 값 반환만으론 증명되지 않는다.)
+     */
     public function testGetPrevClose_CacheMiss_CallsApiAndCaches(): void
     {
         // 최신 봉(06-24)이 "오늘 진행중 봉"인 시나리오 → 시간 고정 (KR 오늘봉 존재 = 분기 1)
         Carbon::setTestNow(Carbon::parse('2026-06-24 10:00:00', 'Asia/Seoul'));
 
-        // KR 분기 1 은 candles + price-limits 두 경로를 모두 호출한다(경로별 응답 분기).
+        // Yahoo 6/23 정규장 종가 71,000 (토스 1d 봉 종가 70,500 과 다른 값 → 소스 판별 가능)
+        $yahooCalls = 0;
+        $this->calculator = new TossChangeCalculator(
+            $this->clientMock,
+            new TossSymbolMapper(),
+            $this->sessionMock,
+            new Client(['handler' => function () use (&$yahooCalls): FulfilledPromise {
+                $yahooCalls++;
+                $body = json_encode(['chart' => ['result' => [[
+                    'timestamp'  => [Carbon::parse('2026-06-23 15:30', 'Asia/Seoul')->getTimestamp()],
+                    'indicators' => ['quote' => [['close' => [71000.0]]]],
+                ]]]]);
+
+                return new FulfilledPromise(new Response(200, [], $body));
+            }])
+        );
+
+        $candleCalls = 0;
         $this->clientMock
             ->method('get')
-            ->willReturnCallback(function (string $path, array $query) {
-                if ($path === self::PRICE_LIMITS) {
-                    // (상한가 92,300 + 하한가 49,700)/2 = 71,000 (당일 거래소 기준가)
-                    return ['result' => ['upperLimitPrice' => '92300', 'lowerLimitPrice' => '49700']];
-                }
-                // candles: 국내 등락 기준가는 이 종가가 아니라 price-limits 로 대체된다
+            ->willReturnCallback(function () use (&$candleCalls) {
+                $candleCalls++;
+
                 return ['result' => ['candles' => [
                     ['timestamp' => '2026-06-24T00:00:00.000+09:00', 'closePrice' => '70800', 'volume' => '200', 'currency' => 'KRW'],
                     ['timestamp' => '2026-06-23T00:00:00.000+09:00', 'closePrice' => '70500', 'volume' => '100', 'currency' => 'KRW'],
                 ]]];
             });
 
-        $prevClose = $this->calculator->getPrevClose('005930');
+        // 기준가 = Yahoo 6/23 종가 71,000 (candles[1]=70,500 아님)
+        $this->assertSame(71000.0, $this->calculator->getPrevClose('005930'));
+        $this->assertSame(1, $candleCalls, 'miss 1회 → /candles 1회');
+        $this->assertSame(1, $yahooCalls, 'miss 1회 → Yahoo 1회');
 
-        // KR 오늘봉 존재(분기 1) → 기준가 = price-limits (92,300+49,700)/2 = 71,000 (candles[1]=70,500 아님)
-        $this->assertSame(71000.0, $prevClose);
-
-        // 두 번째 호출은 캐시 히트 → API 미호출
-        $prevClose2 = $this->calculator->getPrevClose('005930');
-        $this->assertSame(71000.0, $prevClose2);
+        // 두 번째 호출은 캐시 히트 → 두 경로 모두 재호출 없음
+        $this->assertSame(71000.0, $this->calculator->getPrevClose('005930'));
+        $this->assertSame(1, $candleCalls, '캐시 히트인데 /candles 를 다시 호출했다');
+        $this->assertSame(1, $yahooCalls, '캐시 히트인데 Yahoo 를 다시 호출했다');
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // 국내 기준가 = /api/v1/price-limits (상한가+하한가)/2 (토스 앱 등락 정합)
-    //   토스 앱 등락은 candles 종가가 아니라 '당일 거래소 기준가'에 대해 계산되며,
-    //   한국 가격제한폭이 기준가에 대칭이라 (upper+lower)/2 로만 얻는다.
-    //   분기 1·2(오늘봉/라이브)만 교체 · 분기 3(개장 전·장마감)은 candles 유지 · US 무영향.
+    // 국내 기준가 = Yahoo 정규장 종가 (2026-07-17 드리프트 오염 수정)
+    //   계약: 기준가(D) == Yahoo {코드}.KS 일봉 종가(D−1).
+    //   토스 1d 봉 종가는 시간외 체결을 따라 재집계된 오염값이라 기준가로 쓸 수 없다
+    //   (실측 000660 7/15: 정규장 2,082,000 vs 토스 1d봉 2,022,000 = −2.88%. 7/14 는 +1.46% 로 부호 반전).
+    //   봉 선택 분기(1·2·3)가 고른 '기준 거래일'은 그대로 두고 close 만 Yahoo 값으로 교체된다.
+    //
+    //   삭제분(옛 price-limits 계약): 기준가를 (상한+하한)/2 로 잡던 경로와 그 롤오버·ε 가드
+    //   (ROLLOVER_EPSILON·isPriceLimitRolledOver·fetchKrReferencePrice·PRICE_LIMITS_ENDPOINT)는
+    //   프로덕션에서 제거됐다 — 기준가 소스가 Yahoo 하나가 되어 롤오버 노출 자체가 소멸했다.
+    //   그 계약을 박아둔 테스트 9건은 지킬 자산이 없어 삭제하고, 고유 자산이 있는 2건만 아래로 옮겼다:
+    //     · 기준가 소스 실패 시 candles 폴백(NULL 방지)  → KrYahooFails_FallsBackToCandleClose
+    //     · KR 은 US 롤포워드에 무영향                   → KrSymbol_UnaffectedByUsRollForward(하단 US 섹션)
     // ──────────────────────────────────────────────────────────────────
 
-    private const PRICE_LIMITS = '/api/v1/price-limits';
-
     /**
      * @test
-     * KR 라이브(정규장, 오늘봉 미생성=분기 2): 기준가 = price-limits (상한+하한)/2.
-     * 실증 000660: (2,486,000 + 1,340,000)/2 = 1,913,000 (candles[0] 종가 1,941,000 아님).
+     * Yahoo 실패(해당일 봉 없음) → 토스 candles 기반 기준가로 graceful 폴백(캐시 기아·NULL 방지).
+     * 옛 'price-limits 빈 응답 → candles 폴백' 테스트의 자산을 새 계약의 실패 소스로 옮긴 것.
      */
-    public function testGetPrevClose_KrUsesPriceLimitsReference(): void
+    public function testGetPrevClose_KrYahooFails_FallsBackToCandleClose(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 10:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('정규장');
 
-        $this->clientMock->method('get')->willReturnCallback(function (string $path) {
-            if ($path === self::PRICE_LIMITS) {
-                return ['result' => ['upperLimitPrice' => '2486000', 'lowerLimitPrice' => '1340000']];
-            }
-            // 최신 봉 = 7/14(어제) → 오늘(7/15) 봉 없음 + 정규장 = 라이브 분기 2
-            return ['result' => ['candles' => [
-                ['timestamp' => '2026-07-14T00:00:00.000+09:00', 'closePrice' => '1941000', 'currency' => 'KRW'],
-                ['timestamp' => '2026-07-13T00:00:00.000+09:00', 'closePrice' => '1900000', 'currency' => 'KRW'],
-            ]]];
-        });
+        $this->useKrYahoo([]);  // 빈 시계열 = .KS·.KQ 모두 해당일 봉 없음 → Yahoo 실패
 
-        // 기준가 = (2,486,000+1,340,000)/2 = 1,913,000 (candles 종가 대체 검증)
-        $this->assertSame(1913000.0, $this->calculator->getPrevClose('000660'));
-    }
+        // 최신 봉 = 7/14(어제) → 오늘(7/15) 봉 없음 + 정규장 = 라이브 분기 2 → candles[0]
+        $this->clientMock->method('get')->willReturn(['result' => ['candles' => [
+            ['timestamp' => '2026-07-14T00:00:00.000+09:00', 'closePrice' => '71000', 'currency' => 'KRW'],
+            ['timestamp' => '2026-07-13T00:00:00.000+09:00', 'closePrice' => '70500', 'currency' => 'KRW'],
+        ]]]);
 
-    /**
-     * @test
-     * 등락률까지 — 005930 기준가 263,000, 현재가 279,500 → 약 +6.27% (토스 앱 일치).
-     */
-    public function testCalculate_KrPriceLimitsReference_Percent(): void
-    {
-        Carbon::setTestNow(Carbon::parse('2026-07-15 10:00:00', 'Asia/Seoul'));
-        $this->sessionMock->method('getKrSession')->willReturn('정규장');
-
-        $this->clientMock->method('get')->willReturnCallback(function (string $path) {
-            if ($path === self::PRICE_LIMITS) {
-                return ['result' => ['upperLimitPrice' => '341500', 'lowerLimitPrice' => '184500']];
-            }
-            return ['result' => ['candles' => [
-                ['timestamp' => '2026-07-14T00:00:00.000+09:00', 'closePrice' => '270000', 'currency' => 'KRW'],
-                ['timestamp' => '2026-07-13T00:00:00.000+09:00', 'closePrice' => '265000', 'currency' => 'KRW'],
-            ]]];
-        });
-
-        // 기준가 (341,500+184,500)/2 = 263,000, 현재가 279,500 → +6.27%
-        $result = $this->calculator->calculate('005930', 279500.0);
-        $this->assertSame(263000.0, $result['prev_close']);
-        $this->assertEqualsWithDelta(6.27, $result['change_percent'], 0.05);
-    }
-
-    /**
-     * @test
-     * price-limits 빈 응답 → candles 기반 기준가로 graceful 폴백(캐시 기아·NULL 방지).
-     */
-    public function testGetPrevClose_KrPriceLimitsEmpty_FallsBackToCandle(): void
-    {
-        Carbon::setTestNow(Carbon::parse('2026-07-15 10:00:00', 'Asia/Seoul'));
-        $this->sessionMock->method('getKrSession')->willReturn('정규장');
-
-        $this->clientMock->method('get')->willReturnCallback(function (string $path) {
-            if ($path === self::PRICE_LIMITS) {
-                return [];  // 빈 응답 → candles 폴백
-            }
-            return ['result' => ['candles' => [
-                ['timestamp' => '2026-07-14T00:00:00.000+09:00', 'closePrice' => '71000', 'currency' => 'KRW'],
-                ['timestamp' => '2026-07-13T00:00:00.000+09:00', 'closePrice' => '70500', 'currency' => 'KRW'],
-            ]]];
-        });
-
-        // 라이브 분기 2 → candles[0](어제 종가) 71,000 폴백 (price-limits 실패해도 NULL 아님)
+        // Yahoo 실패해도 NULL 이 아니라 candles[0](7/14) 종가로 폴백
         $this->assertSame(71000.0, $this->calculator->getPrevClose('005930'));
     }
 
     /**
      * @test
-     * 개장 전(장마감, 분기 3) 보존: candles[1](전전일) 기준가 유지 + price-limits 미호출.
-     * price-limits 는 실시간 당일 기준가만 주므로 개장 전 호출 시 다음 거래일 기준가로 0% 회귀 위험.
+     * Yahoo 실패분 TTL 은 짧게(120초) — 드리프트 오염된 폴백값을 장TTL 로 박으면 하루 종일 고착된다.
+     * 정상 경로(자정·개장 TTL)와 갈라지는 값이라 리터럴로 못박는다.
      */
-    public function testGetPrevClose_KrPreOpen_DoesNotUsePriceLimits(): void
+    public function testFetchAndCache_KrYahooFailed_UsesShortTtl(): void
     {
-        Carbon::setTestNow(Carbon::parse('2026-07-15 08:00:00', 'Asia/Seoul'));
-        $this->sessionMock->method('getKrSession')->willReturn('장마감');
+        Carbon::setTestNow(Carbon::parse('2026-07-15 10:00:00', 'Asia/Seoul'));
+        $this->sessionMock->method('getKrSession')->willReturn('정규장');
 
-        $calledPaths = [];
-        $this->clientMock->method('get')->willReturnCallback(function (string $path) use (&$calledPaths) {
-            $calledPaths[] = $path;
-            if ($path === self::PRICE_LIMITS) {
-                // 만약 (잘못) 호출되면 71,000 이 되어 어제 등락이 깨진다 — 아래 assert 로 미호출 확인
-                return ['result' => ['upperLimitPrice' => '92300', 'lowerLimitPrice' => '49700']];
-            }
-            return ['result' => ['candles' => [
-                ['timestamp' => '2026-07-14T00:00:00.000+09:00', 'closePrice' => '71000', 'currency' => 'KRW'],
-                ['timestamp' => '2026-07-13T00:00:00.000+09:00', 'closePrice' => '70500', 'currency' => 'KRW'],
-            ]]];
+        $this->useKrYahoo([]);  // Yahoo 실패 → 폴백값 캐싱
+
+        $capturedTtl = null;
+        Cache::shouldReceive('get')->andReturnNull();
+        Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
+            $capturedTtl = $ttl;
+
+            return true;
         });
 
-        // 장마감(개장 전) → candles[1](전전일) 70,500 유지 = 어제 하루 등락 보존
-        $this->assertSame(70500.0, $this->calculator->getPrevClose('005930'));
-        $this->assertNotContains(self::PRICE_LIMITS, $calledPaths, '개장 전엔 price-limits 를 호출하면 안 된다');
-    }
+        $this->clientMock->method('get')->willReturn(['result' => ['candles' => [
+            ['timestamp' => '2026-07-14T00:00:00.000+09:00', 'closePrice' => '71000', 'currency' => 'KRW'],
+            ['timestamp' => '2026-07-13T00:00:00.000+09:00', 'closePrice' => '70500', 'currency' => 'KRW'],
+        ]]]);
 
-    // ──────────────────────────────────────────────────────────────────
-    // price-limits 롤오버 가드 (장마감 후 조기 롤오버 → candles[1] 폴백)
-    //   장마감 후 일부 종목(특히 ETF)의 price-limits 가 다음 거래일 기준가(≈오늘 종가)로
-    //   먼저 갱신되면 오늘 등락이 0% 로 뭉개진다. price-limits 기준가가 오늘 정규장 종가와
-    //   사실상 같으면(ε<0.1%) 롤오버로 보고 candles[1](어제 종가)로 폴백한다.
-    //   판정용 오늘 종가 = getKrRegularClose()(분봉 plateau, 장마감·거래일에만 값 존재).
-    // ──────────────────────────────────────────────────────────────────
+        $this->calculator->getPrevClose('005930');
 
-    /**
-     * 장마감 3-경로(1d candles · price-limits · 1m plateau) 응답을 한 콜백으로 만든다.
-     *
-     * @param array{0:string,1:string} $daily1d   [오늘 종가, 어제 종가]
-     * @param array{0:string,1:string} $limits    [상한가, 하한가]
-     * @param string                   $plateau   1m plateau close(=오늘 정규장 종가)
-     */
-    private function krClosedResponder(array $daily1d, array $limits, string $plateau, string $date = '2026-07-15'): \Closure
-    {
-        [$todayClose, $yesterdayClose] = $daily1d;
-        [$upper, $lower]               = $limits;
-        $yesterday                     = date('Y-m-d', strtotime($date . ' -1 day'));
-
-        return function (string $path, array $query) use ($todayClose, $yesterdayClose, $upper, $lower, $plateau, $date, $yesterday) {
-            if ($path === self::PRICE_LIMITS) {
-                return ['result' => ['upperLimitPrice' => $upper, 'lowerLimitPrice' => $lower]];
-            }
-            if (($query['interval'] ?? null) === '1m') {
-                // getKrRegularClose 용 plateau (15:31~15:40)
-                return $this->krMinuteCandles($date, [['1531', $plateau], ['1535', $plateau], ['1540', $plateau]]);
-            }
-            // 1d: 오늘봉 존재 → 분기 1, candles[1] = 어제 종가
-            return ['result' => ['candles' => [
-                ['timestamp' => "{$date}T00:00:00.000+09:00", 'closePrice' => $todayClose, 'currency' => 'KRW'],
-                ['timestamp' => "{$yesterday}T00:00:00.000+09:00", 'closePrice' => $yesterdayClose, 'currency' => 'KRW'],
-            ]]];
-        };
-    }
-
-    /**
-     * @test
-     * SOL(0167A0, ETF) 롤오버: price-limits 기준가 20,600 = 오늘 종가 20,600 → 롤오버 판정
-     * → candles[1](어제 종가) 18,830 폴백 → +9.40% (토스 실측 일치).
-     */
-    public function testGetPrevClose_KrPriceLimitRolledOver_FallsBackToYesterdayCandle(): void
-    {
-        Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));  // 장마감
-        $this->sessionMock->method('getKrSession')->willReturn('장마감');
-        $this->sessionMock->method('isKrTradingDay')->willReturn(true);
-
-        // 1d: 오늘 종가 20,600 · 어제 종가 18,830 / price-limits (26,780+14,420)/2 = 20,600(=오늘 종가) / plateau 20,600
-        $this->clientMock->method('get')->willReturnCallback(
-            $this->krClosedResponder(['20600', '18830'], ['26780', '14420'], '20600')
-        );
-
-        // 롤오버 → price-limits 20,600 버리고 candles[1] 18,830 유지
-        $this->assertSame(18830.0, $this->calculator->getPrevClose('0167A0'));
-
-        $result = $this->calculator->calculate('0167A0', 20600.0);
-        $this->assertSame(18830.0, $result['prev_close']);
-        $this->assertEqualsWithDelta(9.40, $result['change_percent'], 0.05);
-    }
-
-    /**
-     * @test
-     * 삼성(005930) 미롤오버: price-limits 263,000 vs 오늘 종가 279,500 → 5.9% 차이(>ε)
-     * → 롤오버 아님 → price-limits 263,000 유지 → +6.27%.
-     */
-    public function testGetPrevClose_KrPriceLimitNotRolledOver_Samsung_KeepsPriceLimits(): void
-    {
-        Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
-        $this->sessionMock->method('getKrSession')->willReturn('장마감');
-        $this->sessionMock->method('isKrTradingDay')->willReturn(true);
-
-        // price-limits (341,500+184,500)/2 = 263,000 · 오늘 종가(plateau) 279,500 → 미롤오버
-        $this->clientMock->method('get')->willReturnCallback(
-            $this->krClosedResponder(['279500', '265000'], ['341500', '184500'], '279500')
-        );
-
-        $this->assertSame(263000.0, $this->calculator->getPrevClose('005930'));
-
-        $result = $this->calculator->calculate('005930', 279500.0);
-        $this->assertSame(263000.0, $result['prev_close']);
-        $this->assertEqualsWithDelta(6.27, $result['change_percent'], 0.05);
-    }
-
-    /**
-     * @test
-     * 하이닉스(000660) 미롤오버: price-limits 1,913,000 vs 오늘 종가 2,082,000 → 8.1% 차이(>ε)
-     * → 롤오버 아님 → price-limits 1,913,000 유지 → +8.83%.
-     */
-    public function testGetPrevClose_KrPriceLimitNotRolledOver_Hynix_KeepsPriceLimits(): void
-    {
-        Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
-        $this->sessionMock->method('getKrSession')->willReturn('장마감');
-        $this->sessionMock->method('isKrTradingDay')->willReturn(true);
-
-        // price-limits (2,486,000+1,340,000)/2 = 1,913,000 · 오늘 종가(plateau) 2,082,000 → 미롤오버
-        $this->clientMock->method('get')->willReturnCallback(
-            $this->krClosedResponder(['2082000', '1900000'], ['2486000', '1340000'], '2082000')
-        );
-
-        $this->assertSame(1913000.0, $this->calculator->getPrevClose('000660'));
-
-        $result = $this->calculator->calculate('000660', 2082000.0);
-        $this->assertSame(1913000.0, $result['prev_close']);
-        $this->assertEqualsWithDelta(8.83, $result['change_percent'], 0.05);
-    }
-
-    // ──────────────────────────────────────────────────────────────────
-    // 롤오버 가드 ε 완화(0.1%→0.3%) 회귀 — 틱 반올림 갭(2026-07-15 버그수정)
-    //   롤오버된 다음 거래일 기준가는 '종가와 정확히 일치'가 아니라 틱만큼 벌어진다(삼성 0.183%·SK 0.198%).
-    //   0.1% 로는 이 갭을 못 잡아 롤오버를 '미롤오버'로 오판 → 붕괴. 아래 두 케이스는 ε=0.1% 에선 실패,
-    //   ε=0.3% 에서 통과(진짜 회귀 가드). 반대로 갭이 ε 를 넘으면 여전히 미롤오버(과완화 아님)임도 확인.
-    // ──────────────────────────────────────────────────────────────────
-
-    /**
-     * @test
-     * 삼성(005930) 틱 반올림 롤오버: price-limits 273,500 vs 오늘 종가 273,000 → 갭 0.183%(<0.3%)
-     * → 롤오버 감지 → candles[1](어제 종가) 263,000 폴백 → +3.80%.
-     * ε=0.1% 였다면 0.183%>0.1% 라 '미롤오버' 오판 → 273,500 기준으로 −0.18% 붕괴(회귀 가드).
-     */
-    public function testGetPrevClose_KrTickRoundingRollover_Samsung_DetectsAndFallsBack(): void
-    {
-        Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));  // 장마감
-        $this->sessionMock->method('getKrSession')->willReturn('장마감');
-        $this->sessionMock->method('isKrTradingDay')->willReturn(true);
-
-        // price-limits (355,500+191,500)/2 = 273,500 · 오늘 종가(plateau) 273,000 → 갭 0.183%
-        $this->clientMock->method('get')->willReturnCallback(
-            $this->krClosedResponder(['273000', '263000'], ['355500', '191500'], '273000')
-        );
-
-        // 롤오버 감지 → price-limits 273,500 버리고 candles[1] 263,000 유지
-        $this->assertSame(263000.0, $this->calculator->getPrevClose('005930'));
-
-        $result = $this->calculator->calculate('005930', 273000.0);
-        $this->assertSame(263000.0, $result['prev_close']);
-        $this->assertEqualsWithDelta(3.80, $result['change_percent'], 0.05);  // −0.18% 붕괴 아님
-    }
-
-    /**
-     * @test
-     * SK(034730) 틱 반올림 롤오버: price-limits 2,022,000 vs 오늘 종가 2,018,000 → 갭 0.198%(<0.3%)
-     * → 롤오버 감지 → candles[1] 1,913,000 폴백 → +5.49%. ε=0.1% 였다면 −0.20% 붕괴.
-     */
-    public function testGetPrevClose_KrTickRoundingRollover_Sk_DetectsAndFallsBack(): void
-    {
-        Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
-        $this->sessionMock->method('getKrSession')->willReturn('장마감');
-        $this->sessionMock->method('isKrTradingDay')->willReturn(true);
-
-        // price-limits (2,624,600+1,419,400)/2 = 2,022,000 · 오늘 종가(plateau) 2,018,000 → 갭 0.198%
-        $this->clientMock->method('get')->willReturnCallback(
-            $this->krClosedResponder(['2018000', '1913000'], ['2624600', '1419400'], '2018000')
-        );
-
-        $this->assertSame(1913000.0, $this->calculator->getPrevClose('034730'));
-
-        $result = $this->calculator->calculate('034730', 2018000.0);
-        $this->assertSame(1913000.0, $result['prev_close']);
-        $this->assertEqualsWithDelta(5.49, $result['change_percent'], 0.05);
-    }
-
-    /**
-     * @test
-     * 과완화 아님(경계 가드): 갭이 ε(0.3%)를 넘으면 여전히 미롤오버 → price-limits 유지.
-     * price-limits 274,000 vs 오늘 종가 273,000 → 갭 0.366%(>0.3%) → 미롤오버 → 274,000 유지
-     * (candles[1] 263,000 로 새지 않음). 0.3% 가 '모든 근접 기준가를 삼키는' 과도 완화가 아님을 증명.
-     */
-    public function testGetPrevClose_KrGapAboveEpsilon_KeepsPriceLimits(): void
-    {
-        Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
-        $this->sessionMock->method('getKrSession')->willReturn('장마감');
-        $this->sessionMock->method('isKrTradingDay')->willReturn(true);
-
-        // price-limits (356,500+191,500)/2 = 274,000 · 오늘 종가(plateau) 273,000 → 갭 0.366%(>0.3%)
-        $this->clientMock->method('get')->willReturnCallback(
-            $this->krClosedResponder(['273000', '263000'], ['356500', '191500'], '273000')
-        );
-
-        // 미롤오버 → price-limits 274,000 유지(candles[1] 263,000 아님)
-        $this->assertSame(274000.0, $this->calculator->getPrevClose('005930'));
+        // 10:00 KST 정상분이면 KST 자정까지 50400초 — Yahoo 실패분은 120초여야 한다(자가치유)
+        $this->assertSame(120, $capturedTtl, 'Yahoo 실패 폴백값은 짧은 TTL(120s)로만 캐싱해야 한다');
     }
 
     /** @test */
@@ -473,29 +339,40 @@ class TossChangeCalculatorTest extends TestCase
         $this->assertNull($prevClose);
     }
 
-    /** @test */
+    /**
+     * @test
+     * 봉이 역순(오래된 것 먼저)으로 와도 정렬 후 '기준 거래일'을 바로 고른다.
+     *
+     * 새 계약에선 정렬 결과가 close 가 아니라 '어느 날짜로 Yahoo 를 조회할지'를 정한다 →
+     * 정렬이 깨지면 6/24(오늘) 종가를 기준가로 잡아 0% 로 뭉개진다. Yahoo 를 날짜별로 다른 값으로
+     * 채워 어느 날짜를 골랐는지가 반환값에 드러나게 한다.
+     *
+     * (옛 픽스처는 이름과 달리 최신 먼저로 정렬돼 있어 정렬 로직을 실제로 태우지 못했다 → 진짜 역순으로 교정.)
+     */
     public function testGetPrevClose_ReverseOrderCandles_CorrectlyPicksOldest(): void
     {
         // 최신 봉(06-24)이 "오늘 진행중 봉"인 시나리오 → 시간 고정
         Carbon::setTestNow(Carbon::parse('2026-06-24 10:00:00', 'Asia/Seoul'));
 
-        // 실측과 동일: 최신 먼저 (index 0 = 최신, index 1 = 전일)
-        // 정렬 후 index 0 = 최신, index 1 = 전일 → prevClose = index 1 closePrice
+        // 6/23 = 기준 거래일(정답 70,000) · 6/24 = 오늘(잘못 고르면 71,200)
+        $this->useKrYahoo(['2026-06-23' => 70000.0, '2026-06-24' => 71200.0]);
+
+        // 역순 응답: index 0 = 오래된 봉(6/23), index 1 = 최신 봉(6/24) → 정렬로 바로잡아야 한다
         $this->clientMock
             ->method('get')
             ->willReturn([
                 'result' => [
                     'candles' => [
-                        ['timestamp' => '2026-06-24T00:00:00.000+09:00', 'closePrice' => '71000', 'volume' => '200', 'currency' => 'KRW'],
                         ['timestamp' => '2026-06-23T00:00:00.000+09:00', 'closePrice' => '70500', 'volume' => '100', 'currency' => 'KRW'],
+                        ['timestamp' => '2026-06-24T00:00:00.000+09:00', 'closePrice' => '71000', 'volume' => '200', 'currency' => 'KRW'],
                     ],
                 ],
             ]);
 
         $prevClose = $this->calculator->getPrevClose('005930');
 
-        // 정렬 후 index 1(오래된 봉) closePrice = 70500 이 prevClose
-        $this->assertSame(70500.0, $prevClose);
+        // 정렬 후 오늘봉(6/24) 존재 → 기준 거래일 = 6/23 → Yahoo 6/23 종가 70,000
+        $this->assertSame(70000.0, $prevClose);
     }
 
     /** @test */
@@ -641,6 +518,9 @@ class TossChangeCalculatorTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-10 08:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
 
+        // 기준 거래일 = 7/8(전전일) → Yahoo 70,000 (토스 1d 봉 70,500 은 오염값)
+        $this->useKrYahoo(['2026-07-08' => 70000.0, '2026-07-09' => 71000.0]);
+
         $this->clientMock
             ->method('get')
             ->willReturn([
@@ -652,12 +532,13 @@ class TossChangeCalculatorTest extends TestCase
                 ],
             ]);
 
-        // 현재가 = 어제(7/9) 종가 71000 에 고정 → 전전일(7/8=70500) 대비 = 어제 하루 등락(+0.71%)
+        // 장마감(분기 3) → 기준 거래일 7/8 → Yahoo 종가 70,000 (candles[1]=70,500 아님)
         $prevClose = $this->calculator->getPrevClose('005930');
-        $this->assertSame(70500.0, $prevClose);
+        $this->assertSame(70000.0, $prevClose);
 
+        // 현재가 = 어제(7/9) 종가 71,000 에 고정 → 전전일 대비 = 어제 하루 등락(0% 초기화 아님)
         $result = $this->calculator->calculate('005930', 71000.0);
-        $this->assertSame(500.0, $result['change_amount']);   // 0% 초기화가 아니라 어제 등락 유지
+        $this->assertSame(1000.0, $result['change_amount']);
         $this->assertGreaterThan(0, $result['change_percent']);
     }
 
@@ -671,6 +552,9 @@ class TossChangeCalculatorTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-10 09:05:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('정규장');
 
+        // 기준 거래일 = 7/9(어제) → Yahoo 70,800 (토스 1d 봉 71,000 은 오염값)
+        $this->useKrYahoo(['2026-07-08' => 70000.0, '2026-07-09' => 70800.0]);
+
         $this->clientMock
             ->method('get')
             ->willReturn([
@@ -682,8 +566,8 @@ class TossChangeCalculatorTest extends TestCase
                 ],
             ]);
 
-        // 정규장 진행 중 → 어제(7/9=71000) 종가 기준
-        $this->assertSame(71000.0, $this->calculator->getPrevClose('005930'));
+        // 정규장 진행 중(분기 2) → 기준 거래일 7/9 → Yahoo 종가 70,800 (candles[0]=71,000 아님)
+        $this->assertSame(70800.0, $this->calculator->getPrevClose('005930'));
     }
 
     /**
@@ -724,6 +608,9 @@ class TossChangeCalculatorTest extends TestCase
         // KST 기준 오늘 = 2026-07-10 장중(10:00 KST). 최신 봉이 7/10 = 오늘 봉.
         Carbon::setTestNow(Carbon::parse('2026-07-10 10:00:00', 'Asia/Seoul'));
 
+        // 기준 거래일 = 7/9(전일) → Yahoo 70,800 (토스 1d 봉 71,000 은 오염값)
+        $this->useKrYahoo(['2026-07-09' => 70800.0, '2026-07-10' => 71500.0]);
+
         $this->clientMock
             ->method('get')
             ->willReturn([
@@ -737,8 +624,8 @@ class TossChangeCalculatorTest extends TestCase
 
         $prevClose = $this->calculator->getPrevClose('005930');
 
-        // currency 없음 → KRW/Asia/Seoul 기본 → 오늘(7/10) 봉 진행중 → 전일(7/9 = 71000)
-        $this->assertSame(71000.0, $prevClose);
+        // currency 없음 → KRW/Asia/Seoul 기본 → 오늘(7/10) 봉 진행중 → 기준 거래일 7/9 → Yahoo 70,800
+        $this->assertSame(70800.0, $prevClose);
     }
 
     /**
@@ -771,62 +658,9 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // 전일종가 캐시 TTL — US 세션 stale 버그 수정 회귀 가드
-    //   US: '다음 16:05 ET(정규장 마감 직후)' 만료  ·  KR: 'KST 자정' 만료(현행 유지)
-    //   버그: US 정규장이 KST 자정을 걸쳐 진행 → 자정 TTL이면 새벽 캐시가 다음 밤 세션까지
-    //         살아남아 한 거래일 stale → 등락 부호까지 반전(MU 7/14 실측).
-    //
-    //   주의: US 브랜치는 네이티브 new \DateTime('today 16:05')·time() 를 써
-    //         Carbon::setTestNow 로 고정되지 않는다 → 동일 알고리즘을 재현해 대조한다(실시간 안전).
+    // 전일종가 캐시 TTL — KR 분기 (US 는 아래 '불변식 스윕' 섹션이 담당)
+    //   KR: 'KST 자정' 만료(현행 유지). US 분기가 국내로 새지 않았는지만 여기서 가드한다.
     // ──────────────────────────────────────────────────────────────────
-
-    /**
-     * @test
-     * US 종목 TTL 이 '다음 16:05 ET' 만료 기준인지 — KST 자정 기준이 아님을 함께 확인.
-     */
-    public function testFetchAndCache_UsTtl_ExpiresAtNext1605Et(): void
-    {
-        // 라이브 세션(정규장) → 1·2번 분기 TTL(16:05 ET) 경로임을 고정.
-        $this->sessionMock->method('getUsSession')->willReturn('정규장');
-
-        $capturedTtl = null;
-        Cache::shouldReceive('get')->andReturnNull();
-        Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
-            $capturedTtl = $ttl;
-            return true;
-        });
-
-        $this->clientMock
-            ->method('get')
-            ->willReturn([
-                'result' => [
-                    'candles' => [
-                        ['timestamp' => '2026-07-09T00:00:00.000-04:00', 'closePrice' => '991.64', 'volume' => '200', 'currency' => 'USD'],
-                        ['timestamp' => '2026-07-08T00:00:00.000-04:00', 'closePrice' => '948.80', 'volume' => '100', 'currency' => 'USD'],
-                    ],
-                ],
-            ]);
-
-        $this->calculator->getPrevClose('MU');
-
-        $this->assertNotNull($capturedTtl, 'US 전일종가는 캐시에 저장되어야 한다');
-
-        // 프로덕션과 동일 알고리즘 재현 (다음 16:05 ET, 300초 하한)
-        $nyTz   = new \DateTimeZone('America/New_York');
-        $target = new \DateTime('today 16:05', $nyTz);
-        if ($target->getTimestamp() <= time()) {
-            $target = new \DateTime('tomorrow 16:05', $nyTz);
-        }
-        $expectedEtTtl = max($target->getTimestamp() - time(), 300);
-
-        $this->assertGreaterThanOrEqual(300, $capturedTtl, 'TTL 하한 300초');
-        $this->assertEqualsWithDelta($expectedEtTtl, $capturedTtl, 2, 'US TTL 은 다음 16:05 ET 만료 기준이어야 한다');
-
-        // KST 자정 TTL 과는 명확히 다르다 (버그 회귀 가드) — 두 경계는 항상 5시간 이상 벌어진다.
-        $kstMidnight = new \DateTime('tomorrow', new \DateTimeZone('Asia/Seoul'));
-        $kstTtl      = max($kstMidnight->getTimestamp() - time(), 300);
-        $this->assertNotEqualsWithDelta($kstTtl, $capturedTtl, 3600, 'US TTL 이 KST 자정 기준이면 안 된다');
-    }
 
     /**
      * @test
@@ -837,6 +671,9 @@ class TossChangeCalculatorTest extends TestCase
     {
         // KST 10:00 고정 → 다음 자정(11일 00:00)까지 14시간 = 50400초
         Carbon::setTestNow(Carbon::parse('2026-07-10 10:00:00', 'Asia/Seoul'));
+
+        // Yahoo 성공 경로여야 자정 TTL 이 나온다(실패하면 120초 분기) → 대역 주입 필수
+        $this->useKrYahoo(['2026-07-09' => 70500.0]);
 
         $capturedTtl = null;
         Cache::shouldReceive('get')->andReturnNull();
@@ -874,7 +711,11 @@ class TossChangeCalculatorTest extends TestCase
      */
     public function testFetchAndCache_KrClosedTtl_ExpiresAtNextKrOpen(): void
     {
+        Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
+
+        // Yahoo 성공 경로여야 개장 TTL 이 나온다(실패하면 120초 분기) → 대역 주입 필수
+        $this->useKrYahoo(['2026-07-08' => 70500.0]);
 
         $capturedTtl = null;
         Cache::shouldReceive('get')->andReturnNull();
@@ -896,31 +737,19 @@ class TossChangeCalculatorTest extends TestCase
 
         $this->calculator->getPrevClose('005930');
 
-        $this->assertNotNull($capturedTtl);
-
-        // 프로덕션과 동일 알고리즘 재현 (다음 09:00 KST, 300초 하한)
-        $seoulTz = new \DateTimeZone('Asia/Seoul');
-        $target  = new \DateTime('today 09:00', $seoulTz);
-        if ($target->getTimestamp() <= time()) {
-            $target = new \DateTime('tomorrow 09:00', $seoulTz);
-        }
-        $expected = max($target->getTimestamp() - time(), 300);
-
-        $this->assertGreaterThanOrEqual(300, $capturedTtl);
-        $this->assertEqualsWithDelta($expected, $capturedTtl, 2, 'KR 장마감 TTL 은 다음 09:00 KST 만료여야 한다');
-
-        // KST 자정 TTL 과는 다르다 (장마감 분기가 1번 분기로 새지 않았는지 가드)
-        $kstMidnight = new \DateTime('tomorrow', $seoulTz);
-        $kstTtl      = max($kstMidnight->getTimestamp() - time(), 300);
-        $this->assertNotEqualsWithDelta($kstTtl, $capturedTtl, 60, 'KR 장마감 TTL 이 자정 기준이면 안 된다');
+        // 16:00 KST → 다음 09:00 KST = 17h = 61200초 (KST 자정 TTL 28800 과 다르다 = 장마감 분기가
+        // 1번 분기로 새지 않았다는 가드). 리터럴 — 프로덕션 공식을 재현하지 않는다.
+        $this->assertSame(61200, $capturedTtl, 'KR 장마감 TTL 은 다음 09:00 KST(17h) 만료여야 한다');
     }
 
     /**
      * @test
-     * US 휴장(장마감) 기준가 TTL 은 다음 09:30 ET 만료여야 한다(16:05 ET 아님).
+     * US 휴장(장마감) 기준가 TTL 도 '다음 경계'까지 — 토(7/11) 12:00 ET → 다음 경계 16:00 ET = 4h.
+     * 장마감이라고 개장(09:30)까지 통으로 캐싱하면 그 사이 경계를 넘겨 stale 이 된다.
      */
-    public function testFetchAndCache_UsClosedTtl_ExpiresAtNextUsOpen(): void
+    public function testFetchAndCache_UsClosedTtl_StopsAtNextBoundary(): void
     {
+        Carbon::setTestNow(Carbon::parse('2026-07-11 12:00:00', 'America/New_York'));  // 토요일 장마감
         $this->sessionMock->method('getUsSession')->willReturn('장마감');
 
         $capturedTtl = null;
@@ -943,26 +772,8 @@ class TossChangeCalculatorTest extends TestCase
 
         $this->calculator->getPrevClose('MU');
 
-        $this->assertNotNull($capturedTtl);
-
-        // 프로덕션과 동일 알고리즘 재현 (다음 09:30 ET, 300초 하한)
-        $nyTz   = new \DateTimeZone('America/New_York');
-        $target = new \DateTime('today 09:30', $nyTz);
-        if ($target->getTimestamp() <= time()) {
-            $target = new \DateTime('tomorrow 09:30', $nyTz);
-        }
-        $expected = max($target->getTimestamp() - time(), 300);
-
-        $this->assertGreaterThanOrEqual(300, $capturedTtl);
-        $this->assertEqualsWithDelta($expected, $capturedTtl, 2, 'US 장마감 TTL 은 다음 09:30 ET 만료여야 한다');
-
-        // 16:05 ET TTL 과는 다르다 (장마감 분기가 2번 분기로 새지 않았는지 가드)
-        $close1605 = new \DateTime('today 16:05', $nyTz);
-        if ($close1605->getTimestamp() <= time()) {
-            $close1605 = new \DateTime('tomorrow 16:05', $nyTz);
-        }
-        $ttl1605 = max($close1605->getTimestamp() - time(), 300);
-        $this->assertNotEqualsWithDelta($ttl1605, $capturedTtl, 60, 'US 장마감 TTL 이 16:05 ET 기준이면 안 된다');
+        // 12:00 ET → 다음 경계 16:00 ET = 4h. (다음 09:30 개장 기준이면 21.5h = 77400)
+        $this->assertSame(14400, $capturedTtl, 'US 장마감 TTL 도 다음 경계(16:00 ET)에서 끊겨야 한다');
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -1204,16 +1015,9 @@ class TossChangeCalculatorTest extends TestCase
 
         $this->assertSame(2082000.0, $this->calculator->getKrRegularClose('000660'));
 
-        // 프로덕션과 동일 알고리즘 재현 (다음 09:00 KST, 300초 하한) → 단TTL(120)이 아님
-        $seoulTz = new \DateTimeZone('Asia/Seoul');
-        $target  = new \DateTime('today 09:00', $seoulTz);
-        if ($target->getTimestamp() <= time()) {
-            $target = new \DateTime('tomorrow 09:00', $seoulTz);
-        }
-        $expected = max($target->getTimestamp() - time(), 300);
-
-        $this->assertEqualsWithDelta($expected, $capturedTtl, 2, '실값은 다음 09:00 KST 장TTL 로 저장돼야 한다');
-        $this->assertGreaterThan(120, $capturedTtl, '실값 TTL 은 단TTL(120)보다 길어야 한다');
+        // 16:00 KST → 다음 09:00 KST = 17h = 61200초. 리터럴로 못박는다(공식 재현 금지 — 재현하면
+        // 프로덕션이 틀려도 테스트가 같이 틀려 원리적으로 실패하지 않는다). 단TTL(120)이 아님도 함께 가드.
+        $this->assertSame(61200, $capturedTtl, '실값은 다음 09:00 KST 장TTL(17h) 로 저장돼야 한다');
     }
 
     /**
@@ -1408,27 +1212,26 @@ class TossChangeCalculatorTest extends TestCase
 
     /**
      * @test
-     * 불변: KR 종목은 US 전용 롤포워드에 무영향. yahoo_regular_close_{ticker} 캐시가 있어도
-     * KR 경로(price-limits/candles)만 타야 한다.
+     * 불변: KR 종목은 US 전용 롤포워드(yahoo_regular_close_{ticker} 캐시)에 무영향.
+     * KR 기준가는 Yahoo '일봉 시계열'에서만 오고, US 롤포워드용 캐시는 쳐다보지 않아야 한다.
      */
     public function testGetPrevClose_KrSymbol_UnaffectedByUsRollForward(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 10:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('정규장');
 
-        // KR 종목인데 (우연히) yahoo 캐시가 있어도 롤포워드 US 게이트에 안 걸려야 함
-        Cache::put('yahoo_regular_close_005930', 999999.0, 3600);
-        $this->clientMock->method('get')->willReturnCallback(function (string $path) {
-            if ($path === self::PRICE_LIMITS) {
-                return ['result' => ['upperLimitPrice' => '341500', 'lowerLimitPrice' => '184500']];
-            }
-            return ['result' => ['candles' => [
-                ['timestamp' => '2026-07-14T00:00:00.000+09:00', 'closePrice' => '270000', 'currency' => 'KRW'],
-                ['timestamp' => '2026-07-13T00:00:00.000+09:00', 'closePrice' => '265000', 'currency' => 'KRW'],
-            ]]];
-        });
+        // 기준 거래일 = 7/14(어제, 라이브 분기 2) → Yahoo 일봉 263,000
+        $this->useKrYahoo(['2026-07-14' => 263000.0]);
 
-        // KR 정규장 → price-limits (341,500+184,500)/2 = 263,000 (yahoo 999999 무영향)
+        // KR 종목인데 (우연히) US 롤포워드 캐시가 있어도 US 게이트에 안 걸려야 함
+        Cache::put('yahoo_regular_close_005930', 999999.0, 3600);
+
+        $this->clientMock->method('get')->willReturn(['result' => ['candles' => [
+            ['timestamp' => '2026-07-14T00:00:00.000+09:00', 'closePrice' => '270000', 'currency' => 'KRW'],
+            ['timestamp' => '2026-07-13T00:00:00.000+09:00', 'closePrice' => '265000', 'currency' => 'KRW'],
+        ]]]);
+
+        // Yahoo 일봉 263,000 (US 롤포워드 캐시 999,999 무영향 · 토스 1d 270,000 아님)
         $this->assertSame(263000.0, $this->calculator->getPrevClose('005930'));
     }
 
@@ -1658,15 +1461,14 @@ class TossChangeCalculatorTest extends TestCase
 
     /**
      * @test
-     * getUsPrevRegularClose 신규 캐시 TTL 은 '다음 ET 자정' 만료여야 한다(자정에 직전거래일 기준 전진).
-     * calculate() 의 prev_close 캐시(16:05 ET TTL)와 분리된 별도 TTL 임을 회귀 가드한다.
-     *
-     * 주의: secondsUntilNextEtMidnight() 는 네이티브 new \DateTime('tomorrow', ET)·time() 기반이라
-     *       setTestNow 로 고정되지 않는다 → 동일 알고리즘을 재현해 대조한다(실시간 안전).
+     * getUsPrevRegularClose 캐시도 calculate() 와 같은 '다음 경계'까지만 산다(D3 회귀 가드).
+     * 17:00 ET(애프터) → 다음 경계 19:30 ET = 2.5h. ET 자정만 보면 19:30·20:00 을 넘겨 stale 이 된다
+     * — 이 캐시의 선택 규칙도 자정 말고 세션 경계에 함께 걸려 있기 때문.
      */
-    public function testGetUsPrevRegularClose_Ttl_ExpiresAtNextEtMidnight(): void
+    public function testGetUsPrevRegularClose_Ttl_StopsAtNextUsBoundary(): void
     {
         // 라이브(애프터) + 과거 날짜 봉 → isTodayBar=false → candles[0](991.64) 취득·캐시.
+        Carbon::setTestNow(Carbon::parse('2026-07-10 17:00:00', 'America/New_York'));
         $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
 
         $capturedTtl = null;
@@ -1679,23 +1481,9 @@ class TossChangeCalculatorTest extends TestCase
         $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-09', '991.64', '2026-07-08', '948.80'));
 
         $this->assertSame(991.64, $this->calculator->getUsPrevRegularClose('MU'));
-        $this->assertNotNull($capturedTtl, '직전거래일 종가는 캐시에 저장되어야 한다');
 
-        // 프로덕션과 동일 알고리즘 재현 (다음 ET 자정, 300초 하한)
-        $nyTz     = new \DateTimeZone('America/New_York');
-        $target   = new \DateTime('tomorrow', $nyTz);
-        $expected = max($target->getTimestamp() - time(), 300);
-
-        $this->assertGreaterThanOrEqual(300, $capturedTtl, 'TTL 하한 300초');
-        $this->assertEqualsWithDelta($expected, $capturedTtl, 2, 'getUsPrevRegularClose TTL 은 다음 ET 자정 만료여야 한다');
-
-        // 16:05 ET TTL(calculate 캐시)과는 다르다 — 두 캐시가 섞이지 않았는지 가드.
-        $close1605 = new \DateTime('today 16:05', $nyTz);
-        if ($close1605->getTimestamp() <= time()) {
-            $close1605 = new \DateTime('tomorrow 16:05', $nyTz);
-        }
-        $ttl1605 = max($close1605->getTimestamp() - time(), 300);
-        $this->assertNotEqualsWithDelta($ttl1605, $capturedTtl, 60, 'getUsPrevRegularClose TTL 이 16:05 ET 기준이면 안 된다');
+        // 17:00 ET → 다음 경계 19:30 ET = 2.5h. (ET 자정 기준이면 7h = 25200)
+        $this->assertSame(9000, $capturedTtl, 'getUsPrevRegularClose TTL 도 다음 경계(19:30 ET)에서 끊겨야 한다');
     }
 
     /**
@@ -1721,5 +1509,599 @@ class TossChangeCalculatorTest extends TestCase
         $this->assertNull($split['regular_change_percent'], 'prevRegular cold 면 정규장 줄 없음(1줄)');
         $this->assertNull($split['regular_change_amount']);
         $this->assertSame(0.0, $split['change_percent'], 'prevClose 도 <2봉 → graceful 0');
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // US 기준가 캐시 불변식 — "캐시에서 읽은 값 == 그 시각 신규조회값" (2026-07-17)
+    //
+    //   같은 버그가 3번 산 이유: 테스트가 프로덕션 TTL 공식을 재현해 대조했다. 공식을 재현하면
+    //   '누락된 경계'는 원리적으로 안 보인다 — 양쪽이 똑같이 빠뜨리니까. 그래서 공식을 버리고
+    //   관측 가능한 성질만 단언한다:
+    //     ∀t, ∀Δ:  t 에 캐싱한 값을 t+Δ 에 읽은 결과 === t+Δ 에 캐시를 비우고 새로 조회한 결과
+    //   경계 목록을 몰라도 되고, 새 경계가 생겨도 자동으로 잡힌다. ★ 여기에 공식을 다시 들이지 말 것.
+    //
+    //   시나리오(실측 MU 재현): yahoo_regular_close 워머 cold → 애프터~주간거래가 candles[1]=983.12
+    //   (7/14 종가)로 굳는다. ET 자정에 isTodayBar 가 뒤집혀 정답은 904.28(7/15)로 전진 →
+    //   그때 캐시가 살아있으면 D1(KST 13:00~22:30, 9.5h stale) 재현. 경계를 줄이면 실제로 FAIL 한다.
+    // ──────────────────────────────────────────────────────────────────
+
+    /** 시나리오 거래일별 정규장 종가(ET). 7/18·7/19 는 주말이라 봉 없음. */
+    private const US_SCENARIO_CLOSES = [
+        '2026-07-13' => '937.00',
+        '2026-07-14' => '983.12',
+        '2026-07-15' => '904.28',
+        '2026-07-16' => '865.43',
+        '2026-07-17' => '812.00',
+        '2026-07-20' => '790.00',
+    ];
+
+    /**
+     * 지금(ET) 시각 기준 토스 /candles 응답 — 최신 2봉. 오늘 봉은 09:30 ET 이후에만 존재한다.
+     * (프로덕션 TTL 과 무관한 '외부 세계' 모형. 시각의 함수라 시간이동에 따라 저절로 바뀐다.)
+     */
+    private function usScenarioCandles(): array
+    {
+        $now   = Carbon::now('America/New_York');
+        $today = $now->toDateString();
+        $bars  = [];
+
+        foreach (self::US_SCENARIO_CLOSES as $date => $close) {
+            if ($date > $today || ($date === $today && (int) $now->format('Hi') < 930)) {
+                continue;  // 미래 봉 · 개장 전(오늘 봉 미생성)
+            }
+            $bars[] = ['timestamp' => "{$date}T00:00:00.000-04:00", 'closePrice' => $close, 'currency' => 'USD'];
+        }
+
+        return ['result' => ['candles' => array_slice(array_reverse($bars), 0, 2)]];
+    }
+
+    /**
+     * 지금(ET) 시각의 US 세션 — MarketSessionService::getUsSession 대역.
+     *
+     * 주말 규칙은 '토·일 전체 휴장'이 아니라 금 20:00 ~ 일 20:00 이다(MarketSessionService:47-58).
+     * isWeekend() 로 일요일 전체를 장마감 처리하면 '일 20:00 주간거래 개시'가 모형에서 사라져
+     * 20:00 경계를 지워도 스윕이 통과해버린다(뮤테이션 실측 확인). 실제 규칙을 그대로 옮긴다.
+     * dayOfWeek(0=일) 대신 프로덕션과 같은 format('N')(1=월…7=일) 을 써 규약 혼선을 없앤다.
+     */
+    private function usScenarioSession(): string
+    {
+        $now = Carbon::now('America/New_York');
+        $dow = (int) $now->format('N');   // 1=월 … 7=일 (프로덕션과 동일 규약)
+        $hi  = (int) $now->format('Hi');
+
+        // 주말 휴장(NY): 금 20:00 ~ 일 20:00
+        if ($dow === 6 || ($dow === 7 && $hi < 2000) || ($dow === 5 && $hi >= 2000)) {
+            return '장마감';
+        }
+
+        // 주간거래(20:00~익일 03:30)는 날짜를 넘나들어 데이세션보다 먼저 판정 — 프로덕션 순서 동일
+        if ($hi >= 2000 || $hi < 330) {
+            return '주간거래';
+        }
+        if ($hi >= 400 && $hi < 930) {
+            return '프리마켓';
+        }
+        if ($hi >= 930 && $hi < 1600) {
+            return '정규장';
+        }
+        if ($hi >= 1600 && $hi < 1930) {
+            return '애프터마켓';
+        }
+
+        return '장마감';  // 19:30~20:00 · 03:30~04:00
+    }
+
+    /**
+     * 불변식 단언 — 시각열을 두 번 지나며 대조한다. 프로덕션 공식은 어디서도 재현하지 않는다.
+     *   fresh    : 매 시각 캐시를 비우고 조회 = 그 시각의 정답
+     *   observed : 캐시를 한 번만 비우고 시간만 흘려보냄 = 실제 운영 동작
+     * 둘이 갈라지면 = TTL 이 기준가 의미가 바뀌는 경계를 넘겼다.
+     *
+     * @param array<int,string> $times   ET 시각 목록(오름차순)
+     * @param bool              $warmer  regular_close 워머 가동 여부 — 두 상태가 서로 다른 경계를 노출한다:
+     *   cold(false) = 롤포워드가 candles[1] 로 폴백 → 기준가가 ET 자정에 전진 → 00:00 경계가 살아있다.
+     *   warm(true)  = 16:05 에 오늘 종가로 롤포워드 → 16:05 경계가 살아나고 자정은 연속이 된다.
+     *   한쪽만 돌리면 반대쪽 경계가 표본에서 사라진다(실측: warm 만 돌리면 00:00 을 지워도 통과).
+     */
+    private function assertPrevCloseNeverStale(array $times, bool $warmer = false): void
+    {
+        $this->sessionMock->method('getUsSession')->willReturnCallback(function (): string {
+            return $this->usScenarioSession();
+        });
+        $this->clientMock->method('get')->willReturnCallback(function (): array {
+            return $this->usScenarioCandles();
+        });
+
+        // regular_close 워머 모형 — 16:05 ET 이후 '오늘 정규장 종가'가 yahoo_regular_close 에 반영된다.
+        //   워머가 없으면 캐시가 항상 cold 라 롤포워드 분기(TossChangeCalculator:632-640)가 한 번도
+        //   실행되지 않아 16:05 경계를 지워도 no-op 으로 보인다(뮤테이션 실측 확인).
+        // ponytail: 16:05 전엔 forget — 실제론 어제 종가가 남아있지만, 그 구간은 candles[1](=어제 종가)과
+        //   값이 같아 관측 동작이 동일하다. 날짜 넘김 잔존을 없애 모형을 시각의 순수 함수로 유지한다.
+        $warm = function () use ($warmer): void {
+            if (!$warmer) {
+                return;  // 워머 cold — 롤포워드가 candles[1] 유지(실측 MU 시나리오의 절반)
+            }
+
+            $now   = Carbon::now('America/New_York');
+            $close = (int) $now->format('Hi') >= 1605
+                ? (self::US_SCENARIO_CLOSES[$now->toDateString()] ?? null)
+                : null;
+
+            if ($close === null) {
+                Cache::forget('yahoo_regular_close_MU');
+            } else {
+                Cache::put('yahoo_regular_close_MU', (float) $close, 86400);
+            }
+        };
+
+        $fresh = [];
+        foreach ($times as $t) {
+            Cache::flush();
+            Carbon::setTestNow(Carbon::parse($t, 'America/New_York'));
+            $warm();
+            $fresh[$t] = $this->calculator->getPrevClose('MU');
+        }
+
+        Cache::flush();
+        $observed = [];
+        foreach ($times as $t) {
+            Carbon::setTestNow(Carbon::parse($t, 'America/New_York'));
+            $warm();
+            $observed[$t] = $this->calculator->getPrevClose('MU');
+        }
+
+        $this->assertSame($fresh, $observed,
+            'ET 시각별 기준가: 캐시에서 읽은 값이 그 시각 신규조회값과 다르다 = TTL 이 경계를 넘겨 stale');
+    }
+
+    /**
+     * 24시간 스윕 시각(ET) — 5분 격자 288포인트.
+     *
+     * 경계 목록을 여기 두지 않는다. 격자만으로 충분하다 — 기준가가 갈라지는 창이 격자 간격보다
+     * 넓으면 반드시 두 표본(창 안 1 + 창 밖 1)이 잡힌다. 조준 블록(경계 ±1분)은 경계 목록의
+     * 4번째 복사본이었고 실측상 검출력 기여가 0이라 삭제했다(격자 단독으로 전부 검출).
+     * 5분 격자를 쓰는 이유: 16:00→16:05 처럼 폭이 5분인 창도 덮어야 한다(:02 와 :07 이 각각 창 안팎).
+     *
+     * ponytail: 경계 '정각 그 1초'는 일부러 표본에서 뺀다(격자 :07 출발 → :02·:07·:12… 로 정각 회피).
+     *   Cache::put(ttl) 은 expiresAt = now+ttl 로 잡고 ArrayStore 는 currentTime() > expiresAt 일 때만
+     *   만료시킨다 → 경계 정각 1초 동안은 옛 기준가가 그대로 서빙된다(실측: 00:00:00·03:30:00·04:00:00).
+     *   프로덕션 경계 목록의 결함이 아니라 Laravel 캐시의 만료 경계 의미(초 단위, 만료는 '지난 뒤')다.
+     *   영향 = 경계당 1초(WS 사이클 ~3초) → 무시. 실질적 회피책은 없다 — TTL 을 1초 당겨도 그대로고
+     *   (경계 1초 전엔 이미 max(1-1,1)=1), ttl<=0 은 Laravel 이 즉시 forget 이라 더 나쁘다.
+     *   정말 없애려면 만료 비교(>)를 바꿔야 하는데 그건 캐시 스토어 교체 영역이다.
+     */
+    private function etSweepTimes(string $startEt): array
+    {
+        $start = Carbon::parse($startEt, 'America/New_York');
+
+        $times = [];
+        for ($i = 0; $i < 288; $i++) {  // 24h / 5분
+            $times[] = $start->copy()->addMinutes(5 * $i)->format('Y-m-d H:i:s');
+        }
+
+        return $times;
+    }
+
+    /**
+     * @test
+     * 24시간 스윕(5분 격자 288포인트): 어느 시각에 읽어도 캐시값 == 신규조회값.
+     * 경계 8개(00:00·03:30·04:00·09:30·16:00·16:05·19:30·20:00 ET)를 모두 통과한다.
+     * D1·D2·D3 가 여기서 전부 잡힌다 — 경계 목록을 줄이면 즉시 FAIL(revert-fail 확증 완료).
+     */
+    public function testGetPrevClose_UsTtl_CachedValueNeverDivergesFromFreshLookup(): void
+    {
+        // ET 7/15 12:07(정규장) 출발 → 7/16 12:07 까지. 경계 8개가 창 안에 한 번씩 들어온다.
+        $this->assertPrevCloseNeverStale($this->etSweepTimes('2026-07-15 12:07:00'));
+    }
+
+    /**
+     * @test
+     * 같은 24시간 스윕을 regular_close 워머 warm 상태로 한 번 더 — 실측 MU 버그의 나머지 절반.
+     *
+     * 워머가 warm 이면 16:05 에 기준가가 '오늘 정규장 종가'로 롤포워드된다(:632-640). cold 스윕은
+     * 이 분기를 아예 실행하지 않아 16:05 경계를 지워도 통과한다(뮤테이션 실측). 반대로 warm 스윕만
+     * 두면 자정 전진이 사라져 00:00 을 놓친다 — 두 상태가 각각 다른 경계를 잡으므로 둘 다 돌린다.
+     */
+    public function testGetPrevClose_UsTtl_WarmRegularClose_CachedValueNeverDiverges(): void
+    {
+        $this->assertPrevCloseNeverStale($this->etSweepTimes('2026-07-15 12:07:00'), true);
+    }
+
+    /**
+     * @test
+     * 주말 갭: 금 애프터 → 토·일 장마감 → 일 20:00 주간거래 개시 → 월 프리마켓 → 월 개장.
+     * 거래일이 3일 건너뛰어도 캐시가 기준가 전진(865.43 → 812.00)을 놓치지 않아야 한다.
+     *
+     * 일 19:47 은 [20,0] 경계의 유일한 가드다 — 20:00 을 넘기는 캐시 쓰기는 (19:30, 20:00) 구간에서만
+     * 발생한다(그 밖의 시각은 16:00·19:30 경계에서 이미 만료돼 20:01 에 어차피 재조회된다).
+     * 이 표본이 없으면 [20,0] 을 지워도 스위트가 통과한다(뮤테이션 실측 확인).
+     */
+    public function testGetPrevClose_UsTtl_WeekendGap_CachedValueNeverDiverges(): void
+    {
+        $this->assertPrevCloseNeverStale([
+            '2026-07-17 17:00:00',  // 금 애프터마켓
+            '2026-07-18 12:00:00',  // 토 장마감
+            '2026-07-19 12:00:00',  // 일 장마감
+            '2026-07-19 19:47:00',  // 일 장마감(주간거래 직전) — 여기 쓰인 캐시가 20:00 을 넘기면 stale
+            '2026-07-19 20:01:00',  // 일 주간거래 개시 — 기준가가 금(7/17) 종가로 전진
+            '2026-07-20 02:00:00',  // 월 새벽 주간거래
+            '2026-07-20 04:01:00',  // 월 프리마켓
+            '2026-07-20 09:35:00',  // 월 개장 직후 — 기준가가 금(7/17) 종가로 전진
+        ]);
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // US 라이브 TTL 대표 케이스 — 세션별 첫 경계를 리터럴로 못박는다(공식 재현 금지).
+    //   3연속 재발 이력은 프로덕션 secondsUntilNextUsBoundary() 주석이 정본.
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * US 라이브 분기(1·2번)로 진입시켜 Cache::put 에 넘어간 TTL 을 잡아낸다.
+     *
+     * @param string     $frozenEt          ET 고정 시각(분기 판별 + TTL 계산 기준)
+     * @param array      $candles           /candles 응답
+     * @param float|null $warmRegularClose  yahoo_regular_close_MU 캐시값. null = 워머 cold(롤포워드 실패 경로).
+     */
+    private function captureUsLiveTtl(string $frozenEt, string $session, array $candles, ?float $warmRegularClose = null): ?int
+    {
+        Carbon::setTestNow(Carbon::parse($frozenEt, 'America/New_York'));
+        $this->sessionMock->method('getUsSession')->willReturn($session);
+
+        $capturedTtl = null;
+        // prev_close 는 항상 cold(=매번 재조회). yahoo_regular_close 만 워머 상태에 따라 갈린다.
+        Cache::shouldReceive('get')->andReturnUsing(function (string $key) use ($warmRegularClose) {
+            return $key === 'yahoo_regular_close_MU' ? $warmRegularClose : null;
+        });
+        Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
+            $capturedTtl = $ttl;
+            return true;
+        });
+
+        $this->clientMock->method('get')->willReturn($candles);
+        $this->calculator->getPrevClose('MU');
+
+        return $capturedTtl;
+    }
+
+    /**
+     * @test
+     * 케이스 1a(핵심 재현) — 애프터마켓 + 워머 cold = 롤포워드 실패 → sentinel TTL(120s)로만 캐싱.
+     *
+     * WS 사이클은 step4(기준가 계산)가 step6a(워머)보다 먼저 돈다 → 워머가 아직 안 채운 순간엔
+     * 롤포워드가 조용히 candles[1](7/14 = 983.12, 어제 종가)로 폴백한다. 그 '실패값'을 정상 경계
+     * TTL(19:30 까지 = 7860s)로 박으면 워머가 3초 뒤 정답을 채워도 자가치유가 안 된다
+     * (실측 MU 기준가 6.6% 오차가 최대 3h25m 고착 — 옛 테스트는 7860 을 정답으로 박아 이 결함을 계약화했다).
+     */
+    public function testFetchAndCache_UsAfterHoursTtl_RollforwardCold_UsesSentinelTtl(): void
+    {
+        // ET 7/15 17:19 애프터 — 오늘봉(7/15) 완결, yahoo cold → candles[1](7/14) 유지 = 실측 stale 값
+        $ttl = $this->captureUsLiveTtl('2026-07-15 17:19:00', '애프터마켓',
+            $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'));
+
+        $this->assertSame(120, $ttl, '롤포워드 실패값은 sentinel TTL(120s)로만 — 정상 경계 7860s 로 박으면 고착');
+        $this->assertSame(983.12, $this->calculator->getPrevClose('MU'), '전제: cold 면 값은 candles[1] 로 graceful 폴백');
+    }
+
+    /**
+     * @test
+     * 케이스 1b(과교정 가드) — 같은 애프터마켓이라도 워머 warm 이면 정상 경계 TTL(19:30 = 2h11m).
+     *
+     * 1a 의 sentinel 이 정상 경로까지 먹어치우면(항상 120s) 심볼당 /candles 가 하루 720회로 폭증한다.
+     * cold/warm 한 쌍이 함께 있어야 "실패 경로에만 닿았다"가 고정된다.
+     */
+    public function testFetchAndCache_UsAfterHoursTtl_RollforwardWarm_StopsAtNextBoundary(): void
+    {
+        // 워머 정본 848.43 — candles[0](904.28)·candles[1](983.12) 어느 쪽과도 달라 소스가 결과에 드러난다
+        $ttl = $this->captureUsLiveTtl('2026-07-15 17:19:00', '애프터마켓',
+            $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'), 848.43);
+
+        $this->assertSame(7860, $ttl, '애프터 17:19 ET + 워머 warm → 다음 경계 19:30 ET (2h11m)');
+        $this->assertSame(848.43, $this->calculator->getPrevClose('MU'), '전제: warm 이면 기준가 = 워머 정본(롤포워드 성립)');
+    }
+
+    /**
+     * @test
+     * 케이스 1c(실측 최악 시나리오) — ET 16:05:00 정각 + 워머 미실행.
+     *
+     * 16:05 엔 yahoo_regular_close 와 toss_prev_close 가 동시 만료돼 100% 이 경로를 탄다.
+     * sentinel 이 없으면 다음 경계 19:30 까지 12300s(3h25m) 동안 어제 종가 기준이 고착됐다(실측).
+     */
+    public function testFetchAndCache_UsCloseBoundary_RollforwardCold_UsesSentinelTtl(): void
+    {
+        $ttl = $this->captureUsLiveTtl('2026-07-15 16:05:00', '애프터마켓',
+            $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'));
+
+        $this->assertSame(120, $ttl, '16:05 ET 워머 미실행 → 120s(옛 12300s = 3h25m 고착)');
+    }
+
+    /**
+     * @test
+     * 케이스 2 — 정규장(10:42 ET) 작성분은 16:00(정규장 마감) 경계에서 끊긴다 = 5h18m.
+     * 개장 경계를 무조건 우선하는 식으로 잘못 고치면 이 케이스가 깨진다(과교정 가드).
+     */
+    public function testFetchAndCache_UsRegularTtl_KeepsCloseBoundary(): void
+    {
+        // ET 7/16 10:42 정규장 — 오늘봉(7/16) 진행중 → candles[1](7/15=904.28) 기준
+        $ttl = $this->captureUsLiveTtl('2026-07-16 10:42:00', '정규장',
+            $this->usDaily('2026-07-16', '865.43', '2026-07-15', '904.28'));
+
+        $this->assertSame(19080, $ttl, '정규장 10:42 ET → 다음 경계 16:00 ET (5h18m)');
+        // 10:42 ET = 23:42 KST → KST 자정 기준이면 1080초. 1차 버그(7/14) 재발 가드.
+        $this->assertNotSame(1080, $ttl, 'US TTL 이 KST 자정(1080초) 기준이면 안 된다');
+    }
+
+    /**
+     * @test
+     * 케이스 3 — 주간거래(02:00 ET) 작성분은 03:30(주간거래 종료) 경계에서 끊긴다 = 1h30m.
+     * 09:30 개장까지 통으로 잡으면 03:30·04:00 을 넘겨 stale(D1)이 된다.
+     */
+    public function testFetchAndCache_UsOvernightTtl_StopsAtNextBoundary(): void
+    {
+        // ET 7/16 02:00 주간거래 — 오늘봉(7/16) 미생성 → 라이브 분기 candles[0](7/15) 기준
+        $ttl = $this->captureUsLiveTtl('2026-07-16 02:00:00', '주간거래',
+            $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'));
+
+        $this->assertSame(5400, $ttl, '주간거래 02:00 ET → 다음 경계 03:30 ET (1h30m)');
+    }
+
+    /**
+     * @test
+     * 케이스 4(핵심 E2E) — 애프터마켓에 롤포워드 cold 로 굳은 기준가가 다음 정규장까지 살아남지 않는다.
+     *
+     * 시나리오(실측 MU 재현):
+     *   ET 7/15 17:19 애프터 + yahoo_regular_close cold → 롤포워드 실패 → candles[1] = 983.12(7/14 종가) 캐싱
+     *   → ET 7/16 10:42 정규장으로 시간이동 → 캐시가 만료돼 있어야 기준가가 904.28(7/15 종가)로 전진
+     *   → 현재가 865.43 → −4.30%. 캐시가 살아남으면 983.12 고착 → −11.97%(실제 버그 화면).
+     *
+     * 캐시 만료(array store)·TTL 계산 모두 Carbon::now(=setTestNow) 기준이라 실행 시각과 무관하다.
+     */
+    public function testGetPrevClose_UsAfterHoursBase_ExpiresBeforeNextRegularSession(): void
+    {
+        // 세션·캔들은 '지금이 언제인지'(setTestNow)에 따라 응답 — 시간이동을 한 테스트 안에서 재현
+        $this->sessionMock->method('getUsSession')->willReturnCallback(function (): string {
+            return (int) Carbon::now('America/New_York')->format('Hi') >= 1600 ? '애프터마켓' : '정규장';
+        });
+        $this->clientMock->method('get')->willReturnCallback(function (): array {
+            return Carbon::now('America/New_York')->toDateString() === '2026-07-15'
+                ? $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12')   // 애프터: 오늘봉=7/15 완결
+                : $this->usDaily('2026-07-16', '865.43', '2026-07-15', '904.28');  // 다음날 정규장: 오늘봉=7/16 진행중
+        });
+
+        // ① ET 7/15 17:19 애프터 — yahoo_regular_close cold → 롤포워드 실패 → candles[1] = 983.12 캐싱
+        Carbon::setTestNow(Carbon::parse('2026-07-15 17:19:00', 'America/New_York'));
+        $this->assertSame(983.12, $this->calculator->getPrevClose('MU'), '전제: 롤포워드 cold → 7/14 종가가 캐시에 굳는다');
+
+        // ② ET 7/16 10:42 정규장으로 시간이동 — 캐시가 만료돼 기준가가 7/15 종가로 전진해야 한다
+        Carbon::setTestNow(Carbon::parse('2026-07-16 10:42:00', 'America/New_York'));
+        $result = $this->calculator->calculate('MU', 865.43);
+
+        $this->assertSame(904.28, $result['prev_close'],
+            '애프터 기준가(983.12)가 다음 정규장까지 살아남으면 안 된다 — TTL 이 09:30 ET 개장을 넘긴 것(MU 7/16)');
+        $this->assertEqualsWithDelta(-4.30, $result['change_percent'], 0.05,
+            '기준가 904.28 기준 −4.30% — stale 983.12 면 −11.97% 로 3배 부풀려진다');
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // ★ KR 기준가 불변식 스윕 — 24h 5분 격자 cold·warm 2패스 + 주말갭 (US 스윕의 KR 이식)
+    //
+    //   불변식 2개를 함께 건다. 하나만으론 이번 버그를 못 잡는다:
+    //     (a) 시간정합  캐시값 === 그 시각 fresh 재조회값  → TTL 이 경계를 넘겼는지(stale)
+    //     (b) 소스정합  기준가 ∈ Yahoo 정규장 종가 집합, 그리고 토스 1d 봉 종가는 절대 아님
+    //                  → 드리프트 오염 소스로 되돌아갔는지
+    //   왜 (b)가 필요한가: 토스 1d 봉 종가는 '과거 거래일 봉'도 시간외 체결로 재집계된 채 굳는다
+    //   (000660 7/15 봉 = 2,022,000, 정규장 종가는 2,082,000). 즉 오염값도 '거래일의 함수'라
+    //   시간에 대해 자기일관적이다 → (a)만으론 옛 계약으로 되돌려도 통과해버린다(뮤테이션 실측 확인).
+    //
+    //   세계모형 분리(핵심): Yahoo 정규장 종가 ≠ 토스 1d 봉 종가를 두 개의 서로소 표(表)로 둔다.
+    //   같은 값으로 모형화하면 이번 버그가 원리적으로 안 잡힌다(US 에서 일요일을 통째로 장마감으로
+    //   모형화해 20:00 경계를 놓친 사고와 동형).
+    //
+    //   표본 종목 = 000660(하이닉스) — 드리프트가 실측된 종목. 0167A0(ETF)처럼 드리프트 0 인 종목만
+    //   넣으면 두 소스가 같은 값이라 전부 통과한다(7/15 에 실제로 버그를 가렸다).
+    //
+    //   세션은 대역을 쓰지 않고 실제 MarketSessionService 를 쓴다 — 토스 캘린더만 빈 응답으로 두면
+    //   프로덕션의 '평일=거래일' 폴백이 그대로 돈다. 손으로 옮긴 세션 모형이 현실과 어긋나 사각이
+    //   생기는 US 사고를 아예 차단한다.
+    // ──────────────────────────────────────────────────────────────────
+
+    /** 시나리오 거래일별 Yahoo(.KS) '정규장 종가' = KR 기준가의 정본. 7/18·7/19 는 주말이라 없음. */
+    private const KR_SCENARIO_REGULAR = [
+        '2026-07-14' => 1913000.0,
+        '2026-07-15' => 2082000.0,
+        '2026-07-16' => 1850000.0,
+        '2026-07-17' => 1790000.0,
+        '2026-07-20' => 1755000.0,
+    ];
+
+    /**
+     * 같은 거래일의 '토스 1d 봉 종가' = 시간외 드리프트로 오염된 값. 위 표와 값이 겹치지 않는다(서로소).
+     * 7/14·7/15 는 실측 드리프트: 1,913,000→1,941,000(+1.46%) · 2,082,000→2,022,000(−2.88%).
+     * 부호가 양·음으로 갈려 있어 '오염 소스를 쓰면 등락 부호까지 뒤집힌다'는 성질이 모형에 남아 있다.
+     */
+    private const KR_SCENARIO_TOSS_1D = [
+        '2026-07-14' => 1941000.0,
+        '2026-07-15' => 2022000.0,
+        '2026-07-16' => 1868000.0,
+        '2026-07-17' => 1795000.0,
+        '2026-07-20' => 1770000.0,
+    ];
+
+    /**
+     * 지금(KST) 시각 기준 토스 /candles 응답 — 최신 2봉. 오늘 봉은 09:00 KST 이후에만 존재한다.
+     * (프로덕션 TTL 과 무관한 '외부 세계' 모형. 시각의 함수라 시간이동에 따라 저절로 바뀐다.)
+     */
+    private function krScenarioCandles(): array
+    {
+        $now   = Carbon::now('Asia/Seoul');
+        $today = $now->toDateString();
+        $bars  = [];
+
+        foreach (self::KR_SCENARIO_TOSS_1D as $date => $close) {
+            if ($date > $today || ($date === $today && (int) $now->format('Hi') < 900)) {
+                continue;  // 미래 봉 · 개장 전(오늘 봉 미생성)
+            }
+            $bars[] = ['timestamp' => "{$date}T00:00:00.000+09:00", 'closePrice' => (string) $close, 'currency' => 'KRW'];
+        }
+
+        return ['result' => ['candles' => array_slice(array_reverse($bars), 0, 2)]];
+    }
+
+    /**
+     * 스윕용 계산기 — 실제 MarketSessionService + 시나리오 캔들 + Yahoo 대역.
+     *
+     * clientMock 한 곳에서 두 경로를 분기한다:
+     *   /api/v1/market-calendar/KR → [](빈 응답) → 프로덕션이 '평일=거래일' 폴백으로 판정(7/18·7/19 주말=휴장)
+     *   /api/v1/candles            → 시나리오 1d 봉
+     */
+    private function krSweepCalculator(): TossChangeCalculator
+    {
+        $this->clientMock->method('get')->willReturnCallback(function (string $path, array $query = []) {
+            return $path === '/api/v1/market-calendar/KR' ? [] : $this->krScenarioCandles();
+        });
+
+        return new TossChangeCalculator(
+            $this->clientMock,
+            new TossSymbolMapper(),
+            new MarketSessionService($this->clientMock),   // 실제 세션 판정(모형 아님)
+            $this->krYahooClient(self::KR_SCENARIO_REGULAR)
+        );
+    }
+
+    /**
+     * 불변식 단언 — 시각열을 두 번 지나며 대조한다. 프로덕션 공식은 어디서도 재현하지 않는다.
+     *   fresh    : 매 시각 캐시를 비우고 조회 = 그 시각의 정답
+     *   observed : 캐시를 한 번만 비우고 시간만 흘려보냄 = 실제 운영 동작
+     *
+     * @param array<int,string> $times  KST 시각 목록(오름차순)
+     */
+    private function assertKrPrevCloseNeverStale(array $times): void
+    {
+        $calc = $this->krSweepCalculator();
+
+        $fresh = [];
+        foreach ($times as $t) {
+            Cache::flush();
+            Carbon::setTestNow(Carbon::parse($t, 'Asia/Seoul'));
+            $fresh[$t] = $calc->getPrevClose('000660');
+        }
+
+        Cache::flush();
+        $observed = [];
+        foreach ($times as $t) {
+            Carbon::setTestNow(Carbon::parse($t, 'Asia/Seoul'));
+            $observed[$t] = $calc->getPrevClose('000660');
+        }
+
+        // (a) 시간정합 — 캐시가 기준가 의미가 바뀌는 경계를 넘겨 살아남지 않았는가
+        $this->assertSame($fresh, $observed,
+            'KST 시각별 기준가: 캐시에서 읽은 값이 그 시각 신규조회값과 다르다 = TTL 이 경계를 넘겨 stale');
+
+        // (b) 소스정합 — 기준가가 Yahoo 정규장 종가인가(토스 1d 드리프트 오염값이 아닌가)
+        $seen = array_values(array_unique(array_filter($observed, fn ($v) => $v !== null)));
+        $this->assertNotEmpty($seen, '표본이 전부 null 이면 스윕이 아무것도 검증하지 못한다');
+        $this->assertSame([], array_values(array_intersect($seen, array_values(self::KR_SCENARIO_TOSS_1D))),
+            '기준가에 토스 1d 봉 종가(시간외 드리프트 오염값)가 섞였다 — 기준가 소스가 Yahoo 정규장 종가에서 벗어났다');
+        $this->assertSame([], array_values(array_diff($seen, array_values(self::KR_SCENARIO_REGULAR))),
+            '기준가가 Yahoo 정규장 종가 집합 밖의 값이다');
+    }
+
+    /**
+     * 24시간 스윕 시각(KST) — 5분 격자 288포인트.
+     *
+     * :07 출발로 경계 정각(09:00:00·00:00:00)을 표본에서 비켜간다 — Laravel 캐시는 만료를
+     * currentTime() > expiresAt 로 판정해 경계 정각 1초는 옛 값이 서빙된다(US 스윕 주석과 동일 사유,
+     * 프로덕션 결함 아님 · 영향 = 경계당 1초, WS 사이클 ~3초).
+     */
+    private function kstSweepTimes(string $startKst): array
+    {
+        $start = Carbon::parse($startKst, 'Asia/Seoul');
+
+        $times = [];
+        for ($i = 0; $i < 288; $i++) {  // 24h / 5분
+            $times[] = $start->copy()->addMinutes(5 * $i)->format('Y-m-d H:i:s');
+        }
+
+        return $times;
+    }
+
+    /**
+     * @test
+     * 24시간 스윕(5분 격자 288포인트): 어느 시각에 읽어도 캐시값 == 신규조회값 == Yahoo 정규장 종가.
+     * 09:00 개장(유일한 진짜 경계)과 00:00 KST 자정(값 동일해야 함)이 창 안에 들어온다.
+     */
+    public function testGetPrevClose_KrTtl_CachedValueNeverDivergesFromFreshLookup(): void
+    {
+        // KST 7/16 12:07(정규장) 출발 → 7/17 12:07. 09:00 개장·00:00 자정이 한 번씩 들어온다.
+        $this->assertKrPrevCloseNeverStale($this->kstSweepTimes('2026-07-16 12:07:00'));
+    }
+
+    /**
+     * @test
+     * 주말 갭: 금 장마감 → 토·일 휴장 → 월 개장. 거래일이 3일 건너뛰어도 캐시가 기준가 전진
+     * (7/16 종가 1,850,000 → 7/17 종가 1,790,000)을 놓치지 않아야 한다.
+     * 휴장일 판정은 실제 MarketSessionService 의 주말 폴백이 담당한다.
+     */
+    public function testGetPrevClose_KrTtl_WeekendGap_CachedValueNeverDiverges(): void
+    {
+        $this->assertKrPrevCloseNeverStale([
+            '2026-07-17 16:30:00',  // 금 장마감(오늘봉 존재) — 기준가 = 7/16 종가
+            '2026-07-18 12:00:00',  // 토 휴장
+            '2026-07-19 12:00:00',  // 일 휴장
+            '2026-07-19 23:50:00',  // 일 심야 — 여기 쓰인 캐시가 월 09:00 을 넘기면 stale
+            '2026-07-20 08:50:00',  // 월 개장 직전 — 아직 7/16 종가 기준
+            '2026-07-20 09:35:00',  // 월 개장 직후 — 기준가가 금(7/17) 종가로 전진
+            '2026-07-20 14:00:00',  // 월 정규장
+        ]);
+    }
+
+    /**
+     * @test
+     * 09:00 개장 직전 콜드 캐시가 개장을 넘겨 살아남지 않는다 — secondsUntilNextKrOpen() 하한의 유일한 가드.
+     *
+     * 격자 스윕만으론 이 결함을 못 잡는다: 개장 전 구간의 캐시는 00:0x 에 '09:00 까지'로 한 번 쓰이고
+     * 그 뒤론 히트만 하므로, (08:55, 09:00) 안에서 캐시 쓰기가 일어나지 않아 하한이 개입할 기회가 없다.
+     * 여기서만 그 창에서 콜드 조회를 강제한다(US 의 일 19:47 가드와 동형).
+     * 하한을 300 초로 되돌리면 08:57 작성분이 09:02 까지 살아 stale → 이 테스트가 FAIL 한다.
+     */
+    public function testGetPrevClose_KrTtl_ColdBeforeOpen_DoesNotSurviveOpen(): void
+    {
+        $this->assertKrPrevCloseNeverStale([
+            '2026-07-16 08:57:00',  // 개장 3분 전 콜드 — TTL 하한이 있으면 여기 작성분이 09:00 을 넘긴다
+            '2026-07-16 09:02:00',  // 개장 직후 — 기준가가 7/15 종가로 전진해야 한다
+        ]);
+    }
+
+    /**
+     * @test
+     * KR 기준가 경계 전수 — 09:00 개장 '하나만' 살아있고 옛 오염 경계(15:31·19:01·20:00·자정)는 전부 소멸했다.
+     *
+     * 기준가가 '시계의 함수'(시간외 드리프트를 따라감)에서 '거래일의 함수'(Yahoo 정규장 종가)로 바뀐 결과다.
+     * 고정 시각이라 리터럴 상수로 못박는다 — 프로덕션 공식을 재현하지 않는다.
+     */
+    public function testGetPrevClose_KrOpen_IsTheOnlyReferenceBoundary(): void
+    {
+        $calc = $this->krSweepCalculator();
+
+        $at = function (string $kst) use ($calc): ?float {
+            Cache::flush();
+            Carbon::setTestNow(Carbon::parse($kst, 'Asia/Seoul'));
+
+            return $calc->getPrevClose('000660');
+        };
+
+        // 개장 전 = 7/14 종가 기준(어제 하루 등락 유지)
+        $this->assertSame(1913000.0, $at('2026-07-16 08:58:00'), '개장 전(장마감) → 기준가 = 7/14 정규장 종가');
+
+        // ★ 09:00 개장 = 유일한 진짜 경계 — 기준가가 7/15 종가로 전진
+        $this->assertSame(2082000.0, $at('2026-07-16 09:02:00'), '개장 → 기준가가 7/15 정규장 종가로 전진');
+
+        // 옛 오염 경계들 — 전부 소멸해야 한다(개장 후 값 그대로 유지)
+        $this->assertSame(2082000.0, $at('2026-07-16 15:31:00'), '15:31(옛 종가확정 경계) → 소멸: 값 불변');
+        $this->assertSame(2082000.0, $at('2026-07-16 19:01:00'), '19:01(옛 시간외 경계) → 소멸: 값 불변');
+        $this->assertSame(2082000.0, $at('2026-07-16 20:00:00'), '20:00(옛 롤오버 경계) → 소멸: 값 불변');
+        $this->assertSame(2082000.0, $at('2026-07-17 00:30:00'), 'KST 자정 → 값 동일(양쪽 다 Yahoo 7/15 종가)');
+
+        // 다음 개장에서 다시 한 칸 전진 = 경계가 09:00 에만 있다는 증거
+        $this->assertSame(1850000.0, $at('2026-07-17 09:02:00'), '다음 개장 → 기준가가 7/16 정규장 종가로 전진');
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Toss;
 
 use App\Services\MarketSessionService;
+use GuzzleHttp\Client;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -45,8 +46,30 @@ class TossChangeCalculator
     /** 마감 직후 '종가 평탄(시간외종가)' 구간 끝(KST, HHMM). 15:31~15:40 close = 확정 정규장 종가. */
     private const KR_CLOSE_PLATEAU_END_HHMM = 1540;
 
-    /** 정규장 종가 추출용 1m 봉 취득 수 — 저녁 콜드스타트(마감후 최대 ~150분)에도 15:31 도달 보장. */
+    /**
+     * 정규장 종가 추출용 1m 봉 페이지당 취득 수 — 토스 1m 단건 상한(실측: count>200 은 에러가 아니라 빈 배열).
+     * 상향 금지 — 300·400 은 0봉을 반환해 1d 폴백을 상시 유발한다. 더 소급하려면 페이지네이션(아래)만.
+     */
     private const KR_CLOSE_CANDLE_COUNT = 200;
+
+    /**
+     * 정규장 종가 추출용 1m 봉 최대 페이지 수(before/nextBefore 소급).
+     *
+     * 1페이지(200봉)로는 부족하다 — 1m 봉은 시간외를 20:00 까지 채우고 멈추므로, 윈도우는 '지금'이 아니라
+     * '마지막 봉' 기준으로 200분이다. 19:01+ 콜드스타트면 200봉이 20:00→16:40 만 덮어 plateau(15:31~15:40)가
+     * 통째로 이탈 → 1d 드리프트 종가로 폴백 → 부호 반전(실측 000660 +8.83% → −2.88%).
+     * 실제 필요 = 20:00 − 15:31 = 269분 → 2페이지(400봉)로 충분. plateau 시작(15:30 이하 봉)에 도달하면 조기 종료.
+     */
+    private const KR_CLOSE_MAX_PAGES = 2;
+
+    /** Yahoo Finance v8 chart 기본 URL — TossPriceFetcher::YAHOO_CHART_URL 과 동일 패턴. */
+    private const YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/';
+
+    /** Yahoo 조회 타임아웃(초) — TossPriceFetcher::YAHOO_TIMEOUT 과 동일. */
+    private const YAHOO_TIMEOUT = 5;
+
+    /** Yahoo 국내 심볼 접미사 — 코스피(.KS) 우선, 없으면 코스닥(.KQ). 토스심볼엔 접미사가 없어 붙여 시도한다. */
+    private const KR_YAHOO_SUFFIXES = ['.KS', '.KQ'];
 
     /** 종가 취득 일시 실패(null) 시 sentinel 캐시의 짧은 TTL(초) — 다음 개장까지 0 고착 방지, 곧 재시도. */
     private const KR_CLOSE_FAIL_TTL = 120;
@@ -54,33 +77,25 @@ class TossChangeCalculator
     /** 캔들 엔드포인트 */
     private const CANDLES_ENDPOINT = '/api/v1/candles';
 
-    /** 국내 기준가(가격제한폭) 엔드포인트 — (상한가+하한가)/2 = 당일 거래소 기준가 */
-    private const PRICE_LIMITS_ENDPOINT = '/api/v1/price-limits';
-
-    /**
-     * price-limits 롤오버 판정 허용오차(비율). 다음 거래일 기준가 ≈ 오늘 정규장 종가라,
-     * price-limits 기준가가 오늘 종가와 이 오차 미만이면 '조기 롤오버'로 보고 candles[1] 로 폴백.
-     *
-     * 0.1% → 0.3% 완화(2026-07-15): 롤오버된 다음 거래일 기준가는 '종가와 정확히 일치'가 아니라
-     * 틱(호가단위) 반올림만큼 벌어진다. 실측 갭 — 삼성 |273,500−273,000|/273,000 = 0.183%,
-     * SK |2,022,000−2,018,000|/2,018,000 = 0.198%. 0.1% 로는 이 갭을 못 잡아 롤오버를 '미롤오버'로
-     * 오판 → 롤오버된 기준가를 그대로 써 등락률이 붕괴(삼성 +3.80%→−0.18%)했다. 0.3% 는 실측 갭을
-     * 포착하면서 최소 완화 — 정상(미롤오버) 종목은 기준가와 종가가 뚜렷이 벌어져(삼성 263,000 vs
-     * 279,500 = 5.9%) 영향 없다. 정규장 중엔 getKrRegularClose()=null 이라 이 가드가 아예 스킵된다.
-     */
-    private const ROLLOVER_EPSILON = 0.003;  // 0.3% (틱 반올림 갭 실측: 삼성 0.183%·SK 0.198%)
-
     private TossApiClient $client;
 
     private TossSymbolMapper $mapper;
 
     private MarketSessionService $session;
 
-    public function __construct(TossApiClient $client, TossSymbolMapper $mapper, MarketSessionService $session)
-    {
+    /** Yahoo 일봉 조회용 HTTP 클라이언트. 선택 주입 — 테스트에서 MockHandler 로 갈아끼워 네트워크 없이 검증한다. */
+    private Client $http;
+
+    public function __construct(
+        TossApiClient $client,
+        TossSymbolMapper $mapper,
+        MarketSessionService $session,
+        ?Client $http = null
+    ) {
         $this->client  = $client;
         $this->mapper  = $mapper;
         $this->session = $session;
+        $this->http    = $http ?? new Client();
     }
 
     /**
@@ -270,8 +285,9 @@ class TossChangeCalculator
      *
      * calculate()의 롤포워드 이전 $prevClose 와 동일한 선택 규칙을 쓴다:
      *   오늘(NY) 정규장 봉 존재 → candles[1](어제 종가) · 라이브(오늘봉 없음) → candles[0] · 장마감 → candles[1].
-     * calculate()의 prev_close 캐시(롤포워드된 값·16:05 ET TTL)와 분리된 별도 캐시/TTL 을 쓴다.
-     * TTL = 다음 ET 자정 — 자정에 '직전거래일' 기준이 전진(candles[1]↔candles[0])하기 때문.
+     * calculate()의 prev_close 캐시(롤포워드된 값)와 분리된 별도 캐시를 쓰지만, TTL 은 같은
+     * secondsUntilNextUsBoundary() 를 쓴다 — 선택 규칙이 같은 경계들(ET 자정의 isTodayBar 반전,
+     * 20:00 의 주간거래 개시 등)에 걸려 있어 자정만 보면 20:00 경계를 넘겨 stale 이 된다(D3).
      *
      * KR·지수는 null.
      *
@@ -354,7 +370,7 @@ class TossChangeCalculator
                 return null;
             }
 
-            Cache::put($cacheKey, ['close' => $prevRegular, 'today_bar' => $isTodayBar], $this->secondsUntilNextEtMidnight());
+            Cache::put($cacheKey, ['close' => $prevRegular, 'today_bar' => $isTodayBar], $this->secondsUntilNextUsBoundary());
 
             return $prevRegular;
         } catch (\Throwable $e) {
@@ -366,21 +382,11 @@ class TossChangeCalculator
     }
 
     /**
-     * 다음 ET(America/New_York) 자정까지 남은 초. 최솟값 300초.
-     */
-    private function secondsUntilNextEtMidnight(): int
-    {
-        $nyTz   = new \DateTimeZone('America/New_York');
-        $target = new \DateTime('tomorrow', $nyTz);  // 다음 ET 00:00
-
-        return max($target->getTimestamp() - time(), 300);
-    }
-
-    /**
      * 오늘(KST) 국내 정규장 종가를 1m 분봉의 '마감 직후 plateau'에서 추출. 못 구하면 null.
      *
      * 추출 규칙 (재시작에도 안정한 이유):
-     *   - /candles?interval=1m&count=200 로 최근 분봉을 받는다(마감후 최대 ~150분 → 15:31 도달 보장).
+     *   - /candles?interval=1m&count=200 을 before/nextBefore 로 최대 2페이지 소급해 받는다
+     *     (1페이지=200분 윈도우는 19:01+ 콜드스타트에서 plateau 를 놓친다 — KR_CLOSE_MAX_PAGES 주석 참조).
      *   - 오늘(KST) 봉 중 15:30 초과 & 15:40 이하(=15:31~15:40) close 만 모은다.
      *     이 구간은 마감 동시호가 체결가(정규장 종가)가 시간외종가로 찍히는 '평탄 plateau'다.
      *     15:30 이하 = 연속 체결(마지막가 ≠ 종가), 15:41~ = 시간외단일가(드리프트) → 둘 다 제외.
@@ -392,34 +398,58 @@ class TossChangeCalculator
     private function fetchTodayKrRegularClose(string $tossSymbol): ?float
     {
         try {
-            $response = $this->client->get(self::CANDLES_ENDPOINT, [
-                'symbol'   => $tossSymbol,
-                'interval' => '1m',
-                'count'    => self::KR_CLOSE_CANDLE_COUNT,
-            ]);
-
-            $candles = $this->extractCandles($response);
-            if ($candles === null) {
-                return null;
-            }
-
             $today         = Carbon::now('Asia/Seoul')->toDateString();
             $plateauCloses = [];  // 등장 순서 유지 (tie → 최초값 우선)
-            foreach ($candles as $c) {
-                $ts = (string) ($c['timestamp'] ?? '');
-                if ($ts === '') {
-                    continue;
+            $before        = null;
+
+            // 페이지네이션: TossCandleProvider::fetchCandles 의 before/nextBefore 패턴 재사용.
+            //   count 상향은 불가(토스 1m 실측 상한 200 — 초과 시 조용히 0봉) → 소급은 페이지로만.
+            for ($page = 0; $page < self::KR_CLOSE_MAX_PAGES; $page++) {
+                $query = [
+                    'symbol'   => $tossSymbol,
+                    'interval' => '1m',
+                    'count'    => self::KR_CLOSE_CANDLE_COUNT,
+                ];
+                if ($before !== null) {
+                    $query['before'] = $before;
                 }
-                $dt = Carbon::parse($ts)->setTimezone('Asia/Seoul');
-                if ($dt->toDateString() !== $today) {
-                    continue;  // 오늘(마감 당일) 봉만
+
+                $response = $this->client->get(self::CANDLES_ENDPOINT, $query);
+                $candles  = $this->extractCandles($response);
+                if ($candles === null) {
+                    break;
                 }
-                $hhmm = (int) $dt->format('Hi');
-                if ($hhmm > self::KR_REGULAR_CLOSE_HHMM && $hhmm <= self::KR_CLOSE_PLATEAU_END_HHMM) {
-                    $close = isset($c['closePrice']) ? (float) $c['closePrice'] : 0.0;
-                    if ($close > 0.0) {
-                        $plateauCloses[] = $close;
+
+                $reachedPlateauStart = false;  // 15:30 이하(오늘) 봉까지 소급됨 = plateau 전 구간 확보
+                foreach ($candles as $c) {
+                    $ts = (string) ($c['timestamp'] ?? '');
+                    if ($ts === '') {
+                        continue;
                     }
+                    $dt = Carbon::parse($ts)->setTimezone('Asia/Seoul');
+                    if ($dt->toDateString() !== $today) {
+                        continue;  // 오늘(마감 당일) 봉만
+                    }
+                    $hhmm = (int) $dt->format('Hi');
+                    if ($hhmm <= self::KR_REGULAR_CLOSE_HHMM) {
+                        $reachedPlateauStart = true;
+                        continue;
+                    }
+                    if ($hhmm <= self::KR_CLOSE_PLATEAU_END_HHMM) {
+                        $close = isset($c['closePrice']) ? (float) $c['closePrice'] : 0.0;
+                        if ($close > 0.0) {
+                            $plateauCloses[] = $close;
+                        }
+                    }
+                }
+
+                if ($reachedPlateauStart) {
+                    break;  // plateau 를 완전히 덮었다 → 추가 소급 불필요(16:00 콜드스타트는 1페이지로 끝)
+                }
+
+                $before = $response['result']['nextBefore'] ?? null;
+                if ($before === null) {
+                    break;
                 }
             }
 
@@ -639,48 +669,74 @@ class TossChangeCalculator
             //   candles[0].close 는 US 1d 봉이 시간외 체결로 재집계·드리프트할 수 있어 쓰지 않는다(KR 일봉 드리프트 전례).
             //   캐시 cold 시엔 candles[1](기존 동작) 유지 — graceful. 정규장 중(정규장)엔 스킵해 장중 등락을 보존한다.
             //   프리마켓은 isTodayBar=false 라 위 분기 2(candles[0])로 이미 정상 → 이 롤포워드가 필요 없다.
+            //
+            //   cold 폴백은 '값'만 graceful 이고 'TTL'까지 graceful 이면 안 된다(2026-07-17 수정):
+            //     WS 사이클은 step4(전송·기준가 계산)가 step6a(warmRegularCloses)보다 먼저 돈다 → 워머가 아직
+            //     안 채운 순간엔 롤포워드가 조용히 candles[1](어제 종가)로 떨어진다. 그 실패값을 정상 경계
+            //     TTL(최대 4h)로 박으면 워머가 3초 뒤 정답을 채워도 자가치유가 안 된다(실측 MU 904.28 이 2h11m 고착,
+            //     기준가 6.6% 오차). 특히 ET 16:05 엔 yahoo_regular_close 와 toss_prev_close 가 동시 만료돼
+            //     100% 이 경로를 타고 19:30 까지 오염된다(실측 TTL 12300s).
+            //     → 실패를 sentinel 로 표시해 아래 TTL 을 120초로 낮춘다(형제 fetchAndCacheUsPrevRegularClose 와 동일 패턴).
+            //     워머를 step4 앞으로 옮기는 건 금물 — 핫패스에 Yahoo 블로킹 HTTP 가 유입된다(H-2 위배).
+            $rollforwardFailed = false;
             if ($isTodayBar && $isUsMarket
                 && $this->session->getUsSession(Carbon::now()->getTimestamp()) !== '정규장') {
                 $regularClose = $this->readUsRegularClose($tossSymbol);
                 if ($regularClose !== null) {
                     $prevClose = $regularClose;
                 } else {
-                    Log::debug("[TossChangeCalculator] {$tossSymbol} US 시간외 롤포워드: yahoo_regular_close cold → candles[1] 유지");
+                    $rollforwardFailed = true;
+                    Log::debug("[TossChangeCalculator] {$tossSymbol} US 시간외 롤포워드: yahoo_regular_close cold → candles[1] 유지(짧은 TTL 재시도)");
                 }
             }
 
-            // 국내 기준가 교체:
-            //   토스 앱 등락은 candles 종가가 아니라 '당일 거래소 기준가'에 대해 계산된다.
-            //   한국 가격제한폭은 기준가에 대칭 → (상한가+하한가)/2 = 당일 기준가 (candles[1].close 와 분리됨).
-            //   실증: 000660 (2,486,000+1,340,000)/2 = 1,913,000 (토스 앱 기준가 일치, candles 7/14 종가 1,941,000 ≠).
-            //   분기 1·2(오늘봉 존재 OR 라이브 정규장)에서만 교체 — 분기 3(장마감·개장 전, marketClosed)은
-            //   candles[1](전전일 종가)로 '어제 하루 등락'을 유지해야 하므로 건드리지 않는다
-            //   (price-limits 는 실시간 당일 기준가만 주므로 개장 전엔 다음 거래일 기준가로 0% 회귀 위험).
-            //   US 는 한국 price-limits 없음 → 위에서 구한 candles/Yahoo 기준가 그대로 유지.
-            //   price-limits 호출 실패·빈 응답 시엔 위 candles 기반 $prevClose 로 graceful 폴백(캐시 기아 방지).
-            if (!$isUsMarket && !$marketClosed) {
-                $refPrice = $this->fetchKrReferencePrice($tossSymbol);
-                if ($refPrice !== null && !$this->isPriceLimitRolledOver($tossSymbol, $refPrice)) {
-                    $prevClose = $refPrice;
+            // 국내 기준가 = Yahoo 일봉 종가(2026-07-17 드리프트 오염 수정):
+            //   토스 1d 봉 종가는 '정규장 종가'가 아니라 시간외 체결을 따라 재집계·드리프트하는 값이다
+            //   (실측 000660 7/15: 정규장 2,082,000 → 토스 1d봉 2,022,000, −2.88%. 7/14 는 +1.46% 로 부호도 뒤집힌다).
+            //   거래소 기준가는 '전일 정규장 종가'로 고정이라, 드리프트값을 기준가로 쓰면 등락률이 통째로 틀린다
+            //   (실측 −9.50% 서빙 vs 정답 −12.10%). 같은 파일 getKrRegularClose() 가 이미 같은 이유로 1d 종가를
+            //   배척하고 분봉 plateau 를 쓰는데(위 docblock), 기준가 경로만 그 오염 소스를 그대로 쓰고 있었다.
+            //
+            //   교체 규칙(실측 3건 정확 일치): 기준가(D) == Yahoo {코드}.KS 일봉 종가(D−1)
+            //     000660 7/15 = 1,913,000(=7/14) · 005930 7/15 = 263,000(=7/14) · 0167A0 7/17 = 18,625(=7/16).
+            //   위 분기가 고른 $prevCandle 의 '날짜'(=기준 거래일)는 그대로 두고 close 만 Yahoo 값으로 바꾼다
+            //   → 분기 1·2·3 이 한 곳에서 교정되고, 기준가가 '시계의 함수'가 아니라 '거래일의 함수'가 된다.
+            //   ponytail: 옛 price-limits((상한+하한)/2) 경로는 삭제했다 — Yahoo 종가와 값이 같은데(실측 3/3)
+            //     장마감 후 다음 거래일 기준가로 조기 롤오버돼(ε 가드·완화의 원인) 등락을 0% 로 뭉갰다.
+            //     상장 이벤트(권리락·액면분할)로 기준가 ≠ 전일 종가인 날은 이 규칙이 어긋난다 — 그날이 문제되면
+            //     정규장 중에 한해 price-limits 를 우선하는 경로를 되살리는 게 업그레이드 경로.
+            //   US 는 무영향(위에서 구한 candles/Yahoo 기준가 유지).
+            //   Yahoo 실패 시 candles 기반 $prevClose 로 graceful 폴백하되, 오염값이므로 아래 TTL 을
+            //   KR_CLOSE_FAIL_TTL 로 짧게 잡아 다음 사이클에 자가치유시킨다(장TTL 고착 금지).
+            $krYahooFailed = false;
+            if (!$isUsMarket) {
+                $prevTs   = (string) ($prevCandle['timestamp'] ?? '');
+                $prevDate = $prevTs !== '' ? Carbon::parse($prevTs)->setTimezone('Asia/Seoul')->toDateString() : null;
+
+                $yahooClose = $prevDate !== null ? $this->fetchKrYahooDailyClose($tossSymbol, $prevDate) : null;
+                if ($yahooClose !== null) {
+                    $prevClose = $yahooClose;
+                } else {
+                    $krYahooFailed = true;
+                    Log::debug("[TossChangeCalculator] {$tossSymbol} KR 기준가: Yahoo 일봉({$prevDate}) 실패 → 토스 1d 종가 유지(짧은 TTL 재시도)");
                 }
-                // 롤오버로 판정되면 price-limits 를 버리고 candles[1](어제 종가)인 $prevClose 를 유지.
             }
 
             // TTL 결정:
-            //   3번 분기(장마감 기준가)는 '다음 개장 시각까지'만 유효 — 개장 순간 기준가가 어제 종가로
-            //   바뀌어야 하므로 그 이후까지 캐시가 살아남으면 전전일 기준으로 stale → 부호반전(H-3 교훈).
-            //   KR = 다음 09:00 KST · US = 다음 09:30 ET.
-            //   1·2번 분기(라이브/오늘봉)는 현행 TTL 유지 — US = 다음 16:05 ET(정규장이 KST 자정을 걸쳐
-            //   진행되어 자정 TTL 이면 한 거래일 stale, MU 7/14) · KR = KST 자정.
-            if ($marketClosed) {
-                $ttl = $isUsMarket ? $this->secondsUntilNextUsOpen() : $this->secondsUntilNextKrOpen();
-            } elseif ($isUsMarket) {
-                $nyTz   = new \DateTimeZone('America/New_York');
-                $target = new \DateTime('today 16:05', $nyTz);
-                if ($target->getTimestamp() <= time()) {
-                    $target = new \DateTime('tomorrow 16:05', $nyTz);
-                }
-                $ttl = max($target->getTimestamp() - time(), 300);
+            //   US = 기준가 의미가 바뀌는 '다음 경계'까지 (secondsUntilNextUsBoundary — 경계 목록 단일 소스).
+            //     분기별로 TTL 공식을 따로 두면(장마감=개장까지 / 라이브=16:05까지 …) 반대 경계를 넘겨
+            //     stale 이 된다. 경계는 2곳이 아니라 8곳이라 열거로 단일화했다(7/14·7/16·7/17 3연속 재발).
+            //   KR = 현행 유지: 장마감 기준가(분기 3)는 '다음 개장(09:00 KST)까지'만 유효 —
+            //     개장 순간 기준가가 어제 종가로 바뀌어야 하므로 그 이후까지 살면 전전일 기준 stale(H-3 교훈).
+            //     라이브/오늘봉(분기 1·2)은 KST 자정.
+            //   단 US 롤포워드 실패분(워머 레이스)·KR + Yahoo 실패분은 오염된 폴백값이라 장TTL 로 박으면
+            //     안 된다 → 120초만(다음 사이클 자가치유).
+            if ($isUsMarket) {
+                $ttl = $rollforwardFailed ? self::KR_CLOSE_FAIL_TTL : $this->secondsUntilNextUsBoundary();
+            } elseif ($krYahooFailed) {
+                $ttl = self::KR_CLOSE_FAIL_TTL;
+            } elseif ($marketClosed) {
+                $ttl = $this->secondsUntilNextKrOpen();
             } else {
                 $ttl = $this->secondsUntilKstMidnight();
             }
@@ -701,93 +757,88 @@ class TossChangeCalculator
     }
 
     /**
-     * 국내 종목 당일 거래소 기준가 = /api/v1/price-limits 의 (상한가+하한가)/2.
+     * 국내 종목의 '지정 거래일(KST) 정규장 종가'를 Yahoo 일봉에서 조회. 없으면 null.
      *
-     * 한국 가격제한폭은 기준가에 대칭이라 (upper+lower)/2 = 당일 기준가(전일 종가와 분리).
-     * 토스 앱 등락률은 candles 종가가 아니라 이 기준가에 대해 계산된다(실증: 000660 = 1,913,000).
+     * 왜 Yahoo 인가: 토스 1d 봉 종가는 시간외 체결로 재집계·드리프트하지만(실측 000660 7/15 −2.88%),
+     *   Yahoo {코드}.KS 일봉 종가는 정규장 종가로 확정된다 — 거래소 기준가와 3/3 실측 일치
+     *   (기준가(D) == Yahoo close(D−1)). 조회 패턴은 US 의 yahoo_regular_close 경로와 동일
+     *   (TossPriceFetcher::fetchYahooRegularClose — Guzzle · v8/finance/chart · http_errors=false · 5s).
      *
-     * 단건 전용 — symbols=(복수)는 [] 반환이므로 symbol=(단건)으로만 호출한다.
-     * rate-limit(500ms) 은 TossApiClient 에 이미 등록됨. 캐시 miss(1일 1회)에서만 호출되어 콜 폭증 없음.
+     * 접미사: 토스심볼엔 .KS/.KQ 가 없어(TossSymbolMapper 가 제거) 코스피(.KS)→코스닥(.KQ) 순으로 시도한다.
+     *   ponytail: 거래소를 따로 들고 다니지 않는다 — 코스닥만 2번째 호출을 타고, 호출부 캐시(toss_prev_close_)가
+     *   종목당 1일 수회로 이미 게이팅한다. 잦아지면 exchange 를 심볼과 함께 넘기는 게 업그레이드 경로.
      *
-     * 빈 응답·파싱 실패 시 null → 호출부에서 candles 기반 기준가로 폴백.
-     *
-     * 실측 응답 구조(단건): { "result": { "upperLimitPrice": "...", "lowerLimitPrice": "...", ... } }.
-     *   문자열일 수 있어 (float) 캐스팅. result 가 리스트([0])이거나 루트 직배치인 변형도 방어.
+     * @param  string  $kstDate  'Y-m-d'(KST) — 기준 거래일(=선택된 prevCandle 의 날짜)
      */
-    private function fetchKrReferencePrice(string $tossSymbol): ?float
+    private function fetchKrYahooDailyClose(string $tossSymbol, string $kstDate): ?float
     {
-        $response = $this->client->get(self::PRICE_LIMITS_ENDPOINT, ['symbol' => $tossSymbol]);
-
-        if (empty($response)) {
-            Log::warning("[TossChangeCalculator] price-limits 빈응답 — candles 폴백: {$tossSymbol}");
-            return null;
+        foreach (self::KR_YAHOO_SUFFIXES as $suffix) {
+            $close = $this->fetchYahooDailyCloseOn($tossSymbol . $suffix, $kstDate);
+            if ($close !== null) {
+                return $close;
+            }
         }
 
-        // 응답 구조 방어: result.assoc / result[0] / 루트 직배치
-        $result = $response['result'] ?? null;
-        if (is_array($result) && array_key_exists('upperLimitPrice', $result)) {
-            $data = $result;
-        } elseif (is_array($result) && isset($result[0]) && is_array($result[0])) {
-            $data = $result[0];
-        } elseif (array_key_exists('upperLimitPrice', $response)) {
-            $data = $response;
-        } else {
-            Log::warning("[TossChangeCalculator] price-limits 구조 불명 — candles 폴백: {$tossSymbol}", [
-                'keys' => array_keys($response),
-            ]);
-            return null;
-        }
-
-        $upper = isset($data['upperLimitPrice']) ? (float) $data['upperLimitPrice'] : 0.0;
-        $lower = isset($data['lowerLimitPrice']) ? (float) $data['lowerLimitPrice'] : 0.0;
-
-        if ($upper <= 0.0 || $lower <= 0.0) {
-            Log::warning("[TossChangeCalculator] price-limits 값 이상 — candles 폴백: {$tossSymbol}", [
-                'upper' => $upper,
-                'lower' => $lower,
-            ]);
-            return null;
-        }
-
-        return ($upper + $lower) / 2.0;
+        return null;
     }
 
     /**
-     * price-limits 기준가가 '다음 거래일 기준가'로 조기 롤오버됐는지 판정한다.
+     * Yahoo v8 chart 일봉에서 지정 KST 날짜의 종가를 찾아 반환. 실패·해당일 봉 없음 → null(graceful).
      *
-     * 배경: 국내 price-limits 는 장마감 후 일부 종목(특히 ETF)에서 다음 거래일 기준가로
-     *   먼저 갱신된다. 다음 거래일 기준가 ≈ 오늘 정규장 종가이므로, 롤오버된 기준가는
-     *   오늘 종가와 사실상 같아져 오늘 등락이 0%로 뭉개진다(실측 SOL 0167A0: 기준가 20,600 = 종가).
-     *   미롤오버 종목은 기준가가 종가와 뚜렷이 벌어진다(삼성 263,000 ≠ 종가 279,500).
-     *
-     * 판정: |기준가 − 오늘 정규장 종가| / 오늘 종가 < ε(0.3%) 이면 롤오버.
-     *   '오늘 정규장 종가'는 getKrRegularClose()(분봉 plateau)로 얻는다 — 장마감·거래일에만 값이 있고,
-     *   정규장 중엔 null 을 돌려주므로 이 가드는 자연히 스킵된다(정규장 땐 롤오버가 없어 불필요).
-     *   종가를 못 구하면(콜드스타트 등) false → price-limits 를 그대로 신뢰(기존 동작 유지).
+     * range=1mo 로 최근 일봉 시계열을 받아 timestamp 를 KST 날짜로 환산해 매칭한다
+     * (meta.regularMarketPrice 는 '지금 세션 기준'이라 특정 과거 거래일 종가를 못 준다 → 시계열 사용).
      */
-    private function isPriceLimitRolledOver(string $tossSymbol, float $refPrice): bool
+    private function fetchYahooDailyCloseOn(string $yahooSymbol, string $kstDate): ?float
     {
-        $todayClose = $this->getKrRegularClose($tossSymbol);
+        try {
+            $url = self::YAHOO_CHART_URL . urlencode($yahooSymbol) . '?interval=1d&range=1mo';
 
-        if ($todayClose === null || $todayClose <= 0.0) {
-            return false;  // 정규장 중·종가 미확보 → 가드 스킵, price-limits 신뢰
+            $res = $this->http->get($url, [
+                'headers'     => [
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                ],
+                'http_errors' => false,
+                'timeout'     => self::YAHOO_TIMEOUT,
+            ]);
+
+            $data       = json_decode((string) $res->getBody(), true);
+            $result     = $data['chart']['result'][0] ?? null;
+            $timestamps = is_array($result) ? ($result['timestamp'] ?? null) : null;
+            $closes     = is_array($result) ? ($result['indicators']['quote'][0]['close'] ?? null) : null;
+
+            if (!is_array($timestamps) || !is_array($closes)) {
+                return null;
+            }
+
+            foreach ($timestamps as $i => $ts) {
+                $close = $closes[$i] ?? null;
+                if ($close === null || (float) $close <= 0.0) {
+                    continue;  // 결측 봉
+                }
+                if (Carbon::createFromTimestamp((int) $ts, 'Asia/Seoul')->toDateString() === $kstDate) {
+                    return (float) $close;
+                }
+            }
+
+            return null;  // 해당 날짜 봉 없음(휴장·미상장 접미사)
+        } catch (\Throwable $e) {
+            Log::warning("[TossChangeCalculator] {$yahooSymbol} Yahoo 일봉 종가 조회 실패: " . $e->getMessage());
+            return null;
         }
-
-        return abs($refPrice - $todayClose) / $todayClose < self::ROLLOVER_EPSILON;
     }
 
     /**
      * 당일 KST(Asia/Seoul) 자정까지 남은 초를 계산한다.
      *
-     * 최솟값 300초(5분) — 자정 직전에도 너무 짧은 TTL 방지.
+     * 하한 없음(max(...,1)): 300초 하한은 방어가 아니라 '경계를 5분 넘겨 살아남는 stale' 의 원인이다
+     * (US 경로에서 같은 이유로 이미 제거·검증됨). 자정 직전 짧은 TTL 은 정상 — 그게 경계다.
      */
     private function secondsUntilKstMidnight(): int
     {
         $now      = Carbon::now('Asia/Seoul');
         $midnight = $now->copy()->endOfDay()->addSecond();  // 다음날 00:00:00 KST
-        $seconds  = max(300, (int) $now->diffInSeconds($midnight, false));
 
-        return $seconds;
+        return max((int) $now->diffInSeconds($midnight, false), 1);
     }
 
     /**
@@ -836,30 +887,56 @@ class TossChangeCalculator
     }
 
     /**
-     * 다음 국내 정규장 개장(09:00 KST)까지 남은 초. 최솟값 300초.
+     * 다음 국내 정규장 개장(09:00 KST)까지 남은 초.
+     *
+     * 하한 없음(max(...,1)) — 300초 하한은 개장(09:00) 경계를 5분 넘겨 기준가를 stale 로 살려두는 원인이다
+     * (US 경로에서 동일 근거로 제거·검증됨).
      */
     private function secondsUntilNextKrOpen(): int
     {
-        $seoulTz = new \DateTimeZone('Asia/Seoul');
-        $target  = new \DateTime('today 09:00', $seoulTz);
-        if ($target->getTimestamp() <= time()) {
-            $target = new \DateTime('tomorrow 09:00', $seoulTz);
+        $nowTs  = Carbon::now()->getTimestamp();
+        $target = Carbon::now('Asia/Seoul')->setTime(9, 0);
+        if ($target->getTimestamp() <= $nowTs) {
+            $target->addDay();
         }
 
-        return max($target->getTimestamp() - time(), 300);
+        return max($target->getTimestamp() - $nowTs, 1);
     }
 
     /**
-     * 다음 미국 정규장 개장(09:30 ET)까지 남은 초. 최솟값 300초.
+     * US 기준가(prevClose)의 '의미가 바뀌는 다음 경계'까지 남은 초.
+     *
+     * 경계를 하나씩 추가하는 방식은 3번 연속 실패했다(7/14 자정만 → 7/16 16:05만 → 7/17 min(16:05,09:30)).
+     * 어느 하나만 쓰면 나머지 경계를 넘겨 캐시가 stale 로 살아남는다. 그래서 '무엇이 뒤집히는 시각'을
+     * 전부 열거해 최소값을 쓴다 — 새 경계가 생기면 이 목록에만 추가한다(호출부 공식 복제 금지).
+     *
+     * 경계 8개와 각각이 뒤집는 것(ET 기준):
+     *   00:00 — 날짜가 바뀜 → isTodayBar(candles[0] 이 '오늘봉'인지) 반전 → 기준가 candles[0]↔candles[1] 전진
+     *   03:30 — 주간거래 종료          → isMarketLiveNow false (getUsSession '장마감')
+     *   04:00 — 프리마켓 개시          → isMarketLiveNow true
+     *   09:30 — 정규장 개시            → 장마감 분기(candles[1]) → 라이브 분기(candles[0])
+     *   16:00 — 정규장 마감/애프터 개시 → getUsSession '정규장' 이탈 → 롤포워드 조건 성립
+     *   16:05 — 정규장 종가 확정       → yahoo_regular_close 워머 반영분으로 롤포워드 기준가 교체
+     *   19:30 — 애프터마켓 종료        → isMarketLiveNow false
+     *   20:00 — 주간거래 개시          → isMarketLiveNow true
+     *
+     * 하한 없음(max(...,1)): 300초 하한은 그 자체가 경계를 넘겨버리는 구조라 제거했다.
+     * 최대 TTL ≈ 4h(20:00→00:00) → 심볼당 /candles ≤ 8회/일.
      */
-    private function secondsUntilNextUsOpen(): int
+    private function secondsUntilNextUsBoundary(): int
     {
-        $nyTz   = new \DateTimeZone('America/New_York');
-        $target = new \DateTime('today 09:30', $nyTz);
-        if ($target->getTimestamp() <= time()) {
-            $target = new \DateTime('tomorrow 09:30', $nyTz);
+        $now   = Carbon::now('America/New_York');
+        $nowTs = $now->getTimestamp();
+        $next  = null;
+
+        foreach ([[0, 0], [3, 30], [4, 0], [9, 30], [16, 0], [16, 5], [19, 30], [20, 0]] as [$h, $m]) {
+            $t = $now->copy()->setTime($h, $m);
+            if ($t->getTimestamp() <= $nowTs) {
+                $t->addDay();
+            }
+            $next = $next === null ? $t->getTimestamp() : min($next, $t->getTimestamp());
         }
 
-        return max($target->getTimestamp() - time(), 300);
+        return max($next - $nowTs, 1);
     }
 }

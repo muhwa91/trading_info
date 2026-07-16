@@ -8,6 +8,11 @@ use App\Services\Toss\TossApiClient;
 use App\Services\Toss\TossChangeCalculator;
 use App\Services\Toss\TossPriceFetcher;
 use App\Services\Toss\TossSymbolMapper;
+use GuzzleHttp\Client;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
@@ -51,6 +56,12 @@ class TossPriceFetcherTest extends TestCase
 
         // 매 테스트 전 캐시 초기화
         Cache::flush();
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();  // 시간 고정 해제 (TTL 경계 테스트 격리)
+        parent::tearDown();
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -662,218 +673,173 @@ class TossPriceFetcherTest extends TestCase
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // regular_close TTL 회귀 가드 — 자정 stale 고착 차단 (이번 수정 대상)
-    // ──────────────────────────────────────────────────────────────────
+    // regular_close TTL — regularMarketPrice 의 '의미가 바뀌는 다음 경계'에 만료 (2026-07-17)
     //
-    // ⚠️ 구조적 제약(보고): fetchYahooRegularClose() 는 private 이고 내부에서
-    //    `new \GuzzleHttp\Client()` 를 직접 생성해 Yahoo 를 호출하므로, meta(marketState,
-    //    regularMarketPrice)를 주입할 길이 없다(Http::fake 불가 — 기존 H-2 가드와 동일 사정).
-    //    또한 TTL 산식이 Carbon 이 아니라 네이티브 time()/new \DateTime('today 16:05') 를
-    //    쓰므로 Carbon::setTestNow 로 시각을 고정할 수도 없다(실측 확인됨).
-    //    → 무리한 리팩터(제품 코드 변경) 대신 두 갈래로 회귀를 잡는다:
-    //      (1) [동작] 제품과 동일한 TTL 산식을 '주입 가능한 now'로 재현해, ET 여러 시점에서
-    //          만료가 '다음 16:00 ET 를 절대 넘지 않음'·'REGULAR/null=짧음 vs POST=긺' 을 단언.
-    //      (2) [정적] 제품 소스가 수정된 구성(16:05·tomorrow 16:05·REGULAR||null→300)을
-    //          실제로 담고, 옛 '자정(midnight) TTL' 구성을 더는 갖지 않음을 단언.
-    //      (1)이 산식의 의도를, (2)가 그 산식이 제품에 실제로 박혀 있음을 고정한다.
+    //   Yahoo meta.regularMarketPrice 는 세션별로 의미가 다르다: PRE=어제 종가 · REGULAR=라이브가 ·
+    //   POST/CLOSED=오늘 확정 종가. 즉 의미가 뒤집히는 시각은 두 곳(09:30 개시 · 16:05 종가확정)이다.
+    //   16:05 만 보면 PRE 에 기록한 '어제 종가'가 09:30 을 넘겨 최대 8h 고착한다 — 워머는 Cache::has 면
+    //   skip, fetchYahooRegularClose 는 cache-first 라 그 사이 아무도 안 고친다. 파급: DashboardController
+    //   의 US 평가(regular_close)가 미국 정규장 내내 어제 종가에 묶인다(아래 회귀 가드 참조).
+    //
+    //   ★ 이 섹션은 '동작'만 본다. 옛 테스트는 (1) 제품 TTL 산식을 테스트에 복제해 대조하고
+    //     (2) 소스 문자열('today 16:05'·max(...,300))을 grep 했다 — 둘 다 이번 결함을 원리적으로 못 잡는다
+    //     (미러는 양쪽이 똑같이 틀리고, grep 은 문자열이 바뀌면 그저 실패할 뿐 stale 을 모른다).
+    //     이제 ?Client $http 선택 주입 + Carbon 전환으로 marketState 강제 + setTestNow 가 가능하니,
+    //     대역을 주입해 '실제로 저장되는 TTL'을 리터럴로 못박는다. ★ 여기에 공식·소스검사를 다시 들이지 말 것.
+    // ──────────────────────────────────────────────────────────────────
 
     /**
-     * 제품 fetchYahooRegularClose() 의 TTL 결정 로직을 '주입 가능한 now'로 재현한다.
-     * (제품은 네이티브 time()/DateTime 을 써 시계 고정이 불가능하므로, 동일 산식을
-     *  결정론적으로 평가하기 위한 미러. 제품과의 동치성은 정적 가드 테스트가 보장한다.)
+     * Yahoo meta 대역이 주입된 TossPriceFetcher.
      *
-     * 제품 로직(TossPriceFetcher::fetchYahooRegularClose):
-     *   - marketState 가 REGULAR 또는 null  → 300 (장중 미완성/불확실 → 짧게)
-     *   - 그 외(PRE/POST/CLOSED)           → 다음 16:05 ET 까지, 단 최소 300
+     * ⚠️ $http 를 주입하지 않으면 기본값이 new Client() 라 테스트가 조용히 실제 Yahoo 를 때린다
+     *    (그렇게 '틀린 이유로 통과'한 전례가 있다). 이 경로를 타는 테스트는 반드시 이 헬퍼를 쓴다.
      *
-     * @param  string|null  $marketState  Yahoo meta.marketState
-     * @param  int          $now          기준 시각(Unix ts, UTC)
-     * @return int  TTL(초)
+     * @param string|null $marketState  Yahoo meta.marketState (null = 필드 누락 = 파싱 실패 재현)
      */
-    private function computeRegularCloseTtl(?string $marketState, int $now): int
+    private function fetcherWithYahooMeta(?string $marketState, float $regularMarketPrice): TossPriceFetcher
     {
-        $nyTz = new \DateTimeZone('America/New_York');
-
-        if ($marketState === 'REGULAR' || $marketState === null) {
-            return 300;
+        $meta = ['regularMarketPrice' => $regularMarketPrice];
+        if ($marketState !== null) {
+            $meta['marketState'] = $marketState;
         }
 
-        // 'today/tomorrow 16:05' 를 주입된 now 기준으로 평가 (제품은 time() 사용)
-        $today = (new \DateTime('@' . $now))->setTimezone($nyTz)->format('Y-m-d');
-        $target = new \DateTime($today . ' 16:05', $nyTz);
-        if ($target->getTimestamp() <= $now) {
-            $target->modify('+1 day');  // 'tomorrow 16:05' 와 동치
-        }
+        $body    = json_encode(['chart' => ['result' => [['meta' => $meta]]]]);
+        $handler = HandlerStack::create(new MockHandler([new Response(200, [], $body)]));
 
-        return max($target->getTimestamp() - $now, 300);
+        return new TossPriceFetcher(
+            $this->clientMock,
+            $this->mapper,
+            $this->calculatorMock,
+            new Client(['handler' => $handler])
+        );
     }
 
     /**
-     * 주어진 now 의 '직후 다음 16:00 ET' Unix ts. TTL 만료가 이 경계를 넘으면 회귀(자정 TTL).
+     * 워머(cold 심볼 → Yahoo 페치 → Cache::put)를 태워 실제로 저장된 TTL 을 잡아낸다.
+     *
+     * ⚠️ 테스트당 1회만 호출한다 — Mockery 는 먼저 등록된 expectation 을 먼저 매칭하므로,
+     *    한 테스트에서 두 번 부르면 두 번째 put 이 첫 번째 클로저(이미 죽은 지역변수)에 잡힌다(실측).
+     *
+     * @param string $frozenEt  ET 고정 시각 — 제품이 Carbon::now('America/New_York') 를 쓰므로 setTestNow 가 먹는다
      */
-    private function nextRegularClose1600Et(int $now): int
+    private function captureRegularCloseTtl(string $frozenEt, ?string $marketState, float $price = 900.0): ?int
     {
-        $nyTz  = new \DateTimeZone('America/New_York');
-        $today = (new \DateTime('@' . $now))->setTimezone($nyTz)->format('Y-m-d');
-        $close = new \DateTime($today . ' 16:00', $nyTz);
-        if ($close->getTimestamp() <= $now) {
-            $close->modify('+1 day');
-        }
+        Carbon::setTestNow(Carbon::parse($frozenEt, 'America/New_York'));
 
-        return $close->getTimestamp();
+        $capturedTtl = null;
+        Cache::shouldReceive('has')->andReturnFalse();   // 워머 게이트: cold → 페치
+        Cache::shouldReceive('get')->andReturnNull();    // cache-first 게이트: cold → 페치
+        Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
+            $capturedTtl = $ttl;
+
+            return true;
+        });
+
+        $this->fetcherWithYahooMeta($marketState, $price)->warmRegularCloses(['MU']);
+
+        return $capturedTtl;
     }
 
     /**
-     * (A) [동작] TTL 경계 / 자정 회귀 차단.
-     *
-     * POST(정규장 마감 후) meta 상태에서, ET 시각을 여러 지점으로 고정했을 때
-     * 저장될 TTL 의 만료시점이 '다음 16:00 ET 를 절대 넘지 않음'을 단언한다.
-     * → 옛 버그는 만료가 ET '자정'(다음날 00:00)이라 16:00 을 한참 넘겨 stale 고착됐다.
-     *   이 테스트는 그 자정 TTL 회귀를 직접 잡는다.
-     *
-     * 검증 시점:
-     *   - 17:00 ET (정규장 마감 직후, 같은 날 16:05 는 이미 지남 → 내일 16:05)
-     *   - 00:30 ET (자정 직후, 다음 16:05 는 같은 날 → 그날 16:05)
-     *
      * @test
+     * PRE(05:00 ET) 기록분은 09:30(정규장 개시) 정각에 만료 — regularMarketPrice 가 어제 종가→라이브가로
+     * 뒤집히는 시각이다. 옛 구현은 오늘 16:05 까지(최대 8h) 잡아 정규장 내내 어제 종가를 서빙했다.
      */
-    public function testRegularCloseTtl_PostState_NeverSurvivesPastNext1600Et(): void
+    public function testRegularCloseTtl_PreMarket_ExpiresAtRegularOpen(): void
     {
-        $nyTz = new \DateTimeZone('America/New_York');
-
-        $checkpoints = [
-            // [설명, ET 시각]
-            ['17:00 ET (마감 직후)', new \DateTime('2026-01-15 17:00', $nyTz)],
-            ['00:30 ET (자정 직후)', new \DateTime('2026-01-16 00:30', $nyTz)],
-            // POST 상태가 길게 잡히는 또 다른 경계: 09:00 ET (프리마켓)
-            ['09:00 ET (프리마켓)', new \DateTime('2026-01-16 09:00', $nyTz)],
-        ];
-
-        foreach ($checkpoints as [$label, $etTime]) {
-            $now = $etTime->getTimestamp();
-
-            foreach (['POST', 'CLOSED', 'PRE'] as $state) {
-                $ttl     = $this->computeRegularCloseTtl($state, $now);
-                $expiry  = $now + $ttl;
-                $barrier = $this->nextRegularClose1600Et($now);
-
-                // 핵심 회귀 단언: 만료가 다음 16:00 ET 를 넘으면 안 된다 (자정 TTL 금지).
-                // 허용 마진 +5분(16:05 타깃)까지만 — 16:00~16:05 사이는 정상.
-                $this->assertLessThanOrEqual(
-                    $barrier + 300,
-                    $expiry,
-                    "[{$label} / {$state}] regular_close TTL 만료가 다음 16:00 ET(+5m)를 넘김 — 자정 TTL 회귀"
-                );
-
-                // 만료는 미래여야 한다(최소 300초 보장).
-                $this->assertGreaterThanOrEqual($now + 300, $expiry, "[{$label} / {$state}] TTL 이 최소 300초 미만");
-            }
-        }
+        // 05:00 ET → 09:30 ET = 4h30m. (옛 '오늘 16:05' 기준이면 11h05m = 39900)
+        $this->assertSame(16200, $this->captureRegularCloseTtl('2026-07-17 05:00:00', 'PRE'),
+            'PRE 05:00 ET → 09:30 ET 정각 만료(4h30m)');
     }
 
     /**
-     * (B) [동작] 장중 가드 — marketState 별 TTL 대조.
-     *
-     *   - REGULAR : 짧게(=300) — 미완성 진행가를 16:05 까지 고착시키지 않는다.
-     *   - null    : 짧게(=300) — 파싱 실패 시 보수적으로 stale 고착 방지.
-     *   - POST    : 길게(다음 16:05 ET 까지) — 확정 종가를 다음 마감까지 유지.
-     *
      * @test
+     * PRE 09:29 ET → 60초. 300초 하한이 남아 있으면 09:34 까지 살아남아 개장 경계를 4분 넘긴다.
      */
-    public function testRegularCloseTtl_MarketStateGuard_RegularAndNullShort_PostLong(): void
+    public function testRegularCloseTtl_PreMarket_JustBeforeOpen_HasNoFloor(): void
     {
-        $nyTz = new \DateTimeZone('America/New_York');
-        // 마감 직후(16:30 ET) — POST 면 다음날 16:05 까지라 명확히 길다.
-        $now = (new \DateTime('2026-01-15 16:30', $nyTz))->getTimestamp();
-
-        $regularTtl = $this->computeRegularCloseTtl('REGULAR', $now);
-        $nullTtl    = $this->computeRegularCloseTtl(null, $now);
-        $postTtl    = $this->computeRegularCloseTtl('POST', $now);
-
-        // 장중·불확실 → 정확히 300초만
-        $this->assertSame(300, $regularTtl, 'REGULAR 상태 TTL 이 300 이 아님 — 진행가가 길게 고착될 위험');
-        $this->assertSame(300, $nullTtl, 'marketState 누락(null) TTL 이 300 이 아님 — stale 고착 방지 실패');
-
-        // 확정 종가(POST) → 다음 16:05 까지(여기선 ~24h) — 300 보다 한참 길다
-        $this->assertGreaterThan(
-            300,
-            $postTtl,
-            'POST(확정 종가) TTL 이 300 이하 — 다음 마감까지 유지되지 않음'
-        );
-        $this->assertGreaterThan(
-            $regularTtl,
-            $postTtl,
-            'POST TTL 이 REGULAR TTL 보다 길지 않음 — 장중/확정 구분이 무력화됨'
-        );
-
-        // POST 만료는 정확히 다음 16:05 ET 여야 한다(16:00 경계 ± 정상 마진 내).
-        $barrier = $this->nextRegularClose1600Et($now);
-        $this->assertLessThanOrEqual($barrier + 300, $now + $postTtl, 'POST TTL 만료가 다음 16:00 ET(+5m)를 넘김');
+        $this->assertSame(60, $this->captureRegularCloseTtl('2026-07-17 09:29:00', 'PRE'),
+            'PRE 09:29 ET → 60s. 300 하한이 살아있으면 개장을 넘겨 stale');
     }
 
     /**
-     * (A·B 보강) [정적] 제품 소스가 수정된 TTL 구성을 실제로 담고,
-     * 옛 '자정(midnight) TTL' 구성을 더는 갖지 않음을 단언한다.
-     *
-     * 위 동작 테스트는 산식의 '의도'를 검증하지만, 그 산식이 제품에 박혀 있다는
-     * 보장은 이 정적 가드가 한다(미러-tautology 방지 · H-2 가드와 동일 전략).
-     * 누군가 16:05 타깃을 자정 TTL 로 되돌리거나 REGULAR/null 300초 가드를 빼면 즉시 실패.
-     *
      * @test
+     * POST(17:19 ET) 기록분 = 오늘 확정 종가 → 다음 경계는 익일 09:30(16:05 는 이미 지났다).
      */
-    public function testRegularCloseTtl_SourceUsesFixedBoundaryNotMidnight(): void
+    public function testRegularCloseTtl_PostMarket_ExpiresAtNextRegularOpen(): void
     {
-        $src       = $this->getFetcherSource();
-        $methodSrc = $this->extractMethodSource($src, 'fetchYahooRegularClose');
+        // 17:19 ET → 익일 09:30 = 16h11m
+        $this->assertSame(58260, $this->captureRegularCloseTtl('2026-07-17 17:19:00', 'POST'),
+            'POST 17:19 ET → 익일 09:30 ET(16h11m)');
+    }
 
-        $this->assertNotEmpty($methodSrc, 'fetchYahooRegularClose 메서드를 찾을 수 없음');
+    /**
+     * @test
+     * CLOSED(22:00 ET)도 동일 — 익일 09:30 만료.
+     */
+    public function testRegularCloseTtl_Closed_ExpiresAtNextRegularOpen(): void
+    {
+        // 22:00 ET → 익일 09:30 = 11h30m
+        $this->assertSame(41400, $this->captureRegularCloseTtl('2026-07-17 22:00:00', 'CLOSED'),
+            'CLOSED 22:00 ET → 익일 09:30 ET(11h30m)');
+    }
 
-        // (필수) 만료 기준 = 정규장 마감 직후 16:05 ET, 지났으면 내일 16:05
-        $this->assertStringContainsString(
-            "'today 16:05'",
-            $methodSrc,
-            "TTL 타깃이 'today 16:05'(정규장 마감 직후)이 아님 — 자정 TTL 회귀 가능"
-        );
-        $this->assertStringContainsString(
-            "'tomorrow 16:05'",
-            $methodSrc,
-            "TTL 타깃에 'tomorrow 16:05' 분기가 없음 — 오늘 16:05 경과 시 만료가 잘못 잡힘"
-        );
-        // 최소 300초 바닥
-        $this->assertMatchesRegularExpression(
-            '/max\(\s*\$target->getTimestamp\(\)\s*-\s*time\(\)\s*,\s*300\s*\)/',
-            $methodSrc,
-            'TTL 산식이 max(target - time(), 300) 형태가 아님'
-        );
+    /**
+     * @test
+     * REGULAR(14:20 ET) = 미완성 진행가 → 300초만(무변경).
+     * 09:30/16:05 경계 로직이 정규장 분기까지 먹어치우면(예: 16:05 까지 = 6300s) 여기서 잡힌다.
+     */
+    public function testRegularCloseTtl_RegularSession_StaysShort(): void
+    {
+        $this->assertSame(300, $this->captureRegularCloseTtl('2026-07-17 14:20:00', 'REGULAR'),
+            'REGULAR = 진행가 → 300s 고정');
+    }
 
-        // (보강) REGULAR 또는 null 이면 300초만 — 미완성/불확실 stale 고착 방지
-        $this->assertMatchesRegularExpression(
-            "/\\\$marketState\s*===\s*'REGULAR'\s*\|\|\s*\\\$marketState\s*===\s*null/",
-            $methodSrc,
-            "marketState REGULAR||null → 300 가드가 없음 — 장중/파싱실패 stale 고착 위험"
-        );
-        $this->assertMatchesRegularExpression(
-            '/\$ttl\s*=\s*300\s*;/',
-            $methodSrc,
-            'REGULAR/null 분기의 $ttl = 300 짧은 TTL 이 없음'
-        );
+    /**
+     * @test
+     * marketState 누락(파싱 실패)도 보수적으로 300초 — 긴 TTL 로 잘못된 값을 박는 것보다 안전.
+     */
+    public function testRegularCloseTtl_NullState_StaysShort(): void
+    {
+        $this->assertSame(300, $this->captureRegularCloseTtl('2026-07-17 14:20:00', null),
+            'marketState 누락 → 보수적으로 300s');
+    }
 
-        // (회귀 차단) 옛 '자정' TTL 구성이 남아 있으면 안 된다.
-        $this->assertStringNotContainsString(
-            "'today midnight'",
-            $methodSrc,
-            "옛 자정 TTL('today midnight') 구성이 남아 있음 — stale 고착 버그 재발"
-        );
-        $this->assertStringNotContainsString(
-            "'tomorrow midnight'",
-            $methodSrc,
-            "옛 자정 TTL('tomorrow midnight') 구성이 남아 있음 — stale 고착 버그 재발"
-        );
-        $this->assertStringNotContainsString(
-            "'tomorrow'",
-            $methodSrc,
-            "옛 자정 TTL('tomorrow'=다음날 00:00) 구성이 남아 있음 — stale 고착 버그 재발"
-        );
+    /**
+     * @test
+     * [회귀 가드 — 파급 A] PRE 에 채운 '어제 종가'가 09:30 개장을 넘겨 살아남지 않는다.
+     *
+     * DashboardController:215-219 는 US 보유의 평가가격으로 regular_close 를 읽는다
+     * (readRegularCloseCache → yahoo_regular_close_{ticker}). PRE 엔트리가 개장을 넘기면
+     * 프리마켓에 앱을 켠 사용자의 포트폴리오 평가손익이 미국 정규장 내내(KST 22:30~05:05)
+     * 어제 종가에 고정된다 — TTL 단언과 달리 이 테스트는 '실제 캐시 만료 + 소비 경로'까지 태운다.
+     *
+     * (ArrayStore 만료·TTL 계산 모두 Carbon::now(=setTestNow) 기준이라 실행 시각과 무관하다.)
+     */
+    public function testRegularCloseCache_PreEntry_DoesNotSurviveIntoRegularSession(): void
+    {
+        // ① ET 05:00 프리마켓 — 워머가 regularMarketPrice(=어제 종가 900.0)를 캐싱
+        Carbon::setTestNow(Carbon::parse('2026-07-17 05:00:00', 'America/New_York'));
+        $fetcher = $this->fetcherWithYahooMeta('PRE', 900.0);
+        $fetcher->warmRegularCloses(['MU']);
+        $this->assertSame(900.0, (float) Cache::get('yahoo_regular_close_MU'), '전제: PRE 워밍이 어제 종가를 캐싱');
+
+        // ② ET 09:31 정규장 — 900.0 은 더 이상 '오늘 정규장 기준가'가 아니다 → 만료돼 있어야 한다
+        Carbon::setTestNow(Carbon::parse('2026-07-17 09:31:00', 'America/New_York'));
+        $this->assertNull(Cache::get('yahoo_regular_close_MU'),
+            'PRE 캐시가 09:30 개장을 넘겨 살아남았다 — 워머는 Cache::has 면 skip 이라 아무도 안 고친다');
+
+        // ③ 파급 A: 그 결과 DashboardController 가 읽는 regular_close 가 어제 종가(900.0)면 안 된다.
+        $this->clientMock->method('get')->willReturn([
+            'result' => [['symbol' => 'MU', 'lastPrice' => 950.0, 'currency' => 'USD']],
+        ]);
+        $fetcher->fetchDomestic(['MU']);
+
+        $priceData = Cache::get('kis_realtime_price_us_MU');
+        $this->assertNotNull($priceData);
+        $this->assertNotSame(900.0, $priceData['regular_close'],
+            'US 평가가격(regular_close)이 어제 종가에 고착 — 프리마켓에 앱을 켜면 정규장 내내 평가손익이 얼어붙는다');
+        $this->assertNull($priceData['regular_close'], '만료 후 cold → null(다음 워머 사이클이 라이브가로 채운다)');
     }
 
     // ──────────────────────────────────────────────────────────────────

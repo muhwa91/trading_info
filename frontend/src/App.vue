@@ -274,7 +274,8 @@
           </div>
 
           <!-- ③ 종목 차트 그리드 (2×2) — 국내/미국 스왑 -->
-          <div class="flex flex-col gap-3">
+          <!-- @container: 아래 그리드의 @min-[1056px]:grid-cols-2 컨테이너 쿼리 기준(뷰포트 아님 — 좌측 레일 감안한 실제 가용 폭) -->
+          <div class="@container flex flex-col gap-3">
             <!-- 국내/미국 토글 -->
             <div class="flex items-center gap-2">
               <div class="tabs tabs-boxed bg-base-200 p-0.5 rounded-sm border border-hairline gap-0">
@@ -354,7 +355,7 @@
               @dragleave="onGridDragLeave(idx)"
               @drop="onGridDrop(idx)"
               :class="[
-                'group relative card bg-base-100 border transition-colors duration-120 overflow-hidden rounded-md min-w-0',
+                'group relative card bg-base-100 border transition-colors duration-120 overflow-hidden rounded-md min-w-130',
                 isGridClosed(idx)
                   ? 'h-60'
                   : (gridCols === 1 ? 'h-80 sm:h-96 lg:h-120' : 'h-72 sm:h-80 lg:h-110'),

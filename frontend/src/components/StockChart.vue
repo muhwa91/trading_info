@@ -24,7 +24,7 @@
             <span
               v-if="formattedChangePercent !== null"
               :class="[
-                'text-xs font-medium font-mono leading-tight shrink-0',
+                'text-base font-medium font-mono leading-tight shrink-0',
                 changePercent >= 0 ? 'text-up' : 'text-down'
               ]"
             >{{ formattedChangePercent }}</span>

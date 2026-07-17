@@ -1,5 +1,8 @@
 <template>
-  <div class="chart-card-container relative bg-base-100 border border-hairline rounded-md pt-3 pb-3 pl-3 pr-0 h-full flex flex-col justify-between overflow-hidden">
+  <div
+    class="chart-card-container relative bg-base-100 border border-hairline rounded-md pt-3 pb-3 pl-3 pr-0 h-full flex flex-col justify-between overflow-hidden"
+    :class="{ 'has-badges': hasHeaderBadges }"
+  >
 
     <!-- 차트 헤더 (그리드 순서변경 드래그 핸들 — 여기를 잡았을 때만 드래그 시작) -->
     <div
@@ -394,6 +397,12 @@ const timeframes = [
 ];
 
 // ── computed ───────────────────────────────────────────────────────────────
+// 헤더 줄2에 배지(MAX·실적)가 있는 카드인지. 배지 있는 카드는 좁은 폭에서 배지+버튼탭이
+// 한 줄에 안 들어가 배지가 2줄로 깨진다 → 더 넓은 폭에서 컴팩트 셀렉트로 전환(아래 @container 참조).
+const hasHeaderBadges = computed(
+  () => (!isIndex.value && maxPrice.value !== null) || earningsDate.value !== null
+);
+
 const isKorean = computed(() => {
   // KRX 코드: .KS/.KQ 접미사, 6자리 숫자, 또는 신형 영숫자 코드(예: 0167A0)
   const t = props.ticker;
@@ -1100,9 +1109,21 @@ onBeforeUnmount(() => {
   container-name: chart-card;
 }
 
-/* 기본(넓은 폭): 헤더 우측 컴팩트 셀렉트 숨김, 타임프레임 row 표시 */
+/* 기본(넓은 폭): 헤더 우측 컴팩트 셀렉트 숨김, 타임프레임 row 표시.
+   셀렉트 치수/모양 튜닝은 여기(숨김 상태)에 두고, @container 는 display 만 뒤집는다(중복 제거). */
 .timeframe-select-compact {
   display: none;
+  flex: 0 0 auto;
+  max-width: 5rem;
+  width: 5rem;
+  /* 텍스트 가운데 정렬 */
+  text-align: center;
+  text-align-last: center;
+  /* 네이티브 화살표가 보이도록 appearance 복원 + 좌우 패딩 균형 */
+  appearance: auto;
+  -webkit-appearance: auto;
+  padding-left: 0.375rem;
+  padding-right: 1.25rem;
 }
 .timeframe-row {
   display: flex;
@@ -1112,7 +1133,7 @@ onBeforeUnmount(() => {
   display: none;
 }
 
-/* 카드 폭 400px 미만: 와이드 버튼 행 숨기고 줄4(셀렉트+실적) 표시 */
+/* 카드 폭 400px 미만: 배지 없는 카드(지수 등)도 버튼 7개가 안 들어가므로 컴팩트 셀렉트로 전환 */
 @container chart-card (max-width: 399px) {
   .timeframe-row {
     display: none;
@@ -1123,17 +1144,21 @@ onBeforeUnmount(() => {
   }
   .timeframe-select-compact {
     display: inline-block;
-    flex: 0 0 auto;
-    max-width: 5rem;
-    width: 5rem;
-    /* 텍스트 가운데 정렬 */
-    text-align: center;
-    text-align-last: center;
-    /* 네이티브 화살표가 보이도록 appearance 복원 + 좌우 패딩 균형 */
-    appearance: auto;
-    -webkit-appearance: auto;
-    padding-left: 0.375rem;
-    padding-right: 1.25rem;
+  }
+}
+
+/* 배지(MAX·실적) 있는 카드: 배지+버튼탭 7개가 한 줄에 안 들어가 배지가 2줄로 깨지는 폭(≈640px 미만)에서
+   미리 컴팩트 셀렉트로 전환한다. 그리드 카드는 min-w-130(520px) 바닥에서도 이 폭에 걸려 헤더가 깨지지 않는다.
+   지수 차트(.has-badges 없음)는 배지가 없어 이 규칙에 걸리지 않으므로 좁아도 버튼 탭을 유지한다. */
+@container chart-card (max-width: 640px) {
+  .has-badges .timeframe-row {
+    display: none;
+  }
+  .has-badges .timeframe-row4 {
+    display: flex;
+  }
+  .has-badges .timeframe-select-compact {
+    display: inline-block;
   }
 }
 

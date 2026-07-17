@@ -845,10 +845,17 @@ class TossChangeCalculator
      * 하한 없음(max(...,1)): 300초 하한은 방어가 아니라 '경계를 5분 넘겨 살아남는 stale' 의 원인이다
      * (US 경로에서 같은 이유로 이미 제거·검증됨). 자정 직전 짧은 TTL 은 정상 — 그게 경계다.
      *
-     * diffInSeconds 를 쓰지 않고 타임스탬프 차를 쓴다(형제 함수 secondsUntilNextUsBoundary·
-     * FxService::secondsUntilNextSeoulFxClose 와 동일): Carbon 3 은 미래 시각에 대한 부호를 뒤집어
-     * 음수를 돌려주므로 max(...,1) 가드가 TTL 을 1초로 만든다 — 예외 없이 값만 틀려 캐시가 매 사이클
-     * 재조회된다. 타임스탬프 차는 Carbon 2·3 양쪽에서 같은 값이라 버전 무관하게 안전하다.
+     * diffInSeconds 를 쓰지 않고 타임스탬프 차를 쓴다 — 이유는 형제 함수
+     * (secondsUntilNextUsBoundary · FxService::secondsUntilNextSeoulFxClose)와의 일관성뿐이다.
+     * 여기엔 버그 방어가 없다. KST 는 DST 가 없어 FxService:226 이 말하는 '서머타임 전환일(23h·25h)'
+     * 문제도 이 함수엔 해당하지 않는다.
+     *
+     * 실측(Carbon 3.13.1) — 잘못된 통설을 남기지 않기 위해 기록한다:
+     *   - $now->diffInSeconds($midnight, false) = +2057.037 → 미래는 '양수'다.
+     *     "Carbon 3 이 미래 시각의 부호를 뒤집는다"는 사실이 아니며, TTL 이 1초로 붕괴하지도 않는다.
+     *   - 부호가 음수가 되는 건 수신자/인자를 뒤집었을 때뿐: $midnight->diffInSeconds($now) = -2057.037.
+     *   - endOfDay()->addSecond() 는 00:00:00.999999 이므로 diff 는 소수(float)를 돌려준다.
+     *     (int) 캐스팅은 내림이라 TTL 이 1초 짧아질 뿐, 타임스탬프 차와 실질 차이는 없다.
      */
     private function secondsUntilKstMidnight(): int
     {

@@ -26,6 +26,19 @@ class WebSocketAgentServer extends Command
      */
     protected $description = 'Start the WebSocket real-time stock agent server';
 
+    /**
+     * 구독 허용 심볼 형식. 실제 사용 심볼을 모두 통과시켜야 한다:
+     *   미국 MU·BRK.B / 국내 005930·0167A0 / 지수·환율 NQ=F·^KS200·USDKRW=X·KOSPI200·KOSPI_NIGHT
+     * 목적은 임의 문자열이 외부 API 호출·캐시 키로 흘러드는 것을 막는 것.
+     */
+    private const TICKER_PATTERN = '/^[A-Za-z0-9.^=_\-]{1,15}$/';
+
+    /** 클라이언트 1개가 구독할 수 있는 최대 종목 수 (실사용: 지수 3 + 그리드 + 관심 + 보유 + 환율). */
+    private const MAX_SUBSCRIPTIONS = 60;
+
+    /** 동시 접속 상한 — 127.0.0.1 전용이라 실사용은 탭 몇 개. clientStates 무한 증가 방지용. */
+    private const MAX_CLIENTS = 20;
+
     private $clients = [];
 
     private $clientStates = [];
@@ -62,7 +75,8 @@ class WebSocketAgentServer extends Command
     public function handle()
     {
         $port = $this->option('port');
-        $address = "0.0.0.0:$port";
+        // 루프백 전용. 0.0.0.0 은 같은 LAN 의 아무 기기나 subscribe 해 토스 토큰을 대신 쓰게 한다.
+        $address = "127.0.0.1:$port";
 
         $server = stream_socket_server("tcp://$address", $errno, $errstr);
         if (! $server) {
@@ -71,7 +85,9 @@ class WebSocketAgentServer extends Command
             return 1;
         }
 
-        $this->info("WebSocket Agent Server running on ws://127.0.0.1:$port");
+        // 로그는 반드시 실제 바인딩 주소로 — 하드코딩된 '127.0.0.1' 로그가 0.0.0.0 바인딩을
+        // 가려서 이 문제가 여태 안 보였다.
+        $this->info('WebSocket Agent Server running on ws://' . stream_socket_get_name($server, false));
 
         // Disable blocking on server socket
         stream_set_blocking($server, 0);
@@ -96,6 +112,11 @@ class WebSocketAgentServer extends Command
                 // If server socket has activity, it means new client connection
                 if (in_array($server, $read)) {
                     $newClient = @stream_socket_accept($server);
+                    if ($newClient && count($this->clients) >= self::MAX_CLIENTS) {
+                        $this->warn('접속 상한(' . self::MAX_CLIENTS . ') 초과 — 새 연결 거부');
+                        @fclose($newClient);
+                        $newClient = false;
+                    }
                     if ($newClient) {
                         stream_set_blocking($newClient, 0);
                         $id = (int) $newClient;
@@ -227,21 +248,54 @@ class WebSocketAgentServer extends Command
             }
 
             if (isset($message['type']) && $message['type'] === 'subscribe') {
-                $tickers = $message['tickers'] ?? [];
-                $timeframes = $message['timeframes'] ?? [];
+                $tickers = $this->sanitizeTickers($message['tickers'] ?? []);
+                $timeframes = is_array($message['timeframes'] ?? null) ? $message['timeframes'] : [];
 
                 $this->clientStates[$id]['subscriptions'] = $tickers;
                 $this->clientStates[$id]['timeframes'] = $timeframes;
 
-                $tickerList = is_array($tickers) ? array_map(function ($t) {
-                    return is_array($t) ? json_encode($t) : (string) $t;
-                }, $tickers) : [];
-                $this->info("Client $id subscribed to: " . implode(', ', $tickerList));
+                $this->info("Client $id subscribed to: " . implode(', ', $tickers));
 
                 // Immediately push data to newly subscribed client
                 $this->pushDataToClient($socket);
             }
         }
+    }
+
+    /**
+     * subscribe 메시지의 tickers 를 검증한다 — 형식 위반·중복·상한 초과분은 버린다.
+     * 여기를 통과한 값만 외부 API 조회·캐시 키로 쓰인다.
+     *
+     * @param  mixed  $tickers
+     * @return array<int, string>
+     */
+    private function sanitizeTickers($tickers): array
+    {
+        if (! is_array($tickers)) {
+            return [];
+        }
+
+        $valid = [];
+        foreach ($tickers as $t) {
+            if (! is_string($t) && ! is_numeric($t)) {
+                continue;  // 배열·객체·null
+            }
+            $t = (string) $t;
+            if (preg_match(self::TICKER_PATTERN, $t) !== 1) {
+                $this->warn("잘못된 심볼 무시: {$t}");
+
+                continue;
+            }
+            // in_array 로 중복 제거 — 배열 키를 쓰면 '123456' 같은 순수 숫자 심볼이 int 로 바뀐다.
+            if (! in_array($t, $valid, true)) {
+                $valid[] = $t;
+            }
+            if (count($valid) >= self::MAX_SUBSCRIPTIONS) {
+                break;
+            }
+        }
+
+        return $valid;
     }
 
     private function pushRealtimeData()

@@ -130,10 +130,7 @@
             <!-- live_session(백엔드, 공휴일 정확)이 있으면 우선 사용; 없으면 클라이언트 계산값 폴백 -->
             <td class="px-2 py-2.5 text-center whitespace-nowrap" @click.stop>
               <span
-                :class="[
-                  'inline-flex items-center justify-center px-2 h-5.5 rounded-xs border text-2xs font-medium leading-tight whitespace-nowrap',
-                  sessionBadgeStyle(itemSessionCode(item))
-                ]"
+                :class="[SESSION_BADGE_BASE, 'whitespace-nowrap', sessionBadgeTone(sessionLabel(itemSessionCode(item)))]"
               >
                 {{ sessionLabel(itemSessionCode(item)) }}
               </span>
@@ -627,6 +624,7 @@ import {
   profitColorClass,
   displayName as _displayName,
 } from '../utils/format.js';
+import { SESSION_BADGE_BASE, sessionBadgeTone } from '../utils/sessionBadge.js';
 
 const SEARCH_MODE_OPTIONS = [
   { value: 'kr',  label: 'KR' },
@@ -792,18 +790,7 @@ function sessionLabel(code) {
   }
 }
 
-function sessionBadgeStyle(code) {
-  // 3계층: 정규장=ses-open(앰버) / 연장(프리·애프터·주간·야간)=ses-ext(틸) / 마감=중립 muted
-  switch(code) {
-    case 'REG_KR':
-    case 'REG_US': return 'text-ses-open bg-ses-open-weak border-ses-open-line';
-    case 'EXT_NIGHT':
-    case 'PRE':
-    case 'AFT': return 'text-ses-ext bg-ses-ext-weak border-ses-ext-line';
-    case 'CLOSED':
-    default: return 'text-base-content/40 bg-base-200/40 border-base-content/10';
-  }
-}
+// 세션 배지 색은 utils/sessionBadge.js 의 sessionBadgeTone(라벨) 단일 소스를 쓴다.
 
 const sessionNow = ref(new Date());
 let sessionTimer = null;
@@ -1587,25 +1574,6 @@ function calcUSExtHoursProfitRate(item) {
 // displayName: format.js 의 공용 함수에 SEARCHABLE_STOCKS 를 바인딩해 사용
 function displayName(item) {
   return _displayName(item, SEARCHABLE_STOCKS);
-}
-
-function sessionBadgeClass(badge) {
-  // 3계층: 정규장=ses-open / 연장(프리·애프터)=ses-ext / 마감=중립
-  switch (badge) {
-    case 'REG': return 'bg-ses-open-weak text-ses-open border-ses-open-line';
-    case 'PRE':
-    case 'AFT': return 'bg-ses-ext-weak text-ses-ext border-ses-ext-line';
-    default:    return 'bg-base-200/40 text-base-content/25 border-hairline';
-  }
-}
-
-function sessionBadgeKo(badge) {
-  switch (badge) {
-    case 'REG': return '정규장';
-    case 'PRE': return '프리';
-    case 'AFT': return '애프터';
-    default:    return '—';
-  }
 }
 
 // ── 라이프사이클 ──────────────────────────────────────────────

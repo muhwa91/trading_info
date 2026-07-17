@@ -260,14 +260,7 @@
                   </div>
                   <!-- 하단: 세션 상태 배지 (3계층) -->
                   <span
-                    :class="[
-                      'text-2xs font-medium uppercase tracking-widest px-2 py-0.5 rounded-xs border leading-tight',
-                      indexQuoteLabel(ticker) === '야간 거래중' || indexQuoteLabel(ticker) === '거래중'
-                        ? 'text-ses-ext bg-ses-ext-weak border-ses-ext-line'
-                        : indexQuoteLabel(ticker) === '정규장'
-                          ? 'text-ses-open bg-ses-open-weak border-ses-open-line'
-                          : 'text-base-content/45 bg-base-200/40 border-base-content/10'
-                    ]"
+                    :class="[SESSION_BADGE_BASE, sessionBadgeTone(indexQuoteLabel(ticker))]"
                   >{{ indexQuoteLabel(ticker) }}</span>
                 </div>
               </template>
@@ -303,14 +296,7 @@
               <!-- 현재 시장 세션 배지 (토글 옆 — 3계층: 정규장=open / 연장=ext / 마감=muted) -->
               <span
                 v-if="gridSessionLabel"
-                :class="[
-                  'inline-flex items-center justify-center px-2 h-5.5 rounded-xs text-2xs font-medium leading-tight shrink-0 border',
-                  gridSessionLabel === '정규장'
-                    ? 'text-ses-open bg-ses-open-weak border-ses-open-line'
-                    : (gridSessionLabel === '주간거래' || gridSessionLabel === '프리마켓' || gridSessionLabel === '애프터마켓' || gridSessionLabel === '야간거래' || gridSessionLabel === '거래중')
-                      ? 'text-ses-ext bg-ses-ext-weak border-ses-ext-line'
-                      : 'text-base-content/40 bg-base-200/40 border-base-content/10'
-                ]"
+                :class="[SESSION_BADGE_BASE, 'shrink-0', sessionBadgeTone(gridSessionLabel)]"
               >{{ gridSessionLabel }}</span>
 
               <!-- 차트 열 수 토글(1차트=세로 1열/크게 · 4차트=2×2). 반응형 자동 배치 대신 명시 선택 -->
@@ -558,6 +544,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue';
 import { isNqTradingByEtClock } from './utils/nqSession.js';
+import { SESSION_BADGE_BASE, sessionBadgeTone } from './utils/sessionBadge.js';
 import { useAutoAnimate } from '@formkit/auto-animate/vue';
 import StockChart from './components/StockChart.vue';
 import PortfolioSummaryBar from './components/PortfolioSummaryBar.vue';

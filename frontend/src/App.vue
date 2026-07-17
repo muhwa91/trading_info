@@ -557,6 +557,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue';
+import { isNqTradingByEtClock } from './utils/nqSession.js';
 import { useAutoAnimate } from '@formkit/auto-animate/vue';
 import StockChart from './components/StockChart.vue';
 import PortfolioSummaryBar from './components/PortfolioSummaryBar.vue';
@@ -772,19 +773,13 @@ const isKospiNightSession = computed(() => {
 });
 
 // 나스닥100 선물(NQ=F) CME Globex 거래시간 여부 — 지수 헤더 인라인 NQ 시세 노출 게이트.
-// 백엔드 StockController 의 NQ=F session 판정과 동일 경계: KST 기준 휴장창 토 06:00~월 07:00
-// (금 17:00 ET 마감 → 일 18:00 ET 재개). isKospiNightSession 과 같은 패턴 —
-// NQ=F session 필드 있으면 신뢰, 없으면 KST 시계로 폴백.
+// isKospiNightSession 과 같은 패턴 — NQ=F session 필드 있으면 신뢰, 없으면 ET 시계로 폴백.
+// 휴장창 경계·ET 기준 근거는 utils/nqSession.js 참조(테스트 가능하도록 추출).
 const isNqFuturesTrading = computed(() => {
   const nq = indexStockData.value['NQ=F'];
   if (!nq || nq.current_price === null || nq.current_price === undefined) return false;
   if (nq.session) return nq.session === '거래중';
-  // 데이터/필드 없으면 KST 시간으로 폴백 (백엔드와 동일한 휴장창: 토 06시 이후·일·월 07시 이전)
-  const kst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-  const dow = kst.getDay(); // 0=일 … 6=토
-  const t = kst.getHours() * 100 + kst.getMinutes();
-  const isClosed = (dow === 6 && t >= 600) || dow === 0 || (dow === 1 && t < 700);
-  return !isClosed;
+  return isNqTradingByEtClock(); // 데이터/필드 없으면 ET 시계로 폴백
 });
 
 // 접힘 헤더 인라인 틱 플래시 — 지수별 독립('up'/'down' 260ms 후 해제). StockChart priceFlash 패턴 동일.

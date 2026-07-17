@@ -6,6 +6,9 @@ namespace Tests\Feature;
 
 use App\Models\Stock;
 use App\Services\KrStockResolver;
+use App\Services\Toss\TossApiClient;
+use App\Services\Toss\TossStockMaster;
+use App\Services\Toss\TossSymbolMapper;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -15,13 +18,22 @@ use Tests\TestCase;
  * phpunit.xml 에서 DB_CONNECTION=sqlite / DB_DATABASE=:memory: 가 주입되므로
  * 개발 DB(hachiware_1/MariaDB)에는 절대 접근하지 않는다.
  *
+ * 네트워크 미접촉(hermetic):
+ *   Stock 의 name·type accessor 는 app(TossStockMaster) → TossApiClient 로 캐시 미스 시
+ *   실제 토스 API 를 때린다(phpunit.xml CACHE_DRIVER=array 라 캐시는 항상 미스).
+ *   그래서 setUp 에서 HTTP 대역 클라이언트로 만든 TossStockMaster 를 컨테이너에
+ *   꽂아, accessor 가 부르는 app(TossStockMaster) 가 이 인스턴스를 받게 한다.
+ *   TossStockMaster·Cache·accessor 는 실제 코드가 그대로 돌고 HTTP 만 대역이다.
+ *   ※ TossApiClient 만 교체하면 안 된다 — RefreshDatabase 부팅 중 TossStockMaster
+ *     싱글턴이 이미 실 클라이언트를 물고 resolve 되므로 교체가 늦는다(실측).
+ *   대역 픽스처의 종목명은 실 토스가 절대 반환하지 않는 값('테스트…-XYZ' 등)이라,
+ *   단언이 통과했다는 것 자체가 "대역이 이겼다 = 네트워크를 안 탔다"의 증거다.
+ *
  * 검증 항목:
  *   1. resolveOrCreate(): 접미사 있는 심볼 → 정규화 코드로 저장됨
  *   2. resolveOrCreate(): 접미사 없는 심볼 → 동일 Stock 반환 (중복 생성 안 됨)
- *   3. nameHint 가 있으면 name 에 반영됨
- *   4. 이름에 KODEX 포함 → type='etf'
- *   5. 이름에 SOL 포함 → type='etf'
- *   6. 이름이 일반 종목명 → type='stock'
+ *   3. name 은 nameHint 가 아니라 토스 마스터에서 온다 (nameHint 는 미반영)
+ *   4-6. type 은 토스 securityType(ETF/STOCK)에서 온다 (이름 문자열 판정 아님)
  *   7. market='KR', currency='KRW' 고정
  *   8. .KS 접미사 → exchange='KOSPI' (접미사 폴백)
  *   9. .KQ 접미사 → exchange='KOSDAQ'
@@ -33,13 +45,52 @@ class KrStockResolverDbTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * 토스 /stocks 대역 픽스처 — 실 토스가 절대 반환하지 않는 이름을 쓴다.
+     * 여기 없는 코드는 대역이 빈 응답을 주므로 폴백 경로(심볼 그대로 / 'stock')가 검증된다.
+     */
+    private const TOSS_FIXTURE = [
+        '005930' => ['name' => '테스트종목-XYZ',    'securityType' => 'STOCK'],
+        '000660' => ['name' => '테스트종목-HYNIX',  'securityType' => 'STOCK'],
+        '069500' => ['name' => '테스트ETF-KODEX',   'securityType' => 'ETF'],
+        '0167A0' => ['name' => '테스트ETF-SOL',     'securityType' => 'ETF'],
+        '102110' => ['name' => '테스트ETF-TIGER',   'securityType' => 'ETF'],
+    ];
+
     /** @var KrStockResolver */
     private $resolver;
 
     protected function setUp(): void
     {
         parent::setUp();
+
+        // HTTP 대역 클라이언트 → 실 토스 호출 구조적으로 불가.
+        $client = $this->createMock(TossApiClient::class);
+        $client->method('get')->willReturnCallback(function (string $path, array $query = []): array {
+            return ['result' => $this->fixtureFor($query['symbols'] ?? '')];
+        });
+
+        // accessor 가 부르는 app(TossStockMaster) 가 대역 클라이언트 버전을 받도록 교체.
+        $this->app->instance(TossStockMaster::class, new TossStockMaster($client, new TossSymbolMapper()));
+
         $this->resolver = new KrStockResolver();
+    }
+
+    /**
+     * 요청된 symbols(콤마 구분) 중 픽스처에 있는 것만 토스 응답 형식으로 반환.
+     *
+     * @return array<int, array<string, string>>
+     */
+    private function fixtureFor(string $symbolsParam): array
+    {
+        $items = [];
+        foreach (explode(',', $symbolsParam) as $symbol) {
+            if (isset(self::TOSS_FIXTURE[$symbol])) {
+                $items[] = ['symbol' => $symbol, 'currency' => 'KRW'] + self::TOSS_FIXTURE[$symbol];
+            }
+        }
+
+        return $items;
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -82,39 +133,43 @@ class KrStockResolverDbTest extends TestCase
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 3. nameHint 반영
+    // 3. name 출처 — 토스 마스터 (nameHint 는 반영되지 않는다)
     // ──────────────────────────────────────────────────────────────
 
     /** @test */
     public function testNameHintIsStoredAsName(): void
     {
+        // nameHint 를 넘겨도 무시된다 — resolveOrCreate()는 exchange 만 저장하고
+        // name 은 Stock accessor 가 토스 마스터에서 가져온다(nameHint 는 죽은 파라미터).
         $stock = $this->resolver->resolveOrCreate('000660.KS', 'SK하이닉스');
 
-        $this->assertSame('SK하이닉스', $stock->name);
+        $this->assertSame('테스트종목-HYNIX', $stock->name, 'nameHint 가 아니라 토스 마스터 값이어야 한다');
     }
 
     /** @test */
     public function testNameHintNullFallsBackToMap(): void
     {
-        // nameHint 없이 → KR_NAME_MAP 또는 코드 자체로 폴백
+        // nameHint 없이도 name 은 토스 마스터에서 온다 (KR_NAME_MAP 은 Phase 7 에서 삭제됨).
         $stock = $this->resolver->resolveOrCreate('005930', null);
 
-        // KR_NAME_MAP에 '005930' => '삼성전자' 있음
-        $this->assertSame('삼성전자', $stock->name);
+        $this->assertSame('테스트종목-XYZ', $stock->name);
     }
 
     /** @test */
     public function testNameHintNullUnknownCodeFallsBackToCode(): void
     {
-        // KR_NAME_MAP에 없는 코드
+        // 토스가 모르는 코드 → 마스터 응답 없음
         $stock = $this->resolver->resolveOrCreate('999999.KS', null);
 
-        // 코드 자체('999999')가 name으로 저장
+        // 코드 자체('999999')로 폴백
         $this->assertSame('999999', $stock->name);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 4-6. ETF 판정
+    // 4-6. type 판정 — 토스 securityType (ETF→etf, STOCK→stock).
+    //      이름 문자열(KODEX/SOL/TIGER) 판정은 Phase 7 에서 제거됨.
+    //      각 케이스는 같은 마스터 항목의 고유 이름도 함께 단언해
+    //      type 이 대역에서 왔음(네트워크 미접촉)을 드러낸다.
     // ──────────────────────────────────────────────────────────────
 
     /** @test */
@@ -123,6 +178,7 @@ class KrStockResolverDbTest extends TestCase
         $stock = $this->resolver->resolveOrCreate('069500.KS', 'KODEX 200');
 
         $this->assertSame('etf', $stock->type);
+        $this->assertSame('테스트ETF-KODEX', $stock->name);
     }
 
     /** @test */
@@ -131,6 +187,7 @@ class KrStockResolverDbTest extends TestCase
         $stock = $this->resolver->resolveOrCreate('0167A0.KQ', 'SOL AI반도체TOP2플러스');
 
         $this->assertSame('etf', $stock->type);
+        $this->assertSame('테스트ETF-SOL', $stock->name);
     }
 
     /** @test */
@@ -139,6 +196,7 @@ class KrStockResolverDbTest extends TestCase
         $stock = $this->resolver->resolveOrCreate('102110.KS', 'TIGER 200');
 
         $this->assertSame('etf', $stock->type);
+        $this->assertSame('테스트ETF-TIGER', $stock->name);
     }
 
     /** @test */
@@ -147,6 +205,7 @@ class KrStockResolverDbTest extends TestCase
         $stock = $this->resolver->resolveOrCreate('005930.KS', '삼성전자');
 
         $this->assertSame('stock', $stock->type);
+        $this->assertSame('테스트종목-XYZ', $stock->name);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -228,8 +287,13 @@ class KrStockResolverDbTest extends TestCase
 
         $this->assertNotSame($kr->id, $us->id);
         $this->assertSame(2, Stock::count());
-        $this->assertDatabaseHas('stocks', ['symbol' => 'MU', 'market' => 'US', 'currency' => 'USD']);
-        $this->assertDatabaseHas('stocks', ['symbol' => '005930', 'market' => 'KR', 'currency' => 'KRW']);
+        $this->assertDatabaseHas('stocks', ['symbol' => 'MU', 'market' => 'US']);
+        $this->assertDatabaseHas('stocks', ['symbol' => '005930', 'market' => 'KR']);
+
+        // currency 는 Phase 7 에서 컬럼이 삭제됐다 — accessor(market 유도)로만 존재하므로
+        // DB 조회인 assertDatabaseHas 로는 검증할 수 없다. US 분기만 accessor 로 확인
+        // (KR 분기는 testCurrencyIsAlwaysKrw 가 이미 커버).
+        $this->assertSame('USD', $us->currency);
     }
 
     /** @test */

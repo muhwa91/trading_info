@@ -1462,7 +1462,7 @@ class TossChangeCalculatorTest extends TestCase
     /**
      * @test
      * getUsPrevRegularClose 캐시도 calculate() 와 같은 '다음 경계'까지만 산다(D3 회귀 가드).
-     * 17:00 ET(애프터) → 다음 경계 19:30 ET = 2.5h. ET 자정만 보면 19:30·20:00 을 넘겨 stale 이 된다
+     * 17:00 ET(애프터) → 다음 경계 19:50 ET = 2h50m. ET 자정만 보면 19:50·20:00 을 넘겨 stale 이 된다
      * — 이 캐시의 선택 규칙도 자정 말고 세션 경계에 함께 걸려 있기 때문.
      */
     public function testGetUsPrevRegularClose_Ttl_StopsAtNextUsBoundary(): void
@@ -1482,8 +1482,8 @@ class TossChangeCalculatorTest extends TestCase
 
         $this->assertSame(991.64, $this->calculator->getUsPrevRegularClose('MU'));
 
-        // 17:00 ET → 다음 경계 19:30 ET = 2.5h. (ET 자정 기준이면 7h = 25200)
-        $this->assertSame(9000, $capturedTtl, 'getUsPrevRegularClose TTL 도 다음 경계(19:30 ET)에서 끊겨야 한다');
+        // 17:00 ET → 다음 경계 19:50 ET(애프터 종료) = 2h50m. (ET 자정 기준이면 7h = 25200)
+        $this->assertSame(10200, $capturedTtl, 'getUsPrevRegularClose TTL 도 다음 경계(19:50 ET)에서 끊겨야 한다');
     }
 
     /**
@@ -1522,7 +1522,11 @@ class TossChangeCalculatorTest extends TestCase
     //
     //   시나리오(실측 MU 재현): yahoo_regular_close 워머 cold → 애프터~주간거래가 candles[1]=983.12
     //   (7/14 종가)로 굳는다. ET 자정에 isTodayBar 가 뒤집혀 정답은 904.28(7/15)로 전진 →
-    //   그때 캐시가 살아있으면 D1(KST 13:00~22:30, 9.5h stale) 재현. 경계를 줄이면 실제로 FAIL 한다.
+    //   그때 캐시가 살아있으면 D1(KST 13:00~22:30, 9.5h stale) 재현.
+    //
+    //   세션은 **진짜 MarketSessionService** 로 판정한다(useRealUsSession). 예전엔 여기 세션 모형
+    //   복제본(usScenarioSession)이 있었고 03:30·19:30 을 그대로 베껴 갖고 있어서, 경계가 틀렸을 때
+    //   테스트도 같이 틀렸다 — 불변식이 아무리 강해도 **양쪽이 같은 전제를 공유하면 아무것도 못 잡는다.**
     // ──────────────────────────────────────────────────────────────────
 
     /** 시나리오 거래일별 정규장 종가(ET). 7/18·7/19 는 주말이라 봉 없음. */
@@ -1556,39 +1560,50 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * 지금(ET) 시각의 US 세션 — MarketSessionService::getUsSession 대역.
+     * $this->calculator 의 세션 판정을 **진짜 MarketSessionService** 로 갈아끼운다.
+     * (캘린더 대역이 `[]` → 프로덕션의 하드코딩 폴백 경로 = 실제 코드가 그대로 돈다.)
      *
-     * 주말 규칙은 '토·일 전체 휴장'이 아니라 금 20:00 ~ 일 20:00 이다(MarketSessionService:47-58).
-     * isWeekend() 로 일요일 전체를 장마감 처리하면 '일 20:00 주간거래 개시'가 모형에서 사라져
-     * 20:00 경계를 지워도 스윕이 통과해버린다(뮤테이션 실측 확인). 실제 규칙을 그대로 옮긴다.
-     * dayOfWeek(0=일) 대신 프로덕션과 같은 format('N')(1=월…7=일) 을 써 규약 혼선을 없앤다.
+     * ★ 프로덕션 세션 모형을 테스트 안에 복제하지 않는다.
+     *   여기엔 원래 usScenarioSession() 이라는 복제본이 있었고 03:30·19:30 을 그대로 베껴 갖고 있었다.
+     *   복제본은 **경계가 틀렸을 때 같이 틀린다** — 검증자가 피검증자의 전제를 공유하니 3연속 재발을
+     *   한 번도 못 잡았다(~89,000분 스캔이 "코드의 경계"만 확증하고 "코드가 틀렸다"를 못 말한 것과 같은 함정).
+     *   폴백 상수가 토스 캘린더(정본)와 일치하는지는 MarketSessionServiceTest 가 픽스처로 못박는다.
      */
-    private function usScenarioSession(): string
+    private function useRealUsSession(): void
     {
-        $now = Carbon::now('America/New_York');
-        $dow = (int) $now->format('N');   // 1=월 … 7=일 (프로덕션과 동일 규약)
-        $hi  = (int) $now->format('Hi');
+        $calendarClient = $this->createMock(TossApiClient::class);
+        $calendarClient->method('get')->willReturn([]);   // 캘린더 미가용 → 프로덕션 하드코딩 폴백
 
-        // 주말 휴장(NY): 금 20:00 ~ 일 20:00
-        if ($dow === 6 || ($dow === 7 && $hi < 2000) || ($dow === 5 && $hi >= 2000)) {
-            return '장마감';
+        $this->calculator = new TossChangeCalculator(
+            $this->clientMock,
+            new TossSymbolMapper(),
+            new MarketSessionService($calendarClient)
+        );
+    }
+
+    /**
+     * 폴백의 거래일 게이트(us_trading_day_{Y-m-d})를 ET 날짜별로 채운다.
+     *
+     * ⚠️ 이 시딩이 없으면 MarketSessionService::isUsMarketTradingToday() 가 **진짜 Yahoo SPY 를 때린다**
+     *   (데이 세션 04:00~20:00 구간에서만 게이트에 도달 → 스윕이 조용히 라이브를 물어온다).
+     *   값은 '그 날이 거래일인가'라는 사실 표일 뿐 세션 경계와 무관하다 — 표본 기간(7/13~7/21)엔 공휴일이 없다.
+     *
+     * @param  array<int,string>  $times  ET 시각 목록
+     * @return callable():void            매 Cache::flush() 뒤에 부르는 시더(날짜 파싱은 1회만)
+     */
+    private function usTradingDaySeeder(array $times): callable
+    {
+        $days = [];
+        foreach ($times as $t) {
+            $dt = Carbon::parse($t, 'America/New_York');
+            $days[$dt->toDateString()] = (int) $dt->format('N') <= 5;
         }
 
-        // 주간거래(20:00~익일 03:30)는 날짜를 넘나들어 데이세션보다 먼저 판정 — 프로덕션 순서 동일
-        if ($hi >= 2000 || $hi < 330) {
-            return '주간거래';
-        }
-        if ($hi >= 400 && $hi < 930) {
-            return '프리마켓';
-        }
-        if ($hi >= 930 && $hi < 1600) {
-            return '정규장';
-        }
-        if ($hi >= 1600 && $hi < 1930) {
-            return '애프터마켓';
-        }
-
-        return '장마감';  // 19:30~20:00 · 03:30~04:00
+        return function () use ($days): void {
+            foreach ($days as $date => $isTradingDay) {
+                Cache::put("us_trading_day_{$date}", $isTradingDay, 86400);
+            }
+        };
     }
 
     /**
@@ -1605,12 +1620,11 @@ class TossChangeCalculatorTest extends TestCase
      */
     private function assertPrevCloseNeverStale(array $times, bool $warmer = false): void
     {
-        $this->sessionMock->method('getUsSession')->willReturnCallback(function (): string {
-            return $this->usScenarioSession();
-        });
+        $this->useRealUsSession();
         $this->clientMock->method('get')->willReturnCallback(function (): array {
             return $this->usScenarioCandles();
         });
+        $seedTradingDays = $this->usTradingDaySeeder($times);
 
         // regular_close 워머 모형 — 16:05 ET 이후 '오늘 정규장 종가'가 yahoo_regular_close 에 반영된다.
         //   워머가 없으면 캐시가 항상 cold 라 롤포워드 분기(TossChangeCalculator:632-640)가 한 번도
@@ -1637,12 +1651,14 @@ class TossChangeCalculatorTest extends TestCase
         $fresh = [];
         foreach ($times as $t) {
             Cache::flush();
+            $seedTradingDays();
             Carbon::setTestNow(Carbon::parse($t, 'America/New_York'));
             $warm();
             $fresh[$t] = $this->calculator->getPrevClose('MU');
         }
 
         Cache::flush();
+        $seedTradingDays();
         $observed = [];
         foreach ($times as $t) {
             Carbon::setTestNow(Carbon::parse($t, 'America/New_York'));
@@ -1664,7 +1680,7 @@ class TossChangeCalculatorTest extends TestCase
      *
      * ponytail: 경계 '정각 그 1초'는 일부러 표본에서 뺀다(격자 :07 출발 → :02·:07·:12… 로 정각 회피).
      *   Cache::put(ttl) 은 expiresAt = now+ttl 로 잡고 ArrayStore 는 currentTime() > expiresAt 일 때만
-     *   만료시킨다 → 경계 정각 1초 동안은 옛 기준가가 그대로 서빙된다(실측: 00:00:00·03:30:00·04:00:00).
+     *   만료시킨다 → 경계 정각 1초 동안은 옛 기준가가 그대로 서빙된다(실측: 00:00:00·04:00:00·16:05:00).
      *   프로덕션 경계 목록의 결함이 아니라 Laravel 캐시의 만료 경계 의미(초 단위, 만료는 '지난 뒤')다.
      *   영향 = 경계당 1초(WS 사이클 ~3초) → 무시. 실질적 회피책은 없다 — TTL 을 1초 당겨도 그대로고
      *   (경계 1초 전엔 이미 max(1-1,1)=1), ttl<=0 은 Laravel 이 즉시 forget 이라 더 나쁘다.
@@ -1685,12 +1701,17 @@ class TossChangeCalculatorTest extends TestCase
     /**
      * @test
      * 24시간 스윕(5분 격자 288포인트): 어느 시각에 읽어도 캐시값 == 신규조회값.
-     * 경계 8개(00:00·03:30·04:00·09:30·16:00·16:05·19:30·20:00 ET)를 모두 통과한다.
-     * D1·D2·D3 가 여기서 전부 잡힌다 — 경계 목록을 줄이면 즉시 FAIL(revert-fail 확증 완료).
+     *
+     * 검출 범위(2026-07-17 뮤테이션 재실측 — 옛 주석의 "경계를 줄이면 즉시 FAIL"은 더 이상 참이 아니다):
+     *   이 스윕이 잡는 것 = 세션 경계와 TTL 이 **어긋나는** 것(교정 전 03:30/19:30 조합에서 실제로 FAIL 했다).
+     *   못 잡는 것 = [0,0]·[16,5] 단독 삭제. 롤포워드 실패분이 sentinel TTL(120s)로만 캐싱되면서
+     *     (2026-07-17 워머 레이스 수정) 애프터~자정 구간에 장TTL 쓰기 자체가 없어졌기 때문이다.
+     *     → [0,0] 은 주말 warm 스윕이, [16,5] 는 sentinel 케이스 1a~1c 가 각각 맡는다.
+     *   ★ 경계 목록을 손대면 이 스윕만 믿지 말고 뮤테이션으로 어느 테스트가 잡는지 다시 확인할 것.
      */
     public function testGetPrevClose_UsTtl_CachedValueNeverDivergesFromFreshLookup(): void
     {
-        // ET 7/15 12:07(정규장) 출발 → 7/16 12:07 까지. 경계 8개가 창 안에 한 번씩 들어온다.
+        // ET 7/15 12:07(정규장) 출발 → 7/16 12:07 까지. 경계 7개가 창 안에 한 번씩 들어온다.
         $this->assertPrevCloseNeverStale($this->etSweepTimes('2026-07-15 12:07:00'));
     }
 
@@ -1712,22 +1733,124 @@ class TossChangeCalculatorTest extends TestCase
      * 주말 갭: 금 애프터 → 토·일 장마감 → 일 20:00 주간거래 개시 → 월 프리마켓 → 월 개장.
      * 거래일이 3일 건너뛰어도 캐시가 기준가 전진(865.43 → 812.00)을 놓치지 않아야 한다.
      *
-     * 일 19:47 은 [20,0] 경계의 유일한 가드다 — 20:00 을 넘기는 캐시 쓰기는 (19:30, 20:00) 구간에서만
-     * 발생한다(그 밖의 시각은 16:00·19:30 경계에서 이미 만료돼 20:01 에 어차피 재조회된다).
+     * 일 19:53 은 [20,0] 경계의 유일한 가드다 — 20:00 을 넘기는 캐시 쓰기는 **(19:50, 20:00)** 구간에서만
+     * 발생한다(그 밖의 시각은 16:00·19:50 경계에서 이미 만료돼 20:01 에 어차피 재조회된다).
      * 이 표본이 없으면 [20,0] 을 지워도 스위트가 통과한다(뮤테이션 실측 확인).
+     *
+     * ⚠️ 이 표본은 **애프터 종료 경계에 종속**이다 — 2026-07-17 경계 교정(19:30 → 19:50) 전엔 19:47 이었고,
+     *   교정 후 19:47 에 쓴 캐시는 19:50 에 만료돼 20:00 을 넘길 수 없게 되면서 [20,0] 가드가 조용히 무장해제됐다
+     *   (뮤테이션 실측: [20,0] 을 지워도 통과). 애프터 종료를 또 옮기면 이 표본도 (새 종료, 20:00) 안으로 옮길 것.
      */
     public function testGetPrevClose_UsTtl_WeekendGap_CachedValueNeverDiverges(): void
     {
-        $this->assertPrevCloseNeverStale([
+        $this->assertPrevCloseNeverStale($this->weekendGapTimes());
+    }
+
+    /**
+     * @test
+     * 같은 주말 갭을 워머 warm 으로 한 번 더 — **[0,0](ET 자정) 경계의 유일한 가드**.
+     *
+     * 금 23:53 warm 은 기준가가 '금 정규장 종가'(812.00)로 롤포워드된 상태다. ET 자정에 isTodayBar 가
+     * 뒤집혀 정답이 865.43(목 종가, 주말이라 candles[1])로 전진하므로, 캐시가 자정을 넘기면 stale 이다.
+     *
+     * ⚠️ cold 로는 이 경계가 안 보인다 — 롤포워드 실패분이 sentinel TTL(120s)로만 캐싱되면서(2026-07-17
+     *   워머 레이스 수정) 애프터~자정 구간의 장TTL 쓰기가 사라졌기 때문. 24h cold 스윕이 자정을 잡았다던
+     *   기존 확증은 그 수정으로 무효가 됐다(뮤테이션 실측: [0,0] 을 지워도 cold 는 전부 통과).
+     *   → 자정 가드는 이제 **이 warm 표본 하나뿐**이다. 지우지 말 것.
+     */
+    public function testGetPrevClose_UsTtl_WeekendGap_WarmRegularClose_CachedValueNeverDiverges(): void
+    {
+        $this->assertPrevCloseNeverStale($this->weekendGapTimes(), true);
+    }
+
+    /**
+     * 주말 갭 표본(ET) — 금 애프터 → 토·일 장마감 → 일 20:00 주간거래 개시 → 월 개장.
+     * cold/warm 두 스윕이 공유한다(표본이 갈라지면 한쪽 가드가 조용히 사라진다).
+     */
+    private function weekendGapTimes(): array
+    {
+        return [
             '2026-07-17 17:00:00',  // 금 애프터마켓
+            '2026-07-17 23:53:00',  // 금 밤 — 여기 쓰인 캐시가 ET 자정을 넘기면 stale ([0,0] 가드, warm 에서만 관측)
+            '2026-07-18 00:02:00',  // 토 자정 직후 — isTodayBar 반전 → 기준가 전진(812.00 → 865.43)
             '2026-07-18 12:00:00',  // 토 장마감
             '2026-07-19 12:00:00',  // 일 장마감
-            '2026-07-19 19:47:00',  // 일 장마감(주간거래 직전) — 여기 쓰인 캐시가 20:00 을 넘기면 stale
+            '2026-07-19 19:53:00',  // 일 애프터종료~주간거래 공백 — 캐시가 20:00 을 넘기면 stale ([20,0] 가드)
             '2026-07-19 20:01:00',  // 일 주간거래 개시 — 기준가가 금(7/17) 종가로 전진
             '2026-07-20 02:00:00',  // 월 새벽 주간거래
             '2026-07-20 04:01:00',  // 월 프리마켓
             '2026-07-20 09:35:00',  // 월 개장 직후 — 기준가가 금(7/17) 종가로 전진
-        ]);
+        ];
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // 교정된 세션 경계 — 기대값이 코드가 아니라 **backend 실측**에서 온 리터럴이다 (2026-07-17)
+    //
+    //   옛 상수(주간거래 종료 03:30 · 애프터 종료 19:30)의 출처는 토스 앱 안내 팝업 스크린샷
+    //   (docs/거래시간.jpg)이었다 — 토스가 자기 앱과 자기 API 에서 다른 값을 말했고, 실측이 API 손을
+    //   들어줬다. 아래 두 케이스는 세션을 **진짜 MarketSessionService** 로 판정하고 기대값만 실측
+    //   리터럴로 박는다 → 상수를 옛값으로 되돌리면 세션이 '장마감'으로 뒤집혀 즉시 FAIL 한다.
+    //   (폴백 상수 ↔ 토스 캘린더 정합은 MarketSessionServiceTest 가 픽스처로 별도 못박는다.)
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * @test
+     * ★ 케이스 1 — 주간거래 종료는 04:00 ET: 03:29 · 03:30 · 04:00 기준가가 **전부 904.28**.
+     *
+     * 실측: ET 03:30~04:00 은 91/91분 전부 체결(무거래봉 0)이고 04:01 에 거래량이 169 → 44,397 로
+     * 폭증한다(= 진짜 프리마켓 개시). 즉 03:30 은 허구였고 그 30분은 살아있는 주간거래다.
+     * 경계를 03:30 으로 되돌리면 03:30 이 '장마감'으로 뒤집혀 전전일 983.12 를 답하며 FAIL 한다.
+     */
+    public function testGetPrevClose_UsOvernightSessionEndsAtFourAmEt(): void
+    {
+        $this->useRealUsSession();
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'));
+
+        foreach (['03:29:00', '03:30:00', '04:00:00'] as $et) {
+            Cache::flush();
+            Cache::put('us_trading_day_2026-07-16', true, 86400);  // 04:00 은 거래일 게이트를 탄다(Yahoo 차단)
+            Carbon::setTestNow(Carbon::parse("2026-07-16 {$et}", 'America/New_York'));
+
+            $this->assertSame(904.28, $this->calculator->getPrevClose('MU'),
+                "ET 7/16 {$et} 기준가는 7/15 종가 904.28 (전전일 983.12 면 03:30 이 장마감으로 뒤집힌 것)");
+        }
+    }
+
+    /**
+     * @test
+     * ★ 케이스 2 — 애프터 종료는 19:50 ET: 19:29·19:31·19:49 는 2줄, 19:51 은 1줄, 20:01 은 다시 2줄.
+     *
+     * 실측: 19:30~20:00 도 전 분 체결(NVDA 19:51 15,249주). 캘린더 afterMarket.endTime = KST 08:50
+     * = ET 19:50 과 정합(개발자 결정). 경계를 19:30 으로 되돌리면 19:31·19:49 가 '장마감'이 되어
+     * 연장세션 분기를 못 타고 regular_change_percent 가 null(1줄)로 떨어져 FAIL 한다.
+     *
+     * 19:51(1줄)·20:01(2줄)은 과교정 가드다 — "전부 연장세션"으로 뭉개면 이 둘이 깨진다.
+     */
+    public function testCalculateUsSplit_AfterMarketSessionEndsAtSeventeenFiftyEt(): void
+    {
+        $this->useRealUsSession();
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'));
+
+        // ET 시각 => 2줄 여부(regular_change_percent 유무) — backend 실측 표
+        $expected = [
+            '19:29:00' => true,   // 애프터마켓
+            '19:31:00' => true,   // 애프터마켓 (옛 상수면 장마감)
+            '19:49:00' => true,   // 애프터마켓 (애프터 종료 1분 전)
+            '19:51:00' => false,  // 장마감 (19:50~20:00 공백)
+            '20:01:00' => true,   // 주간거래 개시
+        ];
+
+        foreach ($expected as $et => $twoLines) {
+            Cache::flush();
+            Cache::put('us_trading_day_2026-07-15', true, 86400);
+            Carbon::setTestNow(Carbon::parse("2026-07-15 {$et}", 'America/New_York'));
+
+            $split = $this->calculator->calculateUsSplit('MU', 900.0, 904.28);
+
+            $twoLines
+                ? $this->assertNotNull($split['regular_change_percent'], "ET 7/15 {$et} 는 연장세션 = 2줄")
+                : $this->assertNull($split['regular_change_percent'], "ET 7/15 {$et} 는 장마감 = 1줄");
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -1769,8 +1892,8 @@ class TossChangeCalculatorTest extends TestCase
      *
      * WS 사이클은 step4(기준가 계산)가 step6a(워머)보다 먼저 돈다 → 워머가 아직 안 채운 순간엔
      * 롤포워드가 조용히 candles[1](7/14 = 983.12, 어제 종가)로 폴백한다. 그 '실패값'을 정상 경계
-     * TTL(19:30 까지 = 7860s)로 박으면 워머가 3초 뒤 정답을 채워도 자가치유가 안 된다
-     * (실측 MU 기준가 6.6% 오차가 최대 3h25m 고착 — 옛 테스트는 7860 을 정답으로 박아 이 결함을 계약화했다).
+     * TTL(19:50 까지 = 9060s)로 박으면 워머가 3초 뒤 정답을 채워도 자가치유가 안 된다
+     * (실측 MU 기준가 6.6% 오차가 최대 3h45m 고착 — 옛 테스트는 경계 TTL 을 정답으로 박아 이 결함을 계약화했다).
      */
     public function testFetchAndCache_UsAfterHoursTtl_RollforwardCold_UsesSentinelTtl(): void
     {
@@ -1784,7 +1907,7 @@ class TossChangeCalculatorTest extends TestCase
 
     /**
      * @test
-     * 케이스 1b(과교정 가드) — 같은 애프터마켓이라도 워머 warm 이면 정상 경계 TTL(19:30 = 2h11m).
+     * 케이스 1b(과교정 가드) — 같은 애프터마켓이라도 워머 warm 이면 정상 경계 TTL(19:50 = 2h31m).
      *
      * 1a 의 sentinel 이 정상 경로까지 먹어치우면(항상 120s) 심볼당 /candles 가 하루 720회로 폭증한다.
      * cold/warm 한 쌍이 함께 있어야 "실패 경로에만 닿았다"가 고정된다.
@@ -1795,7 +1918,7 @@ class TossChangeCalculatorTest extends TestCase
         $ttl = $this->captureUsLiveTtl('2026-07-15 17:19:00', '애프터마켓',
             $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'), 848.43);
 
-        $this->assertSame(7860, $ttl, '애프터 17:19 ET + 워머 warm → 다음 경계 19:30 ET (2h11m)');
+        $this->assertSame(9060, $ttl, '애프터 17:19 ET + 워머 warm → 다음 경계 19:50 ET (2h31m)');
         $this->assertSame(848.43, $this->calculator->getPrevClose('MU'), '전제: warm 이면 기준가 = 워머 정본(롤포워드 성립)');
     }
 
@@ -1804,7 +1927,7 @@ class TossChangeCalculatorTest extends TestCase
      * 케이스 1c(실측 최악 시나리오) — ET 16:05:00 정각 + 워머 미실행.
      *
      * 16:05 엔 yahoo_regular_close 와 toss_prev_close 가 동시 만료돼 100% 이 경로를 탄다.
-     * sentinel 이 없으면 다음 경계 19:30 까지 12300s(3h25m) 동안 어제 종가 기준이 고착됐다(실측).
+     * sentinel 이 없으면 다음 경계 19:50 까지 13500s(3h45m) 동안 어제 종가 기준이 고착된다.
      */
     public function testFetchAndCache_UsCloseBoundary_RollforwardCold_UsesSentinelTtl(): void
     {
@@ -1812,6 +1935,40 @@ class TossChangeCalculatorTest extends TestCase
             $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'));
 
         $this->assertSame(120, $ttl, '16:05 ET 워머 미실행 → 120s(옛 12300s = 3h25m 고착)');
+    }
+
+    /**
+     * @test
+     * 케이스 1d — 애프터 진입 직후(16:02 ET) + 워머 warm 작성분은 **16:05 경계**에서 끊긴다 = 3분.
+     *
+     * [16,5] 를 지켜주는 유일한 테스트다. 스윕은 이 경계를 못 잡는다 — 스윕의 워머 모형이 16:05 전엔
+     * 캐시를 forget 해 (16:00, 16:05) 구간이 항상 롤포워드 cold(=sentinel 120s)가 되기 때문
+     * (뮤테이션 실측: [16,5] 를 지워도 스윕 전부 통과). 실제 워머는 ET 자정 TTL + skip-if-warm 이라
+     * 이 구간에 '오늘 종가가 아닌 값'이 이미 앉아있을 수 있고, 그게 16:05 에 오늘 종가로 교체된다.
+     */
+    public function testFetchAndCache_UsAfterHoursTtl_JustAfterClose_StopsAtRegularCloseConfirmBoundary(): void
+    {
+        $ttl = $this->captureUsLiveTtl('2026-07-15 16:02:00', '애프터마켓',
+            $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'), 848.43);
+
+        $this->assertSame(180, $ttl, '애프터 16:02 ET + 워머 warm → 다음 경계 16:05 ET (3m)');
+    }
+
+    /**
+     * @test
+     * 케이스 1e — 프리마켓(05:00 ET) 작성분은 **09:30(정규장 개시)** 경계에서 끊긴다 = 4h30m.
+     *
+     * [9,30] 를 지켜주는 유일한 테스트다. 스윕은 09:30 을 못 잡는다 — 프리마켓도 라이브 세션이라
+     * 개장 전후로 기준가 '값'이 안 바뀌기 때문(프리 candles[0] == 개장후 candles[1], 뮤테이션 실측).
+     * 값이 같아도 경계를 지우면 TTL 이 16:00 까지 늘어나므로 리터럴로 못박는다.
+     */
+    public function testFetchAndCache_UsPreMarketTtl_StopsAtOpenBoundary(): void
+    {
+        // ET 7/16 05:00 프리마켓 — 오늘봉(7/16) 미생성 → 라이브 분기 candles[0](7/15) 기준
+        $ttl = $this->captureUsLiveTtl('2026-07-16 05:00:00', '프리마켓',
+            $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'));
+
+        $this->assertSame(16200, $ttl, '프리마켓 05:00 ET → 다음 경계 09:30 ET (4h30m)');
     }
 
     /**
@@ -1832,8 +1989,8 @@ class TossChangeCalculatorTest extends TestCase
 
     /**
      * @test
-     * 케이스 3 — 주간거래(02:00 ET) 작성분은 03:30(주간거래 종료) 경계에서 끊긴다 = 1h30m.
-     * 09:30 개장까지 통으로 잡으면 03:30·04:00 을 넘겨 stale(D1)이 된다.
+     * 케이스 3 — 주간거래(02:00 ET) 작성분은 04:00(주간거래 종료·프리마켓 개시) 경계에서 끊긴다 = 2h.
+     * 09:30 개장까지 통으로 잡으면 04:00 을 넘겨 stale(D1)이 된다.
      */
     public function testFetchAndCache_UsOvernightTtl_StopsAtNextBoundary(): void
     {
@@ -1841,7 +1998,7 @@ class TossChangeCalculatorTest extends TestCase
         $ttl = $this->captureUsLiveTtl('2026-07-16 02:00:00', '주간거래',
             $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'));
 
-        $this->assertSame(5400, $ttl, '주간거래 02:00 ET → 다음 경계 03:30 ET (1h30m)');
+        $this->assertSame(7200, $ttl, '주간거래 02:00 ET → 다음 경계 04:00 ET (2h)');
     }
 
     /**

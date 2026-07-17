@@ -7,6 +7,7 @@ use App\Services\Toss\TossCandleProvider;
 use App\Services\Toss\TossPriceFetcher;
 use App\Services\Toss\TossStockMaster;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use GuzzleHttp\Client;
 
@@ -127,11 +128,18 @@ class StockController extends Controller
 
                 if ($ticker === 'NQ=F') {
                     // 나스닥100 선물은 CME 에서 일~금 거의 24시간 거래 — 주식 거래일(현금장) 게이트를 쓰지 않는다.
-                    // KST 기준 휴장창: 토 06:00 ~ 월 07:00 (금 17:00 ET 마감 → 일 18:00 ET 재개)
-                    $now = new \DateTime('now', new \DateTimeZone('Asia/Seoul'));
-                    $dayOfWeek = (int)$now->format('N');
-                    $hour = (int)$now->format('H');
-                    $isClosed = ($dayOfWeek === 6 && $hour >= 6) || ($dayOfWeek === 7) || ($dayOfWeek === 1 && $hour < 7);
+                    // 휴장창은 CME 실경계인 ET 기준으로 판정한다: 금 17:00 마감 → 일 18:00 재개(주말),
+                    // 평일 17:00~18:00 은 일일 유지보수(정지).
+                    // KST 로 굳히면 서머타임에 어긋난다 — EDT 는 토 06:00~월 07:00 이지만
+                    // EST(11월 첫 일요일~3월 둘째 일요일)는 토 07:00~월 08:00 이라 양 끝이 1시간씩 밀린다.
+                    $now = Carbon::now('America/New_York');
+                    $dayOfWeek = (int)$now->format('N');  // 1=월 … 7=일
+                    $hour = (int)$now->format('G');
+                    $isClosed = ($dayOfWeek === 6)                    // 토: 종일 휴장
+                        || ($dayOfWeek === 7 && $hour < 18)           // 일: 18:00 재개 전
+                        || ($dayOfWeek === 5 && $hour >= 17)          // 금: 17:00 마감 후
+                        || ($dayOfWeek <= 4 && $hour === 17);         // 월~목: 일일 유지보수
+                    // ponytail: CME 공휴일(추수감사절 등 단축장) 미반영 — 캘린더 소스가 생기면 그때.
                     $content['session'] = $isClosed ? '장마감' : '거래중';
                     $content['is_trading_day'] = !$isClosed;
                 } elseif ($ticker === 'USDKRW=X') {
@@ -1243,12 +1251,13 @@ class StockController extends Controller
      */
     private function isKrNightFuturesActive(): bool
     {
-        $hour = (int)(new \DateTime('now', new \DateTimeZone('Asia/Seoul')))->format('H');
+        $now = Carbon::now('Asia/Seoul');
+        $hour = (int)$now->format('H');
         if ($hour >= 18) {
-            return $this->isKrTradingDay(time());            // 오늘 저녁 세션
+            return $this->isKrTradingDay($now->timestamp);            // 오늘 저녁 세션
         }
         if ($hour < 5) {
-            return $this->isKrTradingDay(strtotime('-1 day')); // 전일 저녁 세션의 새벽 연장
+            return $this->isKrTradingDay($now->copy()->subDay()->timestamp); // 전일 저녁 세션의 새벽 연장
         }
         return false;
     }
@@ -1417,10 +1426,10 @@ class StockController extends Controller
             return false;
         }
 
-        // 주간거래(20:00~03:30 ET)는 다음 거래일로 이어지는 세션 — 주말만 아니면 개장.
-        // 경계는 getUsSession()/resolveUsSession() 과 동일하게 330(03:30)으로 맞춘다.
-        // 03:30~04:00 는 주간거래 종료~프리마켓 시작 공백 — 봉을 생성하지 않음(isUsMarketTradingToday 로 이관).
-        if ($timeVal >= 2000 || $timeVal < 330) {
+        // 주간거래(20:00~04:00 ET)는 다음 거래일로 이어지는 세션 — 주말만 아니면 개장.
+        // 경계는 getUsSession() 과 동일하게 400(04:00)으로 맞춘다 — 03:30 은 실측상 허구였다
+        // (03:30~04:00 91/91분 체결, 04:01 거래량 169→44,397 = 진짜 프리마켓 개시. 2026-07-17 교정).
+        if ($timeVal >= 2000 || $timeVal < 400) {
             return true;
         }
 

@@ -910,15 +910,20 @@ class TossChangeCalculator
      * 어느 하나만 쓰면 나머지 경계를 넘겨 캐시가 stale 로 살아남는다. 그래서 '무엇이 뒤집히는 시각'을
      * 전부 열거해 최소값을 쓴다 — 새 경계가 생기면 이 목록에만 추가한다(호출부 공식 복제 금지).
      *
-     * 경계 8개와 각각이 뒤집는 것(ET 기준):
+     * 경계 7개와 각각이 뒤집는 것(ET 기준):
      *   00:00 — 날짜가 바뀜 → isTodayBar(candles[0] 이 '오늘봉'인지) 반전 → 기준가 candles[0]↔candles[1] 전진
-     *   03:30 — 주간거래 종료          → isMarketLiveNow false (getUsSession '장마감')
-     *   04:00 — 프리마켓 개시          → isMarketLiveNow true
+     *   04:00 — 주간거래 종료·프리마켓 개시 → 라이브 연속이라 지금은 아무것도 안 뒤집지만, 세션 라벨이
+     *           바뀌는 시각이라 보수적으로 남긴다(경계 추가는 안전, 누락만 stale 을 만든다)
      *   09:30 — 정규장 개시            → 장마감 분기(candles[1]) → 라이브 분기(candles[0])
      *   16:00 — 정규장 마감/애프터 개시 → getUsSession '정규장' 이탈 → 롤포워드 조건 성립
      *   16:05 — 정규장 종가 확정       → yahoo_regular_close 워머 반영분으로 롤포워드 기준가 교체
-     *   19:30 — 애프터마켓 종료        → isMarketLiveNow false
+     *   19:50 — 애프터마켓 종료        → isMarketLiveNow false
      *   20:00 — 주간거래 개시          → isMarketLiveNow true
+     *
+     * 03:30 은 목록에서 제거했다(2026-07-17) — 토스 앱 안내(docs/거래시간.jpg)의 "주간거래 ~03:30"은
+     * 허구였다. 실측: ET 03:30~04:00 91/91분 전부 체결(무거래봉 0), 04:01 거래량 169→44,397 폭증 =
+     * 진짜 프리마켓 개시. 애프터 종료도 19:30 → 19:50(토스 캘린더 정합, 19:51 NVDA 15,249주 체결).
+     * MarketSessionService::getUsSession 의 경계와 항상 같이 움직여야 한다.
      *
      * 하한 없음(max(...,1)): 300초 하한은 그 자체가 경계를 넘겨버리는 구조라 제거했다.
      * 최대 TTL ≈ 4h(20:00→00:00) → 심볼당 /candles ≤ 8회/일.
@@ -929,7 +934,7 @@ class TossChangeCalculator
         $nowTs = $now->getTimestamp();
         $next  = null;
 
-        foreach ([[0, 0], [3, 30], [4, 0], [9, 30], [16, 0], [16, 5], [19, 30], [20, 0]] as [$h, $m]) {
+        foreach ([[0, 0], [4, 0], [9, 30], [16, 0], [16, 5], [19, 50], [20, 0]] as [$h, $m]) {
             $t = $now->copy()->setTime($h, $m);
             if ($t->getTimestamp() <= $nowTs) {
                 $t->addDay();

@@ -16,9 +16,19 @@ use Illuminate\Support\Facades\Log;
  * Cache 키는 StockController 와 동일해 캐시가 공유된다:
  *   - US 거래일: us_trading_day_{Y-m-d}  (NY 기준)
  *   - KR 거래일: kis_trading_day_{Ymd}   (Seoul 기준, 7일 TTL)
+ *   - US 세션창: toss_us_session_windows_{Ymd} (KST 기준, 7일 TTL)
  */
 class MarketSessionService
 {
+    /** US 세션 4창 캐시 키 prefix — KST 날짜(Ymd) 로 키잉된다(토스가 KST 절대시각으로 주므로) */
+    private const US_WINDOWS_PREFIX = 'toss_us_session_windows_';
+
+    /** US 캘린더 재조회 스로틀 키 */
+    private const US_CALENDAR_THROTTLE_KEY = 'toss_us_calendar_fetch_throttle';
+
+    /** US 캘린더 재조회 최소 간격(초) — 형제 TossChangeCalculator::KR_CLOSE_FAIL_TTL 과 동형 */
+    private const US_CALENDAR_RETRY_TTL = 120;
+
     private TossApiClient $tossApiClient;
 
     public function __construct(TossApiClient $tossApiClient)
@@ -34,8 +44,28 @@ class MarketSessionService
      * 주어진 unix timestamp 기준의 미국 시장 세션명을 반환한다.
      *
      * 반환값: '주간거래' | '프리마켓' | '정규장' | '애프터마켓' | '장마감'
+     *
+     * 1순위 = 토스 마켓캘린더(`/api/v1/market-calendar/US`) — 세션 4창을 **KST 절대시각**으로 주므로
+     *   DST·조기폐장·공휴일이 전부 캘린더에 내장된다(스키마·함정: docs/features/toss-api-migration/03-구현·검증.md).
+     * 2순위 = ET 하드코딩 폴백 — 토스는 허용 IP 기반이라 미등록 네트워크에선 전 호출이 `[]` 가 된다
+     *   (CLAUDE.md 실사례). 캘린더가 확답 못 하는 날짜(커버 범위 밖)도 여기로 떨어진다.
      */
     public function getUsSession(int $timestamp): string
+    {
+        return $this->getUsSessionFromCalendar($timestamp)
+            ?? $this->getUsSessionHardcoded($timestamp);
+    }
+
+    /**
+     * 토스 캘린더 없이 ET 시각만으로 판정하는 폴백.
+     *
+     * 경계값 출처: 2026-07-17 실측 교정. 옛 상수(주간거래 종료 03:30·애프터 종료 19:30)는 토스 앱
+     * 안내 팝업(docs/거래시간.jpg, 이후 삭제)에서 왔는데 토스 자신의 API·캘린더와 어긋났다 —
+     * 03:30~04:00 는 91/91분 전부 체결(04:01 거래량 169→44,397 = 진짜 프리마켓 개시)이라 03:30 은 허구,
+     * 19:30~20:00 도 전 분 체결(NVDA 19:51 15,249주)이라 애프터 종료는 19:50 이 맞다.
+     * 공휴일(거래일 게이트)만 Yahoo SPY meta 에 의존 → 캘린더 경로가 살아있으면 여기까지 오지 않는다.
+     */
+    private function getUsSessionHardcoded(int $timestamp): string
     {
         $dt = new \DateTime("@{$timestamp}");
         $dt->setTimezone(new \DateTimeZone('America/New_York'));
@@ -54,8 +84,8 @@ class MarketSessionService
             return '장마감';
         }
 
-        // 주간거래: ET 20:00 ~ 익일 03:30 — 날짜를 넘나드는 세션이라 거래일 게이트 미적용(주말만).
-        if ($timeVal >= 2000 || $timeVal < 330) {
+        // 주간거래: ET 20:00 ~ 익일 04:00 — 날짜를 넘나드는 세션이라 거래일 게이트 미적용(주말만).
+        if ($timeVal >= 2000 || $timeVal < 400) {
             return '주간거래';
         }
 
@@ -70,11 +100,178 @@ class MarketSessionService
         if ($timeVal >= 930 && $timeVal < 1600) {
             return '정규장';
         }
-        if ($timeVal >= 1600 && $timeVal < 1930) {
+        if ($timeVal >= 1600 && $timeVal < 1950) {
             return '애프터마켓';
         }
-        // ET 03:30~04:00, 19:30~20:00 공백
+        // ET 19:50~20:00 공백 (애프터 종료 ~ 주간거래 개시)
         return '장마감';
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Internal — Toss US market calendar (세션 4창)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 토스 US 캘린더로 세션 판정. 확정 불가 시 null(호출부가 하드코딩 폴백).
+     *
+     * 토스는 영업일 D 의 4창을 **KST 절대시각**으로 준다:
+     *   dayMarket D 09:00~17:00 · preMarket 17:00~22:30 · regularMarket 22:30~D+1 05:00 ·
+     *   afterMarket D+1 05:00~08:50  (DST 전환 시 KST 쪽이 1h 이동, ET 는 고정 — 실측)
+     * → 어떤 시각을 담을 수 있는 영업일은 그 시각의 KST 날짜 D 와 D−1 **둘뿐**이다.
+     * → '다음 영업일 기준' 롤포워드 계산이 캘린더에 내장돼 사라진다(휴장 전야 미개장·휴장일 저녁 개장을
+     *    캘린더가 각각 정확히 답한다 — 노동절 9/07 dayMarket=null, 9/08 dayMarket 존재).
+     */
+    private function getUsSessionFromCalendar(int $timestamp): ?string
+    {
+        $dt = new \DateTime("@{$timestamp}");
+        $dt->setTimezone(new \DateTimeZone('Asia/Seoul'));
+
+        $dates = [$dt->format('Ymd'), (clone $dt)->modify('-1 day')->format('Ymd')];
+
+        $windows = $this->readUsWindows($dates);
+        if ($windows === null) {
+            $this->fetchAndCacheUsWindows();
+            $windows = $this->readUsWindows($dates);
+            if ($windows === null) {
+                return null;
+            }
+        }
+
+        foreach ($windows as [$session, $start, $end]) {
+            if ($timestamp >= $start && $timestamp < $end) {
+                return $session;
+            }
+        }
+
+        return '장마감';
+    }
+
+    /**
+     * 캐시된 세션 창 병합. 요청 날짜 중 **하나라도** 미캐시면 null(= 확정 불가 → 폴백).
+     *
+     * @param  list<string>  $dates  Ymd
+     * @return list<array{0:string,1:int,2:int}>|null
+     */
+    private function readUsWindows(array $dates): ?array
+    {
+        $merged = [];
+        foreach ($dates as $date) {
+            $cached = Cache::get(self::US_WINDOWS_PREFIX . $date);
+            if (!is_array($cached)) {
+                return null; // 휴장일도 빈 배열([])로 캐싱되므로, 미캐시와 구분된다
+            }
+            $merged = array_merge($merged, $cached);
+        }
+
+        return $merged;
+    }
+
+    /**
+     * `/api/v1/market-calendar/US` 1콜 → [Ymd => 세션창 목록] 캐싱.
+     *
+     * 파라미터 없이 호출하면 previousBusinessDay·today·nextBusinessDay 가 오고, 이 3일이면 '지금' 근처
+     * 전 시각을 커버한다. 연속한 두 영업일 **사이**는 휴장 확정 → 빈 창으로 채운다(KR fillNonTradingGap 동형).
+     * 날짜별 확정값이라 7일 캐싱 안전(KR `kis_trading_day_{Ymd}` 패턴).
+     *
+     * 미캐시 조회마다 HTTP 를 때리지 않도록 시도 자체를 120초 스로틀한다 — 캘린더가 커버 못 하는
+     * 오래된 timestamp 로 호출되면 매번 재조회가 되고, 토스 rate-limit 가드의 usleep 이 핫패스(WS 3초
+     * 사이클)를 물어뜯는다. 실패 시에도 같은 마커로 재시도 간격이 잡힌다(형제 KR_CLOSE_FAIL_TTL=120 동형).
+     */
+    private function fetchAndCacheUsWindows(): void
+    {
+        if (Cache::get(self::US_CALENDAR_THROTTLE_KEY) !== null) {
+            return;
+        }
+        Cache::put(self::US_CALENDAR_THROTTLE_KEY, true, self::US_CALENDAR_RETRY_TTL);
+
+        try {
+            $data = $this->tossApiClient->get('/api/v1/market-calendar/US');
+            $this->cacheUsWindows($data['result'] ?? null);
+        } catch (\Exception $e) {
+            Log::error('MarketSessionService: 토스 US 캘린더 조회 실패: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 캘린더 result → [Ymd => 세션창] 캐싱. 형식 미인식이면 아무것도 캐싱하지 않는다(→ 폴백).
+     *
+     * @param  mixed  $result  `$data['result']`
+     */
+    private function cacheUsWindows($result): void
+    {
+        if (!is_array($result)) {
+            Log::warning('MarketSessionService: 토스 US 캘린더 응답 형식 미인식 — 하드코딩 폴백');
+            return;
+        }
+
+        $days = [];
+        foreach (['previousBusinessDay', 'today', 'nextBusinessDay'] as $key) {
+            $node = $result[$key] ?? null;
+            if (!is_array($node)) {
+                continue;
+            }
+            $date = $this->toYmd($node['date'] ?? null);
+            if ($date !== null) {
+                $days[$date] = $this->parseUsDayWindows($node);
+            }
+        }
+
+        if ($days === []) {
+            Log::warning('MarketSessionService: 토스 US 캘린더에 유효 날짜 없음 — 하드코딩 폴백');
+            return;
+        }
+
+        // 연속한 두 영업일 사이 = 휴장 확정 → 빈 창.
+        // Ymd 는 숫자문자열이라 PHP 가 배열 키를 int 로 강제변환한다 → 문자열로 되돌려 쓴다.
+        ksort($days);
+        $known = array_map('strval', array_keys($days));
+        for ($i = 0; $i < count($known) - 1; $i++) {
+            $gap = [];
+            $this->fillNonTradingGap($gap, $known[$i], $known[$i + 1]);
+            foreach (array_keys($gap) as $d) {
+                $days[$d] = [];
+            }
+        }
+
+        foreach ($days as $date => $windows) {
+            Cache::put(self::US_WINDOWS_PREFIX . $date, $windows, 60 * 60 * 24 * 7);
+        }
+    }
+
+    /**
+     * 영업일 노드 → 세션창 목록. 휴장일이면 빈 배열.
+     *
+     * ⚠️ 함정: 휴장일엔 **키가 존재하고 값이 null** 이다 — `{"date":"2026-09-07","dayMarket":null,…}`.
+     *   `isset()` 은 여기서 false 지만 `array_key_exists()` 는 true 라 키 유무로 판정하면 안 되고,
+     *   값을 `is_array()` 로 봐야 한다(KR 경로의 `integrated !== null` 과 동형).
+     *
+     * @param  array<string,mixed>  $node
+     * @return list<array{0:string,1:int,2:int}>  [세션명, 시작ts, 종료ts]
+     */
+    private function parseUsDayWindows(array $node): array
+    {
+        $labels = [
+            'dayMarket'     => '주간거래',
+            'preMarket'     => '프리마켓',
+            'regularMarket' => '정규장',
+            'afterMarket'   => '애프터마켓',
+        ];
+
+        $windows = [];
+        foreach ($labels as $key => $label) {
+            $window = $node[$key] ?? null;
+            if (!is_array($window)) {
+                continue;
+            }
+            $start = strtotime((string)($window['startTime'] ?? ''));
+            $end   = strtotime((string)($window['endTime'] ?? ''));
+            if ($start === false || $end === false || $end <= $start) {
+                continue;
+            }
+            $windows[] = [$label, $start, $end];
+        }
+
+        return $windows;
     }
 
     /**

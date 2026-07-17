@@ -354,7 +354,7 @@
               @dragleave="onGridDragLeave(idx)"
               @drop="onGridDrop(idx)"
               :class="[
-                'group relative card bg-base-100 border transition-colors duration-120 overflow-hidden rounded-md min-w-130',
+                'group relative card bg-base-100 border transition-colors duration-120 overflow-hidden rounded-md min-w-0',
                 isGridClosed(idx)
                   ? 'h-60'
                   : (gridCols === 1 ? 'h-80 sm:h-96 lg:h-120' : 'h-72 sm:h-80 lg:h-110'),
@@ -544,6 +544,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue';
 import { isNqTradingByEtClock } from './utils/nqSession.js';
+import { gridColsClass as computeGridColsClass } from './utils/gridCols.js';
 import { SESSION_BADGE_BASE, sessionBadgeTone } from './utils/sessionBadge.js';
 import { useAutoAnimate } from '@formkit/auto-animate/vue';
 import StockChart from './components/StockChart.vue';
@@ -643,12 +644,8 @@ const activeGridTickersCount = computed(() => {
   return gridTickers.value.filter(t => t !== '').length;
 });
 
-// 열 수는 사용자가 명시 선택(1=세로 1열/차트 크게, 2=2×2). 창 폭에 따라 멋대로 2열이 되던
-// 반응형 자동 배치는 제거. 2열 모드도 좁은 폭(모바일/Capacitor)에선 md: 하한으로 1열로 자연 강등.
-// (Tailwind purge 방지: 클래스 리터럴로 기재)
-const gridColsClass = computed(() => {
-  return gridCols.value === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1';
-});
+// 열 수 → 그리드 클래스. 순수 로직은 테스트 가능하도록 utils/gridCols.js 로 추출(선례: nqSession.js).
+const gridColsClass = computed(() => computeGridColsClass(gridCols.value));
 
 // 현재 그리드 시장의 세션 라벨(정규장/주간거래/장마감 등). 같은 시장이면 모든 카드가 동일하므로
 // 처음 로드된 카드의 session 을 대표로 사용 → 국내/미국 토글 옆 배지로 표시.

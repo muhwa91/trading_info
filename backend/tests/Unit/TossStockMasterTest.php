@@ -8,6 +8,7 @@ use App\Services\Toss\TossApiClient;
 use App\Services\Toss\TossStockMaster;
 use App\Services\Toss\TossSymbolMapper;
 use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
@@ -27,7 +28,9 @@ use Tests\TestCase;
 class TossStockMasterTest extends TestCase
 {
     private $clientMock;
+
     private TossStockMaster $master;
+
     private TossSymbolMapper $mapper;
 
     protected function setUp(): void
@@ -35,7 +38,7 @@ class TossStockMasterTest extends TestCase
         parent::setUp();
 
         $this->clientMock = $this->createMock(TossApiClient::class);
-        $this->mapper     = new TossSymbolMapper();
+        $this->mapper = new TossSymbolMapper;
 
         $this->master = new TossStockMaster(
             $this->clientMock,
@@ -49,18 +52,18 @@ class TossStockMasterTest extends TestCase
     // getInfo — 토스 응답 파싱 및 캐시
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function getInfo_국내종목_한글명과_타입을_반환한다(): void
+    #[Test]
+    public function get_info_국내종목_한글명과_타입을_반환한다(): void
     {
         $this->clientMock
             ->method('get')
             ->willReturn([
                 'stocks' => [[
-                    'symbol'       => '005930',
-                    'name'         => '삼성전자',
-                    'englishName'  => 'Samsung Electronics',
+                    'symbol' => '005930',
+                    'name' => '삼성전자',
+                    'englishName' => 'Samsung Electronics',
                     'securityType' => 'STOCK',
-                    'currency'     => 'KRW',
+                    'currency' => 'KRW',
                 ]],
             ]);
 
@@ -73,18 +76,18 @@ class TossStockMasterTest extends TestCase
         $this->assertFalse($info['isEtf']);
     }
 
-    /** @test */
-    public function getInfo_미국종목_영문명과_USD_반환한다(): void
+    #[Test]
+    public function get_info_미국종목_영문명과_us_d_반환한다(): void
     {
         $this->clientMock
             ->method('get')
             ->willReturn([
                 'stocks' => [[
-                    'symbol'       => 'AAPL',
-                    'name'         => '애플',
-                    'englishName'  => 'Apple Inc.',
+                    'symbol' => 'AAPL',
+                    'name' => '애플',
+                    'englishName' => 'Apple Inc.',
                     'securityType' => 'STOCK',
-                    'currency'     => 'USD',
+                    'currency' => 'USD',
                 ]],
             ]);
 
@@ -96,18 +99,18 @@ class TossStockMasterTest extends TestCase
         $this->assertSame('USD', $info['currency']);
     }
 
-    /** @test */
-    public function getInfo_ETF_securityType_etf로_매핑된다(): void
+    #[Test]
+    public function get_info_et_f_security_type_etf로_매핑된다(): void
     {
         $this->clientMock
             ->method('get')
             ->willReturn([
                 'stocks' => [[
-                    'symbol'       => '0167A0',
-                    'name'         => 'SOL AI반도체TOP2플러스',
-                    'englishName'  => 'SOL AI Chip TOP2 Plus',
+                    'symbol' => '0167A0',
+                    'name' => 'SOL AI반도체TOP2플러스',
+                    'englishName' => 'SOL AI Chip TOP2 Plus',
                     'securityType' => 'ETF',
-                    'currency'     => 'KRW',
+                    'currency' => 'KRW',
                 ]],
             ]);
 
@@ -118,18 +121,18 @@ class TossStockMasterTest extends TestCase
         $this->assertTrue($info['isEtf']);
     }
 
-    /** @test */
-    public function getInfo_FUTURES_securityType_stock으로_폴백된다(): void
+    #[Test]
+    public function get_info_future_s_security_type_stock으로_폴백된다(): void
     {
         $this->clientMock
             ->method('get')
             ->willReturn([
                 'stocks' => [[
-                    'symbol'       => 'SOXL',
-                    'name'         => 'SOXL',
-                    'englishName'  => 'Direxion Daily Semiconductors Bull 3X',
+                    'symbol' => 'SOXL',
+                    'name' => 'SOXL',
+                    'englishName' => 'Direxion Daily Semiconductors Bull 3X',
                     'securityType' => 'FUTURES',
-                    'currency'     => 'USD',
+                    'currency' => 'USD',
                 ]],
             ]);
 
@@ -139,18 +142,18 @@ class TossStockMasterTest extends TestCase
         $this->assertSame('stock', $info['type']); // FUTURES → stock 폴백
     }
 
-    /** @test */
-    public function getInfo_캐시_히트_시_API를_다시_호출하지_않는다(): void
+    #[Test]
+    public function get_info_캐시_히트_시_ap_i를_다시_호출하지_않는다(): void
     {
         $this->clientMock
             ->expects($this->once()) // 단 1회만 호출 기대
             ->method('get')
             ->willReturn([
                 'stocks' => [[
-                    'symbol'       => 'TSLA',
-                    'name'         => '테슬라',
+                    'symbol' => 'TSLA',
+                    'name' => '테슬라',
                     'securityType' => 'STOCK',
-                    'currency'     => 'USD',
+                    'currency' => 'USD',
                 ]],
             ]);
 
@@ -162,17 +165,17 @@ class TossStockMasterTest extends TestCase
         $this->assertSame($first, $second);
     }
 
-    /** @test */
-    public function getInfo_TTL_1일로_캐시에_저장된다(): void
+    #[Test]
+    public function get_info_tt_l_1일로_캐시에_저장된다(): void
     {
         $this->clientMock
             ->method('get')
             ->willReturn([
                 'stocks' => [[
-                    'symbol'       => 'NVDA',
-                    'name'         => '엔비디아',
+                    'symbol' => 'NVDA',
+                    'name' => '엔비디아',
                     'securityType' => 'STOCK',
-                    'currency'     => 'USD',
+                    'currency' => 'USD',
                 ]],
             ]);
 
@@ -188,8 +191,8 @@ class TossStockMasterTest extends TestCase
     // 지수 심볼 — null/graceful
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function getInfo_지수_심볼은_null을_반환한다(): void
+    #[Test]
+    public function get_info_지수_심볼은_null을_반환한다(): void
     {
         $this->clientMock->expects($this->never())->method('get');
 
@@ -202,8 +205,8 @@ class TossStockMasterTest extends TestCase
     // 빈 응답 / 토스 실패 — graceful
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function getInfo_빈응답_graceful_처리(): void
+    #[Test]
+    public function get_info_빈응답_graceful_처리(): void
     {
         $this->clientMock
             ->method('get')
@@ -219,17 +222,17 @@ class TossStockMasterTest extends TestCase
     // getName — 폴백 = 심볼 그대로
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function getName_토스_캐시에서_이름을_반환한다(): void
+    #[Test]
+    public function get_name_토스_캐시에서_이름을_반환한다(): void
     {
         $this->clientMock
             ->method('get')
             ->willReturn([
                 'stocks' => [[
-                    'symbol'       => '000660',
-                    'name'         => 'SK하이닉스',
+                    'symbol' => '000660',
+                    'name' => 'SK하이닉스',
                     'securityType' => 'STOCK',
-                    'currency'     => 'KRW',
+                    'currency' => 'KRW',
                 ]],
             ]);
 
@@ -238,8 +241,8 @@ class TossStockMasterTest extends TestCase
         $this->assertSame('SK하이닉스', $name);
     }
 
-    /** @test */
-    public function getName_토스_실패시_심볼을_그대로_반환한다(): void
+    #[Test]
+    public function get_name_토스_실패시_심볼을_그대로_반환한다(): void
     {
         $this->clientMock
             ->method('get')
@@ -251,17 +254,17 @@ class TossStockMasterTest extends TestCase
         $this->assertSame('UNKNOWN_TICKER', $name);
     }
 
-    /** @test */
-    public function getName_국내종목_접미사_포함_심볼도_처리된다(): void
+    #[Test]
+    public function get_name_국내종목_접미사_포함_심볼도_처리된다(): void
     {
         $this->clientMock
             ->method('get')
             ->willReturn([
                 'stocks' => [[
-                    'symbol'       => '035420',
-                    'name'         => 'NAVER',
+                    'symbol' => '035420',
+                    'name' => 'NAVER',
                     'securityType' => 'STOCK',
-                    'currency'     => 'KRW',
+                    'currency' => 'KRW',
                 ]],
             ]);
 
@@ -274,8 +277,8 @@ class TossStockMasterTest extends TestCase
     // getInfoBatch — N+1 방지
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function getInfoBatch_복수_심볼을_단일_배치_호출로_처리한다(): void
+    #[Test]
+    public function get_info_batch_복수_심볼을_단일_배치_호출로_처리한다(): void
     {
         $this->clientMock
             ->expects($this->once()) // 1회 배치 호출만 기대
@@ -302,8 +305,8 @@ class TossStockMasterTest extends TestCase
         $this->assertSame('SK하이닉스', $result['000660']['name']);
     }
 
-    /** @test */
-    public function getInfoBatch_캐시된_항목은_API_호출에서_제외된다(): void
+    #[Test]
+    public function get_info_batch_캐시된_항목은_ap_i_호출에서_제외된다(): void
     {
         // 005930 을 사전에 캐시에 넣기
         Cache::put('toss_stock_master_005930', [
@@ -328,8 +331,8 @@ class TossStockMasterTest extends TestCase
         $this->assertSame('삼성전자', $result['005930']['name']);
     }
 
-    /** @test */
-    public function getInfoBatch_지수_심볼은_결과에서_제외된다(): void
+    #[Test]
+    public function get_info_batch_지수_심볼은_결과에서_제외된다(): void
     {
         $this->clientMock
             ->expects($this->once())
@@ -348,8 +351,8 @@ class TossStockMasterTest extends TestCase
         $this->assertArrayNotHasKey('KOSPI200', $result);
     }
 
-    /** @test */
-    public function getInfoBatch_빈_배열_입력_시_빈_배열_반환(): void
+    #[Test]
+    public function get_info_batch_빈_배열_입력_시_빈_배열_반환(): void
     {
         $this->clientMock->expects($this->never())->method('get');
 
@@ -362,8 +365,8 @@ class TossStockMasterTest extends TestCase
     // getType — 폴백 = 'stock'
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function getType_토스_실패시_stock으로_폴백한다(): void
+    #[Test]
+    public function get_type_토스_실패시_stock으로_폴백한다(): void
     {
         $this->clientMock
             ->method('get')
@@ -378,17 +381,17 @@ class TossStockMasterTest extends TestCase
     // 오타교정 심볼 (0167AO → 0167A0)
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function getInfo_오타교정심볼_0167AO_처리된다(): void
+    #[Test]
+    public function get_info_오타교정심볼_0167_a_o_처리된다(): void
     {
         $this->clientMock
             ->method('get')
             ->willReturn([
                 'stocks' => [[
-                    'symbol'       => '0167A0',
-                    'name'         => 'SOL AI반도체TOP2플러스',
+                    'symbol' => '0167A0',
+                    'name' => 'SOL AI반도체TOP2플러스',
                     'securityType' => 'ETF',
-                    'currency'     => 'KRW',
+                    'currency' => 'KRW',
                 ]],
             ]);
 

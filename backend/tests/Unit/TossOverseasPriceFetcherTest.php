@@ -9,6 +9,7 @@ use App\Services\Toss\TossChangeCalculator;
 use App\Services\Toss\TossPriceFetcher;
 use App\Services\Toss\TossSymbolMapper;
 use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
@@ -24,17 +25,20 @@ use Tests\TestCase;
 class TossOverseasPriceFetcherTest extends TestCase
 {
     private $clientMock;
+
     private $calculatorMock;
+
     private TossPriceFetcher $fetcher;
+
     private TossSymbolMapper $mapper;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->clientMock     = $this->createMock(TossApiClient::class);
+        $this->clientMock = $this->createMock(TossApiClient::class);
         $this->calculatorMock = $this->createMock(TossChangeCalculator::class);
-        $this->mapper         = new TossSymbolMapper();
+        $this->mapper = new TossSymbolMapper;
 
         $this->fetcher = new TossPriceFetcher(
             $this->clientMock,
@@ -49,8 +53,8 @@ class TossOverseasPriceFetcherTest extends TestCase
     // fetchDomestic — 미국 종목 포함 배치
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testFetchDomestic_UsSymbols_NowIncludedInBatch(): void
+    #[Test]
+    public function test_fetch_domestic_us_symbols_now_included_in_batch(): void
     {
         // Phase 4: US 종목도 배치에 포함돼야 한다 (Phase 3: skipped)
         $this->calculatorMock
@@ -76,8 +80,8 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->assertSame(0, $result['failed']);
     }
 
-    /** @test */
-    public function testFetchDomestic_UsSymbol_UsesCorrectCacheKeys(): void
+    #[Test]
+    public function test_fetch_domestic_us_symbol_uses_correct_cache_keys(): void
     {
         // US 캐시 키는 `kis_realtime_price_us_{ticker}` 여야 한다
         $this->calculatorMock
@@ -116,8 +120,8 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->assertNull(Cache::get('kis_realtime_price_MU'), 'KR 캐시 키가 존재하면 안 됨');
     }
 
-    /** @test */
-    public function testFetchDomestic_KrSymbol_UsesKrCacheKeys(): void
+    #[Test]
+    public function test_fetch_domestic_kr_symbol_uses_kr_cache_keys(): void
     {
         // KR 캐시 키는 `kis_realtime_price_{ticker}` 여야 한다
         $this->calculatorMock
@@ -142,8 +146,8 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->assertNull(Cache::get('kis_realtime_price_us_005930'), 'KR 종목에 US 캐시 키가 생기면 안 됨');
     }
 
-    /** @test */
-    public function testFetchDomestic_MixedKrAndUs_BothFetched(): void
+    #[Test]
+    public function test_fetch_domestic_mixed_kr_and_us_both_fetched(): void
     {
         $this->calculatorMock
             ->method('calculate')
@@ -157,9 +161,10 @@ class TossOverseasPriceFetcherTest extends TestCase
             ->method('get')
             ->with('/api/v1/prices', $this->callback(function (array $q): bool {
                 $symbols = $q['symbols'];
+
                 return str_contains($symbols, '005930')
                     && str_contains($symbols, 'AAPL')
-                    && !str_contains($symbols, 'KOSPI200'); // 지수 제외
+                    && ! str_contains($symbols, 'KOSPI200'); // 지수 제외
             }))
             ->willReturn([
                 'result' => [
@@ -174,8 +179,8 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->assertSame(1, $result['skipped']);  // KOSPI200
     }
 
-    /** @test */
-    public function testFetchDomestic_UsCachedTicker_NoApiCall(): void
+    #[Test]
+    public function test_fetch_domestic_us_cached_ticker_no_api_call(): void
     {
         // US 캐시 히트 시 API 호출 없어야 함
         Cache::put('kis_realtime_price_us_TSLA', ['price' => 207.0, 'change_amount' => -1.0, 'change_percent' => -0.5], 8);
@@ -192,8 +197,8 @@ class TossOverseasPriceFetcherTest extends TestCase
     // fetchOverseasSingle — 미국 단건 조회
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testFetchOverseasSingle_IndexSymbol_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_overseas_single_index_symbol_returns_null(): void
     {
         $this->clientMock->expects($this->never())->method('get');
 
@@ -202,8 +207,8 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->assertNull($result);
     }
 
-    /** @test */
-    public function testFetchOverseasSingle_KrSymbol_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_overseas_single_kr_symbol_returns_null(): void
     {
         $this->clientMock->expects($this->never())->method('get');
 
@@ -212,14 +217,14 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->assertNull($result);
     }
 
-    /** @test */
-    public function testFetchOverseasSingle_CacheHit_ReturnsWithoutApiCall(): void
+    #[Test]
+    public function test_fetch_overseas_single_cache_hit_returns_without_api_call(): void
     {
         $cached = [
-            'price'          => 207.5,
-            'change_amount'  => -2.5,
+            'price' => 207.5,
+            'change_amount' => -2.5,
             'change_percent' => -1.2,
-            'regular_close'  => 210.0,
+            'regular_close' => 210.0,
         ];
         Cache::put('kis_realtime_price_us_TSLA', $cached, 8);
 
@@ -231,8 +236,8 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->assertSame(207.5, $result['price']);
     }
 
-    /** @test */
-    public function testFetchOverseasSingle_TossSuccess_CachesAndReturns(): void
+    #[Test]
+    public function test_fetch_overseas_single_toss_success_caches_and_returns(): void
     {
         $this->calculatorMock
             ->method('calculateUsSplit')
@@ -262,17 +267,17 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->assertSame(207.5, $primaryCache['price']);
     }
 
-    /** @test */
-    public function testFetchOverseasSingle_TossEmptyResponse_AttemptsFallback(): void
+    #[Test]
+    public function test_fetch_overseas_single_toss_empty_response_attempts_fallback(): void
     {
         // 토스 실패 시 Yahoo 폴백 또는 24h 캐시를 시도해야 한다.
         // Yahoo가 실제 네트워크로 응답하거나 24h 캐시를 사용 — 어느 쪽이든 non-null 이면 성공.
         // 이 테스트는 "토스 실패 후 null을 반환하지 않는다"는 동작을 검증한다.
         $fallback = [
-            'price'          => 200.0,
-            'change_amount'  => -5.0,
+            'price' => 200.0,
+            'change_amount' => -5.0,
             'change_percent' => -2.4,
-            'regular_close'  => 205.0,
+            'regular_close' => 205.0,
         ];
         Cache::put('kis_last_successful_overseas_price_TSLA', $fallback, 86400);
 
@@ -289,16 +294,16 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->assertGreaterThan(0, $result['price']);
     }
 
-    /** @test */
-    public function testFetchOverseasSingle_TossEmptyResponse_24hCacheUsedWhenYahooFails(): void
+    #[Test]
+    public function test_fetch_overseas_single_toss_empty_response_24h_cache_used_when_yahoo_fails(): void
     {
         // 존재하지 않는 심볼로 Yahoo 실패를 유도, 24h 캐시로 폴백 확인
         // 실제 존재하지 않는 심볼을 사용 — Yahoo가 빈 응답이나 에러를 반환
         $fallback = [
-            'price'          => 123.45,
-            'change_amount'  => 0.5,
+            'price' => 123.45,
+            'change_amount' => 0.5,
             'change_percent' => 0.4,
-            'regular_close'  => 123.0,
+            'regular_close' => 123.0,
         ];
         // 존재하지 않을 법한 심볼로 Yahoo 실패 유도
         $fakeSymbol = 'ZZZZINVALID99999';
@@ -316,8 +321,8 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->assertSame(123.45, $result['price']);
     }
 
-    /** @test */
-    public function testFetchOverseasSingle_NoFallbackCache_YahooFailure_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_overseas_single_no_fallback_cache_yahoo_failure_returns_null(): void
     {
         // 존재하지 않는 심볼 + 폴백 캐시 없음 = null 반환
         $fakeSymbol = 'ZZZNOTEXIST12345';
@@ -339,16 +344,16 @@ class TossOverseasPriceFetcherTest extends TestCase
     // fetchSingle — US 위임 확인
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testFetchSingle_UsSymbol_DelegatesToFetchOverseasSingle(): void
+    #[Test]
+    public function test_fetch_single_us_symbol_delegates_to_fetch_overseas_single(): void
     {
         // fetchSingle('TSLA') 가 fetchOverseasSingle 로 위임돼야 함
         // 캐시에 US 값을 넣으면 API 호출 없이 반환 확인
         $cached = [
-            'price'          => 207.5,
-            'change_amount'  => -2.5,
+            'price' => 207.5,
+            'change_amount' => -2.5,
             'change_percent' => -1.2,
-            'regular_close'  => 210.0,
+            'regular_close' => 210.0,
         ];
         Cache::put('kis_realtime_price_us_TSLA', $cached, 8);
 
@@ -360,8 +365,8 @@ class TossOverseasPriceFetcherTest extends TestCase
         $this->assertSame(207.5, $result['price']);
     }
 
-    /** @test */
-    public function testFetchSingle_KrSymbol_UsesKrPath(): void
+    #[Test]
+    public function test_fetch_single_kr_symbol_uses_kr_path(): void
     {
         // KR 종목은 기존 KR 경로 사용 (캐시 키: kis_realtime_price_{ticker})
         Cache::put('kis_realtime_price_005930', ['price' => 71000.0, 'change_amount' => 500.0, 'change_percent' => 0.7], 8);

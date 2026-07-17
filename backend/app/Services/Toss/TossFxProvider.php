@@ -55,42 +55,47 @@ class TossFxProvider
     {
         try {
             $data = $this->client->get(self::ENDPOINT, [
-                'baseCurrency'  => 'USD',
+                'baseCurrency' => 'USD',
                 'quoteCurrency' => 'KRW',
             ]);
 
             if (empty($data)) {
                 Log::warning('[TossFxProvider] 응답이 비어있음');
+
                 return null;
             }
 
             $result = $data['result'] ?? null;
-            if (!is_array($result)) {
+            if (! is_array($result)) {
                 Log::warning('[TossFxProvider] result 키 없음', ['keys' => array_keys($data)]);
+
                 return null;
             }
 
             $rateRaw = isset($result['rate']) ? trim((string) $result['rate']) : '';
             if ($rateRaw === '') {
                 Log::warning('[TossFxProvider] rate 필드 없음 또는 빈 값');
+
                 return null;
             }
 
             $rate = (float) $rateRaw;
             if ($rate <= 0.0) {
                 Log::warning('[TossFxProvider] rate 값 이상', ['rate_raw' => $rateRaw]);
+
                 return null;
             }
 
             Log::info('[TossFxProvider] 환율 취득 성공', ['rate' => $rate]);
 
             return [
-                'rate'        => round($rate, 4),
+                'rate' => round($rate, 4),
                 'recorded_at' => Carbon::now()->toDateTimeString(),
-                'source'      => 'Toss_ExchangeRate',
+                'source' => 'Toss_ExchangeRate',
             ];
         } catch (\Throwable $e) {
             Log::error('[TossFxProvider] 환율 조회 예외: ' . $e->getMessage());
+
             return null;
         }
     }

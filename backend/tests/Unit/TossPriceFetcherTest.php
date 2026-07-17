@@ -14,7 +14,6 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 /**
@@ -30,17 +29,20 @@ use Tests\TestCase;
 class TossPriceFetcherTest extends TestCase
 {
     private $clientMock;
+
     private $calculatorMock;
+
     private TossPriceFetcher $fetcher;
+
     private TossSymbolMapper $mapper;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->clientMock     = $this->createMock(TossApiClient::class);
+        $this->clientMock = $this->createMock(TossApiClient::class);
         $this->calculatorMock = $this->createMock(TossChangeCalculator::class);
-        $this->mapper         = new TossSymbolMapper();
+        $this->mapper = new TossSymbolMapper;
 
         $this->fetcher = new TossPriceFetcher(
             $this->clientMock,
@@ -68,8 +70,8 @@ class TossPriceFetcherTest extends TestCase
     // fetchDomestic — 국내 종목 배치
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testFetchDomestic_EmptyInput_ReturnsZeroCounts(): void
+    #[Test]
+    public function test_fetch_domestic_empty_input_returns_zero_counts(): void
     {
         $this->clientMock->expects($this->never())->method('get');
 
@@ -81,8 +83,8 @@ class TossPriceFetcherTest extends TestCase
         $this->assertSame(0, $result['failed']);
     }
 
-    /** @test */
-    public function testFetchDomestic_IndexSymbols_Skipped(): void
+    #[Test]
+    public function test_fetch_domestic_index_symbols_skipped(): void
     {
         $this->clientMock->expects($this->never())->method('get');
 
@@ -92,8 +94,8 @@ class TossPriceFetcherTest extends TestCase
         $this->assertSame(4, $result['skipped']);
     }
 
-    /** @test */
-    public function testFetchDomestic_UsSymbols_IncludedInBatchPhase4(): void
+    #[Test]
+    public function test_fetch_domestic_us_symbols_included_in_batch_phase4(): void
     {
         // Phase 4: 미국 종목도 배치에 포함돼야 한다 (Phase 3에서는 skipped)
         $this->calculatorMock
@@ -117,8 +119,8 @@ class TossPriceFetcherTest extends TestCase
         $this->assertSame(0, $result['skipped']);
     }
 
-    /** @test */
-    public function testFetchDomestic_CachedTicker_NoApiCall(): void
+    #[Test]
+    public function test_fetch_domestic_cached_ticker_no_api_call(): void
     {
         // 캐시에 이미 값이 있는 경우
         Cache::put('kis_realtime_price_005930', ['price' => 71000.0, 'change_amount' => 500.0, 'change_percent' => 0.7], 8);
@@ -131,8 +133,8 @@ class TossPriceFetcherTest extends TestCase
         $this->assertSame(0, $result['fetched']);
     }
 
-    /** @test */
-    public function testFetchDomestic_DomesticTicker_CallsApiAndCaches(): void
+    #[Test]
+    public function test_fetch_domestic_domestic_ticker_calls_api_and_caches(): void
     {
         $this->calculatorMock
             ->method('calculate')
@@ -167,8 +169,8 @@ class TossPriceFetcherTest extends TestCase
         $this->assertSame(71000.0, $fallback['price']);
     }
 
-    /** @test */
-    public function testFetchDomestic_KsSymbol_NormalizesAndCachesWithAppSymbol(): void
+    #[Test]
+    public function test_fetch_domestic_ks_symbol_normalizes_and_caches_with_app_symbol(): void
     {
         // .KS 접미사 포함 앱 심볼로 요청 → 토스엔 005930 으로 보내고 캐시는 원래 앱 심볼 키로
         $this->calculatorMock
@@ -194,8 +196,8 @@ class TossPriceFetcherTest extends TestCase
         $this->assertSame(71100.0, $cached['price']);
     }
 
-    /** @test */
-    public function testFetchDomestic_EmptyApiResponse_IncreasesFailed(): void
+    #[Test]
+    public function test_fetch_domestic_empty_api_response_increases_failed(): void
     {
         $this->clientMock
             ->expects($this->once())
@@ -209,8 +211,8 @@ class TossPriceFetcherTest extends TestCase
         $this->assertNull(Cache::get('kis_realtime_price_005930'));
     }
 
-    /** @test */
-    public function testFetchDomestic_MixedTickers_KrAndUsFetchedIndexSkipped(): void
+    #[Test]
+    public function test_fetch_domestic_mixed_tickers_kr_and_us_fetched_index_skipped(): void
     {
         $this->calculatorMock
             ->method('calculate')
@@ -222,8 +224,9 @@ class TossPriceFetcherTest extends TestCase
             ->method('get')
             ->with('/api/v1/prices', $this->callback(function (array $q): bool {
                 $symbols = $q['symbols'];
+
                 // 지수는 포함되지 않아야 함, KR+US 모두 포함
-                return !str_contains($symbols, 'KOSPI200')
+                return ! str_contains($symbols, 'KOSPI200')
                     && str_contains($symbols, '005930')
                     && str_contains($symbols, '000660')
                     && str_contains($symbols, 'TSLA');
@@ -246,8 +249,8 @@ class TossPriceFetcherTest extends TestCase
     // fetchSingle — 단건 조회
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testFetchSingle_IndexSymbol_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_single_index_symbol_returns_null(): void
     {
         $this->clientMock->expects($this->never())->method('get');
 
@@ -256,15 +259,15 @@ class TossPriceFetcherTest extends TestCase
         $this->assertNull($result);
     }
 
-    /** @test */
-    public function testFetchSingle_UsSymbol_DelegatesToOverseasSingle(): void
+    #[Test]
+    public function test_fetch_single_us_symbol_delegates_to_overseas_single(): void
     {
         // Phase 4: US 종목은 fetchOverseasSingle 위임 (캐시 히트 시 API 호출 없음)
         $cached = [
-            'price'          => 207.5,
-            'change_amount'  => -2.5,
+            'price' => 207.5,
+            'change_amount' => -2.5,
             'change_percent' => -1.2,
-            'regular_close'  => 210.0,
+            'regular_close' => 210.0,
         ];
         Cache::put('kis_realtime_price_us_TSLA', $cached, 8);
 
@@ -277,8 +280,8 @@ class TossPriceFetcherTest extends TestCase
         $this->assertSame(207.5, $result['price']);
     }
 
-    /** @test */
-    public function testFetchSingle_CachedDomestic_ReturnsCacheWithoutApiCall(): void
+    #[Test]
+    public function test_fetch_single_cached_domestic_returns_cache_without_api_call(): void
     {
         $cached = ['price' => 71000.0, 'change_amount' => 500.0, 'change_percent' => 0.7];
         Cache::put('kis_realtime_price_005930', $cached, 8);
@@ -290,8 +293,8 @@ class TossPriceFetcherTest extends TestCase
         $this->assertSame(71000.0, $result['price']);
     }
 
-    /** @test */
-    public function testFetchSingle_DomesticMiss_CallsApiAndReturns(): void
+    #[Test]
+    public function test_fetch_single_domestic_miss_calls_api_and_returns(): void
     {
         $this->calculatorMock
             ->method('calculate')
@@ -314,8 +317,8 @@ class TossPriceFetcherTest extends TestCase
         $this->assertSame(0.7, $result['change_percent']);
     }
 
-    /** @test */
-    public function testFetchSingle_ApiFailWithFallbackCache_ReturnsFallback(): void
+    #[Test]
+    public function test_fetch_single_api_fail_with_fallback_cache_returns_fallback(): void
     {
         $fallback = ['price' => 70000.0, 'change_amount' => -500.0, 'change_percent' => -0.7];
         Cache::put('kis_last_successful_price_005930', $fallback, 86400);
@@ -331,8 +334,8 @@ class TossPriceFetcherTest extends TestCase
         $this->assertSame(70000.0, $result['price']);
     }
 
-    /** @test */
-    public function testFetchSingle_ApiFailNoFallback_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_single_api_fail_no_fallback_returns_null(): void
     {
         $this->clientMock
             ->expects($this->once())
@@ -356,12 +359,11 @@ class TossPriceFetcherTest extends TestCase
      * new Client() / Yahoo URL 을 핫패스에 넣으면 즉시 실패한다.
      * (Guzzle new Client() 를 직접 쓰는 코드라 Http::fake 로는 가로챌 수 없어,
      *  소스 정적 검사로 호출 0회를 보장한다 — RefreshYahooCacheMockGuardTest 와 동일 전략.)
-     *
-     * @test
      */
-    public function testFetchDomestic_HotPath_HasNoBlockingYahooHttp(): void
+    #[Test]
+    public function test_fetch_domestic_hot_path_has_no_blocking_yahoo_http(): void
     {
-        $src       = $this->getFetcherSource();
+        $src = $this->getFetcherSource();
         $methodSrc = $this->extractMethodSource($src, 'fetchDomestic');
 
         $this->assertNotEmpty($methodSrc, 'fetchDomestic 메서드를 찾을 수 없음');
@@ -395,10 +397,9 @@ class TossPriceFetcherTest extends TestCase
      * [동작 가드] cold(캐시 없음) 상태에서 US 종목을 fetchDomestic 하면,
      * 현재가는 즉시 캐시에 써지고 regular_close 는 폴백 캐시 값으로 채워진다.
      * (핫패스에서 Yahoo HTTP 를 호출하지 않으므로 cold 면 폴백/null 이 된다.)
-     *
-     * @test
      */
-    public function testFetchDomestic_UsColdRegularClose_UsesFallbackCacheNotHttp(): void
+    #[Test]
+    public function test_fetch_domestic_us_cold_regular_close_uses_fallback_cache_not_http(): void
     {
         $this->calculatorMock
             ->method('calculate')
@@ -406,10 +407,10 @@ class TossPriceFetcherTest extends TestCase
 
         // yahoo_regular_close_TSLA 는 cold(없음) — 단, 폴백 캐시엔 직전 regular_close 가 있다
         Cache::put('kis_last_successful_overseas_price_TSLA', [
-            'price'          => 200.0,
-            'change_amount'  => 0.0,
+            'price' => 200.0,
+            'change_amount' => 0.0,
             'change_percent' => 0.0,
-            'regular_close'  => 333.0,
+            'regular_close' => 333.0,
         ], 86400);
 
         $this->clientMock
@@ -436,10 +437,9 @@ class TossPriceFetcherTest extends TestCase
 
     /**
      * [동작 가드] yahoo_regular_close_{symbol} 캐시가 따뜻하면 그 값을 우선 사용한다.
-     *
-     * @test
      */
-    public function testFetchDomestic_UsWarmRegularCloseCache_IsIncluded(): void
+    #[Test]
+    public function test_fetch_domestic_us_warm_regular_close_cache_is_included(): void
     {
         $this->calculatorMock
             ->method('calculate')
@@ -466,10 +466,9 @@ class TossPriceFetcherTest extends TestCase
 
     /**
      * [동작 가드] cold 이고 폴백도 없으면 regular_close 는 null 로 즉시 써진다(블로킹 없이).
-     *
-     * @test
      */
-    public function testFetchDomestic_UsColdNoFallback_RegularCloseNull(): void
+    #[Test]
+    public function test_fetch_domestic_us_cold_no_fallback_regular_close_null(): void
     {
         $this->calculatorMock
             ->method('calculate')
@@ -499,10 +498,9 @@ class TossPriceFetcherTest extends TestCase
     /**
      * 워머는 이미 따뜻한 심볼은 skip 한다 (불필요한 HTTP 회피).
      * 이미 캐시가 있는 US 심볼만 줬을 때, 캐시 값은 그대로 유지된다(덮어쓰지 않음).
-     *
-     * @test
      */
-    public function testWarmRegularCloses_WarmSymbol_Skipped(): void
+    #[Test]
+    public function test_warm_regular_closes_warm_symbol_skipped(): void
     {
         Cache::put('yahoo_regular_close_TSLA', 381.61, 3600);
 
@@ -515,10 +513,9 @@ class TossPriceFetcherTest extends TestCase
     /**
      * 워머는 지수·국내(US 외) 심볼을 처리하지 않는다 (HTTP 발생 안 함).
      * Yahoo 접속 없이도 캐시가 채워지지 않음을 검증.
-     *
-     * @test
      */
-    public function testWarmRegularCloses_NonUsSymbols_Ignored(): void
+    #[Test]
+    public function test_warm_regular_closes_non_us_symbols_ignored(): void
     {
         $this->fetcher->warmRegularCloses(['005930', 'KOSPI200', 'NQ=F']);
 
@@ -534,10 +531,9 @@ class TossPriceFetcherTest extends TestCase
 
     /**
      * [B-1] fetchDomestic 의 토스 배치 성공 분기는 provider=toss 로 태깅한다 (US·KR 공통).
-     *
-     * @test
      */
-    public function testFetchDomestic_TossSuccess_TagsProviderToss(): void
+    #[Test]
+    public function test_fetch_domestic_toss_success_tags_provider_toss(): void
     {
         $this->calculatorMock
             ->method('calculate')
@@ -570,10 +566,9 @@ class TossPriceFetcherTest extends TestCase
 
     /**
      * [B-1] fetchOverseasSingle 의 토스 단건 성공 분기는 provider=toss 로 태깅한다.
-     *
-     * @test
      */
-    public function testFetchOverseasSingle_TossSuccess_TagsProviderToss(): void
+    #[Test]
+    public function test_fetch_overseas_single_toss_success_tags_provider_toss(): void
     {
         $this->calculatorMock
             ->method('calculate')
@@ -597,10 +592,9 @@ class TossPriceFetcherTest extends TestCase
 
     /**
      * [B-1] fetchSingle 국내 단건 성공 분기는 provider=toss 로 태깅한다.
-     *
-     * @test
      */
-    public function testFetchSingle_KrSuccess_TagsProviderToss(): void
+    #[Test]
+    public function test_fetch_single_kr_success_tags_provider_toss(): void
     {
         $this->calculatorMock
             ->method('calculate')
@@ -628,10 +622,9 @@ class TossPriceFetcherTest extends TestCase
      * (Yahoo 는 new Client() 직접 호출이라 Http::fake 로 못 막으므로, 실제 네트워크가
      *  없으면 fetchYahooCurrentPrice 가 null 을 반환할 수 있다. 이 머신은 Yahoo 가 되므로
      *  성공 시 provider 검증, 환경상 null 이면 최소한 회귀 없음만 확인한다.)
-     *
-     * @test
      */
-    public function testFetchOverseasSingle_TossFail_YahooFallbackTagsProviderYahoo(): void
+    #[Test]
+    public function test_fetch_overseas_single_toss_fail_yahoo_fallback_tags_provider_yahoo(): void
     {
         // 토스 빈응답 → Yahoo 폴백 경로 진입
         $this->clientMock
@@ -651,17 +644,16 @@ class TossPriceFetcherTest extends TestCase
 
     /**
      * [B-1] 캐시 히트 시 저장된 provider 가 그대로 반환된다(출처 보존).
-     *
-     * @test
      */
-    public function testFetchOverseasSingle_CacheHit_PreservesStoredProvider(): void
+    #[Test]
+    public function test_fetch_overseas_single_cache_hit_preserves_stored_provider(): void
     {
         Cache::put('kis_realtime_price_us_TSLA', [
-            'price'          => 207.5,
-            'change_amount'  => 0.0,
+            'price' => 207.5,
+            'change_amount' => 0.0,
             'change_percent' => 0.0,
-            'regular_close'  => 210.0,
-            'provider'       => 'yahoo',
+            'regular_close' => 210.0,
+            'provider' => 'yahoo',
         ], 8);
 
         $this->clientMock->expects($this->never())->method('get');
@@ -694,7 +686,7 @@ class TossPriceFetcherTest extends TestCase
      * ⚠️ $http 를 주입하지 않으면 기본값이 new Client() 라 테스트가 조용히 실제 Yahoo 를 때린다
      *    (그렇게 '틀린 이유로 통과'한 전례가 있다). 이 경로를 타는 테스트는 반드시 이 헬퍼를 쓴다.
      *
-     * @param string|null $marketState  Yahoo meta.marketState (null = 필드 누락 = 파싱 실패 재현)
+     * @param  string|null  $marketState  Yahoo meta.marketState (null = 필드 누락 = 파싱 실패 재현)
      */
     private function fetcherWithYahooMeta(?string $marketState, float $regularMarketPrice): TossPriceFetcher
     {
@@ -703,7 +695,7 @@ class TossPriceFetcherTest extends TestCase
             $meta['marketState'] = $marketState;
         }
 
-        $body    = json_encode(['chart' => ['result' => [['meta' => $meta]]]]);
+        $body = json_encode(['chart' => ['result' => [['meta' => $meta]]]]);
         $handler = HandlerStack::create(new MockHandler([new Response(200, [], $body)]));
 
         return new TossPriceFetcher(
@@ -720,7 +712,7 @@ class TossPriceFetcherTest extends TestCase
      * ⚠️ 테스트당 1회만 호출한다 — Mockery 는 먼저 등록된 expectation 을 먼저 매칭하므로,
      *    한 테스트에서 두 번 부르면 두 번째 put 이 첫 번째 클로저(이미 죽은 지역변수)에 잡힌다(실측).
      *
-     * @param string $frozenEt  ET 고정 시각 — 제품이 Carbon::now('America/New_York') 를 쓰므로 setTestNow 가 먹는다
+     * @param  string  $frozenEt  ET 고정 시각 — 제품이 Carbon::now('America/New_York') 를 쓰므로 setTestNow 가 먹는다
      */
     private function captureRegularCloseTtl(string $frozenEt, ?string $marketState, float $price = 900.0): ?int
     {
@@ -741,11 +733,11 @@ class TossPriceFetcherTest extends TestCase
     }
 
     /**
-     * @test
      * PRE(05:00 ET) 기록분은 09:30(정규장 개시) 정각에 만료 — regularMarketPrice 가 어제 종가→라이브가로
      * 뒤집히는 시각이다. 옛 구현은 오늘 16:05 까지(최대 8h) 잡아 정규장 내내 어제 종가를 서빙했다.
      */
-    public function testRegularCloseTtl_PreMarket_ExpiresAtRegularOpen(): void
+    #[Test]
+    public function test_regular_close_ttl_pre_market_expires_at_regular_open(): void
     {
         // 05:00 ET → 09:30 ET = 4h30m. (옛 '오늘 16:05' 기준이면 11h05m = 39900)
         $this->assertSame(16200, $this->captureRegularCloseTtl('2026-07-17 05:00:00', 'PRE'),
@@ -753,20 +745,20 @@ class TossPriceFetcherTest extends TestCase
     }
 
     /**
-     * @test
      * PRE 09:29 ET → 60초. 300초 하한이 남아 있으면 09:34 까지 살아남아 개장 경계를 4분 넘긴다.
      */
-    public function testRegularCloseTtl_PreMarket_JustBeforeOpen_HasNoFloor(): void
+    #[Test]
+    public function test_regular_close_ttl_pre_market_just_before_open_has_no_floor(): void
     {
         $this->assertSame(60, $this->captureRegularCloseTtl('2026-07-17 09:29:00', 'PRE'),
             'PRE 09:29 ET → 60s. 300 하한이 살아있으면 개장을 넘겨 stale');
     }
 
     /**
-     * @test
      * POST(17:19 ET) 기록분 = 오늘 확정 종가 → 다음 경계는 익일 09:30(16:05 는 이미 지났다).
      */
-    public function testRegularCloseTtl_PostMarket_ExpiresAtNextRegularOpen(): void
+    #[Test]
+    public function test_regular_close_ttl_post_market_expires_at_next_regular_open(): void
     {
         // 17:19 ET → 익일 09:30 = 16h11m
         $this->assertSame(58260, $this->captureRegularCloseTtl('2026-07-17 17:19:00', 'POST'),
@@ -774,10 +766,10 @@ class TossPriceFetcherTest extends TestCase
     }
 
     /**
-     * @test
      * CLOSED(22:00 ET)도 동일 — 익일 09:30 만료.
      */
-    public function testRegularCloseTtl_Closed_ExpiresAtNextRegularOpen(): void
+    #[Test]
+    public function test_regular_close_ttl_closed_expires_at_next_regular_open(): void
     {
         // 22:00 ET → 익일 09:30 = 11h30m
         $this->assertSame(41400, $this->captureRegularCloseTtl('2026-07-17 22:00:00', 'CLOSED'),
@@ -785,28 +777,27 @@ class TossPriceFetcherTest extends TestCase
     }
 
     /**
-     * @test
      * REGULAR(14:20 ET) = 미완성 진행가 → 300초만(무변경).
      * 09:30/16:05 경계 로직이 정규장 분기까지 먹어치우면(예: 16:05 까지 = 6300s) 여기서 잡힌다.
      */
-    public function testRegularCloseTtl_RegularSession_StaysShort(): void
+    #[Test]
+    public function test_regular_close_ttl_regular_session_stays_short(): void
     {
         $this->assertSame(300, $this->captureRegularCloseTtl('2026-07-17 14:20:00', 'REGULAR'),
             'REGULAR = 진행가 → 300s 고정');
     }
 
     /**
-     * @test
      * marketState 누락(파싱 실패)도 보수적으로 300초 — 긴 TTL 로 잘못된 값을 박는 것보다 안전.
      */
-    public function testRegularCloseTtl_NullState_StaysShort(): void
+    #[Test]
+    public function test_regular_close_ttl_null_state_stays_short(): void
     {
         $this->assertSame(300, $this->captureRegularCloseTtl('2026-07-17 14:20:00', null),
             'marketState 누락 → 보수적으로 300s');
     }
 
     /**
-     * @test
      * [회귀 가드 — 파급 A] PRE 에 채운 '어제 종가'가 09:30 개장을 넘겨 살아남지 않는다.
      *
      * DashboardController:215-219 는 US 보유의 평가가격으로 regular_close 를 읽는다
@@ -816,7 +807,8 @@ class TossPriceFetcherTest extends TestCase
      *
      * (ArrayStore 만료·TTL 계산 모두 Carbon::now(=setTestNow) 기준이라 실행 시각과 무관하다.)
      */
-    public function testRegularCloseCache_PreEntry_DoesNotSurviveIntoRegularSession(): void
+    #[Test]
+    public function test_regular_close_cache_pre_entry_does_not_survive_into_regular_session(): void
     {
         // ① ET 05:00 프리마켓 — 워머가 regularMarketPrice(=어제 종가 900.0)를 캐싱
         Carbon::setTestNow(Carbon::parse('2026-07-17 05:00:00', 'America/New_York'));
@@ -849,7 +841,7 @@ class TossPriceFetcherTest extends TestCase
     private function getFetcherSource(): string
     {
         $path = __DIR__ . '/../../app/Services/Toss/TossPriceFetcher.php';
-        $src  = file_get_contents($path);
+        $src = file_get_contents($path);
         $this->assertNotFalse($src, 'TossPriceFetcher.php 읽기 실패');
 
         return (string) $src;
@@ -869,8 +861,8 @@ class TossPriceFetcherTest extends TestCase
             return '';
         }
 
-        $depth  = 0;
-        $end    = $openPos;
+        $depth = 0;
+        $end = $openPos;
         $length = strlen($source);
 
         for ($i = $openPos; $i < $length; $i++) {

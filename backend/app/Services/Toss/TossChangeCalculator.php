@@ -92,10 +92,10 @@ class TossChangeCalculator
         MarketSessionService $session,
         ?Client $http = null
     ) {
-        $this->client  = $client;
-        $this->mapper  = $mapper;
+        $this->client = $client;
+        $this->mapper = $mapper;
         $this->session = $session;
-        $this->http    = $http ?? new Client();
+        $this->http = $http ?? new Client;
     }
 
     /**
@@ -105,7 +105,7 @@ class TossChangeCalculator
      * API 실패 시 graceful — change=0, percent=0.
      *
      * @param  string  $tossSymbol  토스 API 심볼 (국내: 005930 등)
-     * @param  float   $lastPrice   토스 /prices 에서 받은 현재가
+     * @param  float  $lastPrice  토스 /prices 에서 받은 현재가
      * @return array{change_amount:float,change_percent:float,prev_close:float|null}
      */
     public function calculate(string $tossSymbol, float $lastPrice): array
@@ -114,19 +114,19 @@ class TossChangeCalculator
 
         if ($prevClose === null || $prevClose <= 0.0) {
             return [
-                'change_amount'  => 0.0,
+                'change_amount' => 0.0,
                 'change_percent' => 0.0,
-                'prev_close'     => null,
+                'prev_close' => null,
             ];
         }
 
-        $changeAmount  = $lastPrice - $prevClose;
+        $changeAmount = $lastPrice - $prevClose;
         $changePercent = ($changeAmount / $prevClose) * 100.0;
 
         return [
-            'change_amount'  => round($changeAmount, 4),
+            'change_amount' => round($changeAmount, 4),
             'change_percent' => round($changePercent, 4),
-            'prev_close'     => $prevClose,
+            'prev_close' => $prevClose,
         ];
     }
 
@@ -136,12 +136,12 @@ class TossChangeCalculator
      * TTL: 당일 KST 자정까지 남은 초.
      * 국내 장(KST 09:00~15:30) 기준 — 토스 1d 봉이 완료된 것만 취득.
      *
-     * @return float|null  prevClose (없으면 null)
+     * @return float|null prevClose (없으면 null)
      */
     public function getPrevClose(string $tossSymbol): ?float
     {
         $cacheKey = self::CACHE_PREFIX . $tossSymbol;
-        $cached   = Cache::get($cacheKey);
+        $cached = Cache::get($cacheKey);
 
         if ($cached !== null) {
             return (float) $cached;
@@ -185,12 +185,12 @@ class TossChangeCalculator
         if ($this->session->getKrSession($nowTs) !== '장마감') {
             return null;  // 정규장 중 → 라이브 lastPrice 유지
         }
-        if (!$this->session->isKrTradingDay($nowTs)) {
+        if (! $this->session->isKrTradingDay($nowTs)) {
             return null;  // 휴장·주말 → 현행(전일 마감) 유지
         }
 
         $cacheKey = self::KR_CLOSE_PREFIX . $tossSymbol;
-        $cached   = Cache::get($cacheKey);
+        $cached = Cache::get($cacheKey);
         if ($cached !== null) {
             return (float) $cached > 0.0 ? (float) $cached : null;
         }
@@ -225,22 +225,22 @@ class TossChangeCalculator
      *   크로스소스 잔차·ET 자정 불연속만 남기 때문. 당일 정규장 봉 유무는 getUsPrevRegularClose 가
      *   $hasTodayRegularBar(참조)로 알려준다(캐시 히트에도 유효 — 값과 함께 캐싱).
      *
-     * @param  string      $tossSymbol  US 앱심볼(=토스심볼, 대문자)
-     * @param  float       $lastPrice   현재가(시간외 포함 라이브가)
-     * @param  float|null  $regularClose 당일 정규장 종가(yahoo_regular_close 캐시). cold 면 null.
+     * @param  string  $tossSymbol  US 앱심볼(=토스심볼, 대문자)
+     * @param  float  $lastPrice  현재가(시간외 포함 라이브가)
+     * @param  float|null  $regularClose  당일 정규장 종가(yahoo_regular_close 캐시). cold 면 null.
      * @return array{change_amount:float,change_percent:float,regular_change_amount:float|null,regular_change_percent:float|null}
      */
     public function calculateUsSplit(string $tossSymbol, float $lastPrice, ?float $regularClose): array
     {
-        $session    = $this->session->getUsSession(Carbon::now()->getTimestamp());
+        $session = $this->session->getUsSession(Carbon::now()->getTimestamp());
         $isExtended = in_array($session, ['프리마켓', '애프터마켓', '주간거래'], true);
 
         if ($isExtended) {
             $hasTodayRegularBar = false;
-            $prevRegular        = $this->getUsPrevRegularClose($tossSymbol, $hasTodayRegularBar);
+            $prevRegular = $this->getUsPrevRegularClose($tossSymbol, $hasTodayRegularBar);
             if ($prevRegular !== null && $prevRegular > 0.0) {
                 // 통합 = 시간외 현재가 vs 직전거래일 정규장 종가
-                $changeAmount  = $lastPrice - $prevRegular;
+                $changeAmount = $lastPrice - $prevRegular;
                 $changePercent = $changeAmount / $prevRegular * 100.0;
 
                 // 정규장 = 당일 정규장 종가 vs 직전거래일 정규장 종가.
@@ -249,17 +249,17 @@ class TossChangeCalculator
                 //   크로스소스 잔차(정규장 −0.1%대 노이즈)만 남고, ET 자정에 기준이 candles[1]→candles[0]로
                 //   전진하며 불연속 점프도 생긴다 → regular_* = null 로 두어 프론트가 1줄로 degrade.
                 //   (regularClose cold 여도 null → 1줄.)
-                $regularChangeAmount  = null;
+                $regularChangeAmount = null;
                 $regularChangePercent = null;
                 if ($hasTodayRegularBar && $regularClose !== null && $regularClose > 0.0) {
-                    $regularChangeAmount  = $regularClose - $prevRegular;
+                    $regularChangeAmount = $regularClose - $prevRegular;
                     $regularChangePercent = ($regularClose - $prevRegular) / $prevRegular * 100.0;
                 }
 
                 return [
-                    'change_amount'          => round($changeAmount, 4),
-                    'change_percent'         => round($changePercent, 2),
-                    'regular_change_amount'  => $regularChangeAmount !== null ? round($regularChangeAmount, 4) : null,
+                    'change_amount' => round($changeAmount, 4),
+                    'change_percent' => round($changePercent, 2),
+                    'regular_change_amount' => $regularChangeAmount !== null ? round($regularChangeAmount, 4) : null,
                     'regular_change_percent' => $regularChangePercent !== null ? round($regularChangePercent, 2) : null,
                 ];
             }
@@ -273,9 +273,9 @@ class TossChangeCalculator
         $base = $this->calculate($tossSymbol, $lastPrice);
 
         return [
-            'change_amount'          => $base['change_amount'],
-            'change_percent'         => round($base['change_percent'], 2),
-            'regular_change_amount'  => null,
+            'change_amount' => $base['change_amount'],
+            'change_percent' => round($base['change_percent'], 2),
+            'regular_change_amount' => null,
             'regular_change_percent' => null,
         ];
     }
@@ -303,10 +303,10 @@ class TossChangeCalculator
         }
 
         $cacheKey = self::PREV_REGULAR_PREFIX . $tossSymbol;
-        $cached   = Cache::get($cacheKey);
+        $cached = Cache::get($cacheKey);
         if (is_array($cached)) {
             $isTodayBar = (bool) ($cached['today_bar'] ?? false);
-            $close      = (float) ($cached['close'] ?? 0.0);
+            $close = (float) ($cached['close'] ?? 0.0);
 
             return $close > 0.0 ? $close : null;  // sentinel(0) → null
         }
@@ -334,15 +334,16 @@ class TossChangeCalculator
         $isTodayBar = false;
         try {
             $response = $this->client->get(self::CANDLES_ENDPOINT, [
-                'symbol'   => $tossSymbol,
+                'symbol' => $tossSymbol,
                 'interval' => '1d',
-                'count'    => 2,
+                'count' => 2,
             ]);
 
             $candles = $this->extractCandles($response);
             if ($candles === null || count($candles) < 2) {
                 // 봉부족 → sentinel 캐싱(짧은 TTL). 핫패스 /candles 재유입 방지.
                 Cache::put($cacheKey, ['close' => 0.0, 'today_bar' => false], self::KR_CLOSE_FAIL_TTL);
+
                 return null;
             }
 
@@ -367,6 +368,7 @@ class TossChangeCalculator
             if ($prevRegular === null || $prevRegular <= 0.0) {
                 Cache::put($cacheKey, ['close' => 0.0, 'today_bar' => false], self::KR_CLOSE_FAIL_TTL);
                 $isTodayBar = false;
+
                 return null;
             }
 
@@ -377,6 +379,7 @@ class TossChangeCalculator
             Log::error("[TossChangeCalculator] {$tossSymbol} US 직전거래일 정규장 종가 조회 실패: " . $e->getMessage());
             Cache::put($cacheKey, ['close' => 0.0, 'today_bar' => false], self::KR_CLOSE_FAIL_TTL);
             $isTodayBar = false;
+
             return null;
         }
     }
@@ -398,24 +401,24 @@ class TossChangeCalculator
     private function fetchTodayKrRegularClose(string $tossSymbol): ?float
     {
         try {
-            $today         = Carbon::now('Asia/Seoul')->toDateString();
+            $today = Carbon::now('Asia/Seoul')->toDateString();
             $plateauCloses = [];  // 등장 순서 유지 (tie → 최초값 우선)
-            $before        = null;
+            $before = null;
 
             // 페이지네이션: TossCandleProvider::fetchCandles 의 before/nextBefore 패턴 재사용.
             //   count 상향은 불가(토스 1m 실측 상한 200 — 초과 시 조용히 0봉) → 소급은 페이지로만.
             for ($page = 0; $page < self::KR_CLOSE_MAX_PAGES; $page++) {
                 $query = [
-                    'symbol'   => $tossSymbol,
+                    'symbol' => $tossSymbol,
                     'interval' => '1m',
-                    'count'    => self::KR_CLOSE_CANDLE_COUNT,
+                    'count' => self::KR_CLOSE_CANDLE_COUNT,
                 ];
                 if ($before !== null) {
                     $query['before'] = $before;
                 }
 
                 $response = $this->client->get(self::CANDLES_ENDPOINT, $query);
-                $candles  = $this->extractCandles($response);
+                $candles = $this->extractCandles($response);
                 if ($candles === null) {
                     break;
                 }
@@ -433,6 +436,7 @@ class TossChangeCalculator
                     $hhmm = (int) $dt->format('Hi');
                     if ($hhmm <= self::KR_REGULAR_CLOSE_HHMM) {
                         $reachedPlateauStart = true;
+
                         continue;
                     }
                     if ($hhmm <= self::KR_CLOSE_PLATEAU_END_HHMM) {
@@ -460,6 +464,7 @@ class TossChangeCalculator
             return $this->modeClose($plateauCloses);
         } catch (\Throwable $e) {
             Log::error("[TossChangeCalculator] {$tossSymbol} 분봉 종가 추출 실패: " . $e->getMessage());
+
             return null;
         }
     }
@@ -474,9 +479,9 @@ class TossChangeCalculator
     {
         try {
             $response = $this->client->get(self::CANDLES_ENDPOINT, [
-                'symbol'   => $tossSymbol,
+                'symbol' => $tossSymbol,
                 'interval' => '1d',
-                'count'    => 2,
+                'count' => 2,
             ]);
 
             $candles = $this->extractCandles($response);
@@ -489,7 +494,7 @@ class TossChangeCalculator
                 return strcmp((string) ($b['timestamp'] ?? ''), (string) ($a['timestamp'] ?? ''));
             });
 
-            $latest     = $candles[0];
+            $latest = $candles[0];
             $latestDate = Carbon::parse((string) ($latest['timestamp'] ?? ''))
                 ->setTimezone('Asia/Seoul')->toDateString();
 
@@ -503,6 +508,7 @@ class TossChangeCalculator
             return $close > 0.0 ? $close : null;
         } catch (\Throwable $e) {
             Log::error("[TossChangeCalculator] {$tossSymbol} 일봉 폴백 종가 조회 실패: " . $e->getMessage());
+
             return null;
         }
     }
@@ -518,7 +524,7 @@ class TossChangeCalculator
             return null;
         }
 
-        $result  = $response['result'] ?? null;
+        $result = $response['result'] ?? null;
         $candles = null;
         if (is_array($result) && isset($result['candles'])) {
             $candles = $result['candles'];
@@ -528,28 +534,28 @@ class TossChangeCalculator
             $candles = $result;
         }
 
-        return (is_array($candles) && !empty($candles)) ? $candles : null;
+        return (is_array($candles) && ! empty($candles)) ? $candles : null;
     }
 
     /**
      * 종가 목록의 최빈값(mode)을 반환. 동률이면 목록 등장순 최초값 우선(이상 봉 방어).
      *
-     * @param array<int,float> $closes  (비어있지 않음 전제)
+     * @param  array<int,float>  $closes  (비어있지 않음 전제)
      */
     private function modeClose(array $closes): float
     {
         $counts = [];
         foreach ($closes as $c) {
-            $key          = (string) $c;
+            $key = (string) $c;
             $counts[$key] = ($counts[$key] ?? 0) + 1;
         }
 
-        $best      = $closes[0];
+        $best = $closes[0];
         $bestCount = -1;
         foreach ($closes as $c) {  // 등장순 순회 + strict > → 동률 시 최초값 유지
             if ($counts[(string) $c] > $bestCount) {
                 $bestCount = $counts[(string) $c];
-                $best      = $c;
+                $best = $c;
             }
         }
 
@@ -585,24 +591,25 @@ class TossChangeCalculator
     {
         try {
             $response = $this->client->get(self::CANDLES_ENDPOINT, [
-                'symbol'   => $tossSymbol,
+                'symbol' => $tossSymbol,
                 'interval' => '1d',
-                'count'    => 2,
+                'count' => 2,
             ]);
 
             if (empty($response)) {
                 Log::warning("[TossChangeCalculator] /candles 빈응답: {$tossSymbol}");
+
                 return null;
             }
 
             // 실측 구조: result.candles 배열
-            $result  = $response['result'] ?? null;
+            $result = $response['result'] ?? null;
             $candles = null;
 
             if (is_array($result) && isset($result['candles'])) {
                 // 정상 응답: { result: { candles: [...] } }
                 $candles = $result['candles'];
-            } elseif (is_array($result) && !isset($result['candles'])) {
+            } elseif (is_array($result) && ! isset($result['candles'])) {
                 // result 가 직접 배열인 경우 (키가 숫자 인덱스) — 호환 처리
                 $candles = $result;
             } elseif (isset($response['candles'])) {
@@ -610,8 +617,9 @@ class TossChangeCalculator
                 $candles = $response['candles'];
             }
 
-            if (!is_array($candles) || count($candles) < 2) {
+            if (! is_array($candles) || count($candles) < 2) {
                 Log::debug("[TossChangeCalculator] {$tossSymbol} 봉 데이터 부족: " . json_encode(array_keys($response)));
+
                 return null;
             }
 
@@ -622,6 +630,7 @@ class TossChangeCalculator
                 // timestamp 는 ISO 8601 문자열 — 문자열 비교로 내림차순 정렬
                 $tA = (string) ($a['timestamp'] ?? '');
                 $tB = (string) ($b['timestamp'] ?? '');
+
                 return strcmp($tB, $tA);  // 내림차순 (최신 먼저)
             });
 
@@ -629,11 +638,11 @@ class TossChangeCalculator
             //   봉 timestamp 는 거래소 로컬 오프셋 포함 ISO8601 → currency 로 거래소 TZ 판별 후 날짜 비교.
             //   currency 결측 시(US 종목인데 필드 누락) 서울TZ 폴백은 오늘봉 판별을 오판→부호반전 위험 →
             //   심볼로 시장 판별해 폴백(TossSymbolMapper 재사용). ponytail: 표준 심볼 분류를 그대로 씀.
-            $currency   = $candles[0]['currency'] ?? null;
+            $currency = $candles[0]['currency'] ?? null;
             $isUsMarket = $currency !== null
                 ? $currency === 'USD'
                 : $this->mapper->market($tossSymbol) === 'US';
-            $tz         = $isUsMarket ? 'America/New_York' : 'Asia/Seoul';
+            $tz = $isUsMarket ? 'America/New_York' : 'Asia/Seoul';
             $latestDate = Carbon::parse((string) ($candles[0]['timestamp'] ?? ''))->setTimezone($tz)->toDateString();
             $isTodayBar = $latestDate === Carbon::now($tz)->toDateString();
 
@@ -650,13 +659,14 @@ class TossChangeCalculator
             } elseif ($this->isMarketLiveNow($isUsMarket)) {
                 $prevCandle = $candles[0];
             } else {
-                $prevCandle   = $candles[1];
+                $prevCandle = $candles[1];
                 $marketClosed = true;
             }
-            $prevClose  = isset($prevCandle['closePrice']) ? (float) $prevCandle['closePrice'] : null;
+            $prevClose = isset($prevCandle['closePrice']) ? (float) $prevCandle['closePrice'] : null;
 
             if ($prevClose === null || $prevClose <= 0.0) {
                 Log::warning("[TossChangeCalculator] {$tossSymbol} prevClose 이상: " . json_encode($prevCandle));
+
                 return null;
             }
 
@@ -709,8 +719,8 @@ class TossChangeCalculator
             //   Yahoo 실패 시 candles 기반 $prevClose 로 graceful 폴백하되, 오염값이므로 아래 TTL 을
             //   KR_CLOSE_FAIL_TTL 로 짧게 잡아 다음 사이클에 자가치유시킨다(장TTL 고착 금지).
             $krYahooFailed = false;
-            if (!$isUsMarket) {
-                $prevTs   = (string) ($prevCandle['timestamp'] ?? '');
+            if (! $isUsMarket) {
+                $prevTs = (string) ($prevCandle['timestamp'] ?? '');
                 $prevDate = $prevTs !== '' ? Carbon::parse($prevTs)->setTimezone('Asia/Seoul')->toDateString() : null;
 
                 $yahooClose = $prevDate !== null ? $this->fetchKrYahooDailyClose($tossSymbol, $prevDate) : null;
@@ -743,15 +753,16 @@ class TossChangeCalculator
 
             Cache::put(self::CACHE_PREFIX . $tossSymbol, $prevClose, $ttl);
 
-            Log::debug("[TossChangeCalculator] prevClose 캐싱", [
-                'symbol'    => $tossSymbol,
+            Log::debug('[TossChangeCalculator] prevClose 캐싱', [
+                'symbol' => $tossSymbol,
                 'prevClose' => $prevClose,
-                'ttl'       => $ttl,
+                'ttl' => $ttl,
             ]);
 
             return $prevClose;
         } catch (\Throwable $e) {
             Log::error("[TossChangeCalculator] {$tossSymbol} 캔들 조회 실패: " . $e->getMessage());
+
             return null;
         }
     }
@@ -794,19 +805,19 @@ class TossChangeCalculator
             $url = self::YAHOO_CHART_URL . urlencode($yahooSymbol) . '?interval=1d&range=1mo';
 
             $res = $this->http->get($url, [
-                'headers'     => [
+                'headers' => [
                     'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 ],
                 'http_errors' => false,
-                'timeout'     => self::YAHOO_TIMEOUT,
+                'timeout' => self::YAHOO_TIMEOUT,
             ]);
 
-            $data       = json_decode((string) $res->getBody(), true);
-            $result     = $data['chart']['result'][0] ?? null;
+            $data = json_decode((string) $res->getBody(), true);
+            $result = $data['chart']['result'][0] ?? null;
             $timestamps = is_array($result) ? ($result['timestamp'] ?? null) : null;
-            $closes     = is_array($result) ? ($result['indicators']['quote'][0]['close'] ?? null) : null;
+            $closes = is_array($result) ? ($result['indicators']['quote'][0]['close'] ?? null) : null;
 
-            if (!is_array($timestamps) || !is_array($closes)) {
+            if (! is_array($timestamps) || ! is_array($closes)) {
                 return null;
             }
 
@@ -823,6 +834,7 @@ class TossChangeCalculator
             return null;  // 해당 날짜 봉 없음(휴장·미상장 접미사)
         } catch (\Throwable $e) {
             Log::warning("[TossChangeCalculator] {$yahooSymbol} Yahoo 일봉 종가 조회 실패: " . $e->getMessage());
+
             return null;
         }
     }
@@ -832,13 +844,18 @@ class TossChangeCalculator
      *
      * 하한 없음(max(...,1)): 300초 하한은 방어가 아니라 '경계를 5분 넘겨 살아남는 stale' 의 원인이다
      * (US 경로에서 같은 이유로 이미 제거·검증됨). 자정 직전 짧은 TTL 은 정상 — 그게 경계다.
+     *
+     * diffInSeconds 를 쓰지 않고 타임스탬프 차를 쓴다(형제 함수 secondsUntilNextUsBoundary·
+     * FxService::secondsUntilNextSeoulFxClose 와 동일): Carbon 3 은 미래 시각에 대한 부호를 뒤집어
+     * 음수를 돌려주므로 max(...,1) 가드가 TTL 을 1초로 만든다 — 예외 없이 값만 틀려 캐시가 매 사이클
+     * 재조회된다. 타임스탬프 차는 Carbon 2·3 양쪽에서 같은 값이라 버전 무관하게 안전하다.
      */
     private function secondsUntilKstMidnight(): int
     {
-        $now      = Carbon::now('Asia/Seoul');
+        $now = Carbon::now('Asia/Seoul');
         $midnight = $now->copy()->endOfDay()->addSecond();  // 다음날 00:00:00 KST
 
-        return max((int) $now->diffInSeconds($midnight, false), 1);
+        return max($midnight->getTimestamp() - $now->getTimestamp(), 1);
     }
 
     /**
@@ -894,7 +911,7 @@ class TossChangeCalculator
      */
     private function secondsUntilNextKrOpen(): int
     {
-        $nowTs  = Carbon::now()->getTimestamp();
+        $nowTs = Carbon::now()->getTimestamp();
         $target = Carbon::now('Asia/Seoul')->setTime(9, 0);
         if ($target->getTimestamp() <= $nowTs) {
             $target->addDay();
@@ -930,9 +947,9 @@ class TossChangeCalculator
      */
     private function secondsUntilNextUsBoundary(): int
     {
-        $now   = Carbon::now('America/New_York');
+        $now = Carbon::now('America/New_York');
         $nowTs = $now->getTimestamp();
-        $next  = null;
+        $next = null;
 
         foreach ([[0, 0], [4, 0], [9, 30], [16, 0], [16, 5], [19, 50], [20, 0]] as [$h, $m]) {
             $t = $now->copy()->setTime($h, $m);

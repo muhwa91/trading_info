@@ -42,7 +42,9 @@ class TossQuoteProvider implements QuoteProviderInterface
     private const FALLBACK_KEY_PREFIX_US = 'kis_last_successful_overseas_price_';
 
     private TossPriceFetcher $priceFetcher;
+
     private TossChangeCalculator $changeCalculator;
+
     private TossSymbolMapper $mapper;
 
     public function __construct(
@@ -50,9 +52,9 @@ class TossQuoteProvider implements QuoteProviderInterface
         TossChangeCalculator $changeCalculator,
         TossSymbolMapper $mapper
     ) {
-        $this->priceFetcher     = $priceFetcher;
+        $this->priceFetcher = $priceFetcher;
         $this->changeCalculator = $changeCalculator;
-        $this->mapper           = $mapper;
+        $this->mapper = $mapper;
     }
 
     /**
@@ -107,8 +109,10 @@ class TossQuoteProvider implements QuoteProviderInterface
                 $fallback = Cache::get($fallbackKey);
                 if ($fallback !== null) {
                     Log::debug("[TossQuoteProvider] KR 폴백 캐시 사용: {$appSymbol}");
+
                     return $this->toQuoteArray($fallback);
                 }
+
                 return null;
             }
 
@@ -116,6 +120,7 @@ class TossQuoteProvider implements QuoteProviderInterface
         } catch (\Throwable $e) {
             Log::error("[TossQuoteProvider] {$appSymbol} KR 조회 예외: " . $e->getMessage());
             $fallback = Cache::get($fallbackKey);
+
             return $fallback !== null ? $this->toQuoteArray($fallback) : null;
         }
     }
@@ -138,8 +143,10 @@ class TossQuoteProvider implements QuoteProviderInterface
                 $fallback = Cache::get($fallbackKey);
                 if ($fallback !== null) {
                     Log::debug("[TossQuoteProvider] US 폴백 캐시 사용: {$appSymbol}");
+
                     return $this->toQuoteArray($fallback);
                 }
+
                 return null;
             }
 
@@ -147,6 +154,7 @@ class TossQuoteProvider implements QuoteProviderInterface
         } catch (\Throwable $e) {
             Log::error("[TossQuoteProvider] {$appSymbol} US 조회 예외: " . $e->getMessage());
             $fallback = Cache::get($fallbackKey);
+
             return $fallback !== null ? $this->toQuoteArray($fallback) : null;
         }
     }
@@ -167,13 +175,13 @@ class TossQuoteProvider implements QuoteProviderInterface
     private function toQuoteArray(array $raw): array
     {
         return [
-            'price'          => (float) ($raw['price'] ?? 0.0),
-            'change_amount'  => (float) ($raw['change_amount'] ?? 0.0),
+            'price' => (float) ($raw['price'] ?? 0.0),
+            'change_amount' => (float) ($raw['change_amount'] ?? 0.0),
             'change_percent' => (float) ($raw['change_percent'] ?? 0.0),
-            'regular_close'  => isset($raw['regular_close']) && (float) $raw['regular_close'] > 0
+            'regular_close' => isset($raw['regular_close']) && (float) $raw['regular_close'] > 0
                 ? (float) $raw['regular_close']
                 : null,
-            'recorded_at'    => now()->toDateTimeString(),
+            'recorded_at' => now()->toDateTimeString(),
         ];
     }
 }

@@ -7,6 +7,7 @@ namespace Tests\Unit;
 use App\Services\Toss\TossApiClient;
 use App\Services\Toss\TossFxProvider;
 use Illuminate\Support\Facades\Log;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
@@ -36,24 +37,24 @@ class TossFxProviderTest extends TestCase
     // 정상 케이스
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testFetchUsdKrw_ValidResponse_ReturnsFloat(): void
+    #[Test]
+    public function test_fetch_usd_krw_valid_response_returns_float(): void
     {
         $client = $this->createMock(TossApiClient::class);
         $client->method('get')->willReturn([
             'result' => [
-                'baseCurrency'   => 'USD',
-                'quoteCurrency'  => 'KRW',
-                'rate'           => '1548.82',
-                'midRate'        => '1548.32',
+                'baseCurrency' => 'USD',
+                'quoteCurrency' => 'KRW',
+                'rate' => '1548.82',
+                'midRate' => '1548.32',
                 'rateChangeType' => 'DOWN',
-                'validFrom'      => '2026-06-24T00:00:00',
-                'validUntil'     => '2026-06-24T23:59:59',
+                'validFrom' => '2026-06-24T00:00:00',
+                'validUntil' => '2026-06-24T23:59:59',
             ],
         ]);
 
         $provider = new TossFxProvider($client);
-        $result   = $provider->fetchUsdKrw();
+        $result = $provider->fetchUsdKrw();
 
         $this->assertNotNull($result);
         $this->assertSame(1548.82, $result['rate']);
@@ -61,8 +62,8 @@ class TossFxProviderTest extends TestCase
         $this->assertArrayHasKey('recorded_at', $result);
     }
 
-    /** @test */
-    public function testFetchUsdKrw_RateWithManyDecimals_RoundedTo4(): void
+    #[Test]
+    public function test_fetch_usd_krw_rate_with_many_decimals_rounded_to4(): void
     {
         $client = $this->createMock(TossApiClient::class);
         $client->method('get')->willReturn([
@@ -70,14 +71,14 @@ class TossFxProviderTest extends TestCase
         ]);
 
         $provider = new TossFxProvider($client);
-        $result   = $provider->fetchUsdKrw();
+        $result = $provider->fetchUsdKrw();
 
         $this->assertNotNull($result);
         $this->assertSame(round(1548.12345678, 4), $result['rate']);
     }
 
-    /** @test */
-    public function testFetchUsdKrw_IntegerRateString_ParsedCorrectly(): void
+    #[Test]
+    public function test_fetch_usd_krw_integer_rate_string_parsed_correctly(): void
     {
         $client = $this->createMock(TossApiClient::class);
         $client->method('get')->willReturn([
@@ -85,7 +86,7 @@ class TossFxProviderTest extends TestCase
         ]);
 
         $provider = new TossFxProvider($client);
-        $result   = $provider->fetchUsdKrw();
+        $result = $provider->fetchUsdKrw();
 
         $this->assertNotNull($result);
         $this->assertSame(1500.0, $result['rate']);
@@ -95,8 +96,8 @@ class TossFxProviderTest extends TestCase
     // 실패 케이스 → null
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testFetchUsdKrw_EmptyResponse_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_usd_krw_empty_response_returns_null(): void
     {
         $client = $this->createMock(TossApiClient::class);
         $client->method('get')->willReturn([]);
@@ -105,8 +106,8 @@ class TossFxProviderTest extends TestCase
         $this->assertNull($provider->fetchUsdKrw());
     }
 
-    /** @test */
-    public function testFetchUsdKrw_MissingResultKey_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_usd_krw_missing_result_key_returns_null(): void
     {
         $client = $this->createMock(TossApiClient::class);
         $client->method('get')->willReturn(['error' => 'some_error']);
@@ -115,8 +116,8 @@ class TossFxProviderTest extends TestCase
         $this->assertNull($provider->fetchUsdKrw());
     }
 
-    /** @test */
-    public function testFetchUsdKrw_MissingRateField_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_usd_krw_missing_rate_field_returns_null(): void
     {
         $client = $this->createMock(TossApiClient::class);
         $client->method('get')->willReturn([
@@ -127,8 +128,8 @@ class TossFxProviderTest extends TestCase
         $this->assertNull($provider->fetchUsdKrw());
     }
 
-    /** @test */
-    public function testFetchUsdKrw_RateZero_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_usd_krw_rate_zero_returns_null(): void
     {
         $client = $this->createMock(TossApiClient::class);
         $client->method('get')->willReturn([
@@ -139,8 +140,8 @@ class TossFxProviderTest extends TestCase
         $this->assertNull($provider->fetchUsdKrw());
     }
 
-    /** @test */
-    public function testFetchUsdKrw_NegativeRate_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_usd_krw_negative_rate_returns_null(): void
     {
         $client = $this->createMock(TossApiClient::class);
         $client->method('get')->willReturn([
@@ -151,8 +152,8 @@ class TossFxProviderTest extends TestCase
         $this->assertNull($provider->fetchUsdKrw());
     }
 
-    /** @test */
-    public function testFetchUsdKrw_EmptyRateString_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_usd_krw_empty_rate_string_returns_null(): void
     {
         $client = $this->createMock(TossApiClient::class);
         $client->method('get')->willReturn([
@@ -163,8 +164,8 @@ class TossFxProviderTest extends TestCase
         $this->assertNull($provider->fetchUsdKrw());
     }
 
-    /** @test */
-    public function testFetchUsdKrw_ClientThrowsException_ReturnsNull(): void
+    #[Test]
+    public function test_fetch_usd_krw_client_throws_exception_returns_null(): void
     {
         $client = $this->createMock(TossApiClient::class);
         $client->method('get')->willThrowException(new \RuntimeException('network error'));

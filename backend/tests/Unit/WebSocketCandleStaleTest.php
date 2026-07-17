@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
-use PHPUnit\Framework\TestCase;
 use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\TestCase;
 
 /**
  * WebSocketAgentServer stale-while-revalidate 단위 테스트.
@@ -37,8 +38,8 @@ class WebSocketCandleStaleTest extends TestCase
     //   (Cache facade 를 사용하지 않고 소스 텍스트로 로직을 검증한다.)
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testRestoreStaleYahooCachePutsLastValueWithShortTtl(): void
+    #[Test]
+    public function test_restore_stale_yahoo_cache_puts_last_value_with_short_ttl(): void
     {
         $source = $this->getServerSource();
 
@@ -69,8 +70,8 @@ class WebSocketCandleStaleTest extends TestCase
         );
 
         // Cache::has 로 원본 캐시 생존 여부를 먼저 체크해야 함
-        $hasPosInMethod  = strpos($methodSrc, 'Cache::has');
-        $putPosInMethod  = strpos($methodSrc, 'Cache::put');
+        $hasPosInMethod = strpos($methodSrc, 'Cache::has');
+        $putPosInMethod = strpos($methodSrc, 'Cache::put');
         $this->assertNotFalse($hasPosInMethod, 'restoreStaleYahooCache 에 Cache::has 가 없음');
         $this->assertLessThan(
             $putPosInMethod,
@@ -85,10 +86,10 @@ class WebSocketCandleStaleTest extends TestCase
     //   소스에서 _last 가 null 일 때 Cache::put 을 건너뛰는 조건 분기를 확인한다.
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testRestoreStaleYahooCacheDoesNothingOnColdStart(): void
+    #[Test]
+    public function test_restore_stale_yahoo_cache_does_nothing_on_cold_start(): void
     {
-        $source    = $this->getServerSource();
+        $source = $this->getServerSource();
         $methodSrc = $this->extractMethodSource($source, 'restoreStaleYahooCache');
 
         $this->assertNotEmpty($methodSrc, 'restoreStaleYahooCache 메서드를 찾을 수 없음');
@@ -112,10 +113,10 @@ class WebSocketCandleStaleTest extends TestCase
     //     고정 90초 패턴 대신 변수 참조 패턴($freshnessTtl)을 검증한다.
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testRefreshYahooCacheUsesFreshnessMarker(): void
+    #[Test]
+    public function test_refresh_yahoo_cache_uses_freshness_marker(): void
     {
-        $source    = $this->getServerSource();
+        $source = $this->getServerSource();
         $methodSrc = $this->extractMethodSource($source, 'refreshYahooCache');
 
         $this->assertNotEmpty($methodSrc, 'refreshYahooCache 메서드를 찾을 수 없음');
@@ -178,10 +179,10 @@ class WebSocketCandleStaleTest extends TestCase
     //   refreshYahooCache 호출보다 앞에 위치한다.
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testSendOccursBeforeYahooRefreshInPushRealtimeData(): void
+    #[Test]
+    public function test_send_occurs_before_yahoo_refresh_in_push_realtime_data(): void
     {
-        $source    = $this->getServerSource();
+        $source = $this->getServerSource();
         $methodSrc = $this->extractMethodSource($source, 'pushRealtimeData');
 
         $this->assertNotEmpty($methodSrc, 'pushRealtimeData 메서드를 찾을 수 없음');
@@ -227,9 +228,10 @@ class WebSocketCandleStaleTest extends TestCase
     private function getServerSource(): string
     {
         $path = __DIR__ . '/../../app/Console/Commands/WebSocketAgentServer.php';
-        $src  = file_get_contents($path);
+        $src = file_get_contents($path);
         $this->assertNotFalse($src, 'WebSocketAgentServer.php 읽기 실패');
-        return (string)$src;
+
+        return (string) $src;
     }
 
     /**
@@ -246,8 +248,8 @@ class WebSocketCandleStaleTest extends TestCase
             return '';
         }
 
-        $depth  = 0;
-        $end    = $openPos;
+        $depth = 0;
+        $end = $openPos;
         $length = strlen($source);
 
         for ($i = $openPos; $i < $length; $i++) {

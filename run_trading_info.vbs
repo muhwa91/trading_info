@@ -6,10 +6,27 @@ strBase = objFSO.GetParentFolderName(WScript.ScriptFullName)
 strBackend = strBase & "\backend"
 strFrontend = strBase & "\frontend"
 
+' PHP 실행 파일 — 경로는 php_path.txt 한 곳에서만 정의(전 스크립트 공용).
+'   PATH 의 php(XAMPP 7.4)로는 artisan 이 실행되지 않으므로 폴백하지 않고 중단한다.
+Dim strPhp
+strPhp = ""
+If objFSO.FileExists(strBase & "\php_path.txt") Then
+    strPhp = Trim(objFSO.OpenTextFile(strBase & "\php_path.txt", 1).ReadLine)
+End If
+If strPhp = "" Or Not objFSO.FileExists(strPhp) Then
+    MsgBox "PHP 실행 파일을 찾을 수 없습니다: " & strPhp & vbCrLf & vbCrLf & _
+           "php_path.txt 에 PHP 8.4+ php.exe 의 전체 경로를 적어주세요 (예: C:\php84\php.exe).", 16, "trading_info"
+    WScript.Quit 1
+End If
+
 Function IsPortOpen(port)
     Dim intResult
-    ' netstat 으로 해당 포트 사용 여부 확인 (창 숨김, 종료까지 대기)
-    intResult = objShell.Run("cmd.exe /c netstat -ano | findstr /c "":"" " & port, 0, True)
+    ' netstat 으로 해당 포트가 "LISTENING" 중인지 확인 (창 숨김, 종료까지 대기)
+    '   · /c:":8000" 처럼 콜론을 붙여야 함 — /c ":" 8000 은 findstr 가 8000 을 "파일명"으로 읽어
+    '     항상 실패(=포트 안 열림)로 판정 → 서버를 매번 중복 기동했음.
+    '   · LISTENING 필터 필수 — 접속 종료 후 남는 TIME_WAIT 소켓(127.0.0.1:8000)도 ":8000" 에
+    '     매치돼, 서버가 떠 있지 않은데도 "이미 실행 중"으로 오판해 기동을 건너뛰었음.
+    intResult = objShell.Run("cmd.exe /c netstat -ano | findstr /c:"":" & port & """ | findstr LISTENING", 0, True)
     ' findstr 가 매치하면 종료코드 0
     If intResult = 0 Then
         IsPortOpen = True
@@ -20,12 +37,12 @@ End Function
 
 ' 1. Backend API (Port 8000)
 If Not IsPortOpen(8000) Then
-    objShell.Run "cmd.exe /c cd /d """ & strBackend & """ && php artisan serve --port=8000", 0, False
+    objShell.Run "cmd.exe /c cd /d """ & strBackend & """ && """ & strPhp & """ artisan serve --port=8000", 0, False
 End If
 
 ' 2. WebSocket Server (Port 8080)
 If Not IsPortOpen(8080) Then
-    objShell.Run "cmd.exe /c cd /d """ & strBackend & """ && php artisan agent:serve", 0, False
+    objShell.Run "cmd.exe /c cd /d """ & strBackend & """ && """ & strPhp & """ artisan agent:serve", 0, False
 End If
 
 ' 3. Frontend Dev Server (Port 5173)

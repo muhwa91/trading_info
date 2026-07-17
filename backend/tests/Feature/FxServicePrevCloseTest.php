@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
@@ -63,66 +64,66 @@ class FxServicePrevCloseTest extends TestCase
         parent::tearDown();
     }
 
-    /** @test */
-    public function testGetUsdKrw_FreshDbRow_IncludesCachedPrevClose(): void
+    #[Test]
+    public function test_get_usd_krw_fresh_db_row_includes_cached_prev_close(): void
     {
         Cache::put(self::PREV_CLOSE_KEY, 1505.91, 60);
 
         // 신선한 DB 값 → 외부 호출(토스) 없이 조기 반환 경로
         ExchangeRate::create([
             'from_currency' => 'USD',
-            'to_currency'   => 'KRW',
-            'rate'          => 1496.3,
-            'recorded_at'   => Carbon::now(),
+            'to_currency' => 'KRW',
+            'rate' => 1496.3,
+            'recorded_at' => Carbon::now(),
         ]);
 
         $fxProvider = $this->createMock(TossFxProvider::class);
         $fxProvider->expects($this->never())->method('fetchUsdKrw');
 
         $service = new FxService($fxProvider);
-        $result  = $service->getUsdKrw();
+        $result = $service->getUsdKrw();
 
         $this->assertNotNull($result);
         $this->assertArrayHasKey('prev_close', $result);
         $this->assertSame(1505.91, $result['prev_close']);
     }
 
-    /** @test */
-    public function testGetUsdKrw_TossFetchedPath_IncludesPrevClose(): void
+    #[Test]
+    public function test_get_usd_krw_toss_fetched_path_includes_prev_close(): void
     {
         Cache::put(self::PREV_CLOSE_KEY, 1505.91, 60);
 
         // DB 값 없음 → 토스 취득 경로
         $fxProvider = $this->createMock(TossFxProvider::class);
         $fxProvider->method('fetchUsdKrw')->willReturn([
-            'rate'        => 1496.3,
+            'rate' => 1496.3,
             'recorded_at' => Carbon::now()->toDateTimeString(),
-            'source'      => 'Toss_ExchangeRate',
+            'source' => 'Toss_ExchangeRate',
         ]);
 
         $service = new FxService($fxProvider);
-        $result  = $service->getUsdKrw();
+        $result = $service->getUsdKrw();
 
         $this->assertNotNull($result);
         $this->assertSame(1496.3, $result['rate']);
         $this->assertSame(1505.91, $result['prev_close']);
     }
 
-    /** @test */
-    public function testGetUsdKrw_NonPositiveCachedPrevClose_ReturnsNull(): void
+    #[Test]
+    public function test_get_usd_krw_non_positive_cached_prev_close_returns_null(): void
     {
         // 캐시에 비양수(파싱 실패/이상값) → prev_close 는 null 로 graceful 처리
         Cache::put(self::PREV_CLOSE_KEY, 0, 60);
 
         ExchangeRate::create([
             'from_currency' => 'USD',
-            'to_currency'   => 'KRW',
-            'rate'          => 1496.3,
-            'recorded_at'   => Carbon::now(),
+            'to_currency' => 'KRW',
+            'rate' => 1496.3,
+            'recorded_at' => Carbon::now(),
         ]);
 
         $service = new FxService($this->createMock(TossFxProvider::class));
-        $result  = $service->getUsdKrw();
+        $result = $service->getUsdKrw();
 
         $this->assertNotNull($result);
         $this->assertNull($result['prev_close']);
@@ -166,14 +167,14 @@ class FxServicePrevCloseTest extends TestCase
     {
         $handler = function () use ($barsByKstTime): FulfilledPromise {
             $timestamps = [];
-            $closes     = [];
+            $closes = [];
             foreach ($barsByKstTime as $at => $close) {
                 $timestamps[] = Carbon::parse($at, 'Asia/Seoul')->getTimestamp();
-                $closes[]     = $close;
+                $closes[] = $close;
             }
 
             $body = json_encode(['chart' => ['result' => [[
-                'timestamp'  => $timestamps,
+                'timestamp' => $timestamps,
                 'indicators' => ['quote' => [['close' => $closes]]],
             ]]]]);
 
@@ -194,7 +195,7 @@ class FxServicePrevCloseTest extends TestCase
         $session->method('isKrTradingDay')->willReturnCallback(function (int $ts): bool {
             $day = Carbon::createFromTimestamp($ts, 'Asia/Seoul');
 
-            return !$day->isWeekend() && !in_array($day->toDateString(), self::KR_HOLIDAYS, true);
+            return ! $day->isWeekend() && ! in_array($day->toDateString(), self::KR_HOLIDAYS, true);
         });
 
         return $session;
@@ -209,9 +210,9 @@ class FxServicePrevCloseTest extends TestCase
     {
         $fxProvider = $this->createMock(TossFxProvider::class);
         $fxProvider->method('fetchUsdKrw')->willReturn([
-            'rate'        => 1484.1,
+            'rate' => 1484.1,
             'recorded_at' => '2026-07-17 09:00:00',
-            'source'      => 'Toss_ExchangeRate',
+            'source' => 'Toss_ExchangeRate',
         ]);
 
         return new FxService($fxProvider, $this->yahooFxClient($barsByKstTime), $this->fxSession());
@@ -234,14 +235,14 @@ class FxServicePrevCloseTest extends TestCase
     }
 
     /**
-     * @test
      * ⚠️ 핵심 함정 가드: 15:30 '각인' 봉을 집으면 안 된다.
      *
      * [15:00,15:30) 봉 close = 15:30 직전 마지막 호가 = 서울 종가(1479.78).
      * [15:30,16:00) 봉 close = 16:00 값(1478.28) — 30분 밀린 값.
      * 두 봉을 다 주고 일부러 값을 다르게 둬, 어느 봉을 집었는지가 반환값에 그대로 드러나게 한다.
      */
-    public function testPrevClose_PicksBarEndingAt1530_NotThe1530StampedBar(): void
+    #[Test]
+    public function test_prev_close_picks_bar_ending_at1530_not_the1530_stamped_bar(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-17 09:00:00', 'Asia/Seoul'));
 
@@ -259,11 +260,11 @@ class FxServicePrevCloseTest extends TestCase
     }
 
     /**
-     * @test
      * 경계 직전(목 15:29:59): 오늘 종가는 아직 없다 → 기준일 = 전 영업일 7/15(수).
      * TTL 은 1초 뒤 15:30 까지 — 경계를 넘겨 사는 캐시가 곧 stale 이다(하한 300초 금지).
      */
-    public function testPrevClose_ThursdayOneSecondBefore1530_UsesWednesdayClose(): void
+    #[Test]
+    public function test_prev_close_thursday_one_second_before1530_uses_wednesday_close(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-16 15:29:59', 'Asia/Seoul'));
         $ttl = $this->captureTtl();
@@ -278,12 +279,12 @@ class FxServicePrevCloseTest extends TestCase
     }
 
     /**
-     * @test
      * 경계 직후(목 15:30:00): 그 순간 오늘 종가가 확정 → 기준일 = 7/16(목). 위 테스트와 1초 차이로 값이 갈린다.
      *
      * 다음 경계는 7/17(금 제헌절 휴장)·주말을 건너뛴 7/20(월) 15:30 — 나흘간 기준일은 7/16 하나로 고정된다.
      */
-    public function testPrevClose_ThursdayExactly1530_UsesThursdayClose(): void
+    #[Test]
+    public function test_prev_close_thursday_exactly1530_uses_thursday_close(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-16 15:30:00', 'Asia/Seoul'));
         $ttl = $this->captureTtl();
@@ -298,10 +299,10 @@ class FxServicePrevCloseTest extends TestCase
     }
 
     /**
-     * @test
      * 금요일 종가 뒤: 다음 경계는 토·일을 건너뛴 월요일 15:30 — 주말 내내 기준일은 7/24(금) 하나로 고정.
      */
-    public function testPrevClose_FridayAfterClose_TtlSkipsWeekendToMonday(): void
+    #[Test]
+    public function test_prev_close_friday_after_close_ttl_skips_weekend_to_monday(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-24 15:31:00', 'Asia/Seoul'));
         $ttl = $this->captureTtl();
@@ -316,10 +317,10 @@ class FxServicePrevCloseTest extends TestCase
     }
 
     /**
-     * @test
      * 토요일 정오: 15:30 이 안 지났지만 토요일은 영업일이 아니다 → 금요일(7/24)로 소급. 경계는 월요일.
      */
-    public function testPrevClose_Saturday_UsesFridayClose(): void
+    #[Test]
+    public function test_prev_close_saturday_uses_friday_close(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-25 12:00:00', 'Asia/Seoul'));
         $ttl = $this->captureTtl();
@@ -334,13 +335,13 @@ class FxServicePrevCloseTest extends TestCase
     }
 
     /**
-     * @test
      * 월요일 개장 전: 오늘 종가는 아직 없고 어제·그제는 주말 → 금요일(7/24)까지 이틀을 거슬러야 한다.
      *
      * 주말 스킵에 실제로 이빨이 있는 유일한 기준일 케이스다 — 토요일 케이스는 '토−1일=금' 이라
      * 영업일 스캔이 통째로 빠져도 우연히 통과한다(뮤테이션으로 실측). 여기선 −1일이면 일요일(봉 없음)이라 반드시 깨진다.
      */
-    public function testPrevClose_MondayBeforeClose_SkipsWeekendBackToFriday(): void
+    #[Test]
+    public function test_prev_close_monday_before_close_skips_weekend_back_to_friday(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-27 09:00:00', 'Asia/Seoul'));
         $ttl = $this->captureTtl();
@@ -355,11 +356,11 @@ class FxServicePrevCloseTest extends TestCase
     }
 
     /**
-     * @test
      * 설연휴 한복판(2/17 화, 휴장): 2/16~2/18 휴장 + 주말을 건너뛰어 2/13(금)까지 소급. 경계는 2/19(목).
      * 단순 '-1일' 로는 절대 안 나오는 값이다.
      */
-    public function testPrevClose_MidSeollalHoliday_FallsBackToFridayBeforeHoliday(): void
+    #[Test]
+    public function test_prev_close_mid_seollal_holiday_falls_back_to_friday_before_holiday(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-02-17 12:00:00', 'Asia/Seoul'));
         $ttl = $this->captureTtl();
@@ -374,10 +375,10 @@ class FxServicePrevCloseTest extends TestCase
     }
 
     /**
-     * @test
      * range 불변성: 봉 개수(range)가 달라도 15:00 봉이 같으면 같은 값. 옛 chartPreviousClose 는 여기서 46원 흔들렸다.
      */
-    public function testPrevClose_SameValueRegardlessOfRangeWidth(): void
+    #[Test]
+    public function test_prev_close_same_value_regardless_of_range_width(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-17 09:00:00', 'Asia/Seoul'));
 
@@ -403,11 +404,11 @@ class FxServicePrevCloseTest extends TestCase
     }
 
     /**
-     * @test
      * Yahoo 실패 → prev_close 는 null(graceful, 환율 자체는 계속 나온다) + 실패분 TTL 은 120초.
      * 실패를 장TTL(다음 15:30)로 박으면 최대 며칠간 '전일대비 없음' 이 고착된다.
      */
-    public function testPrevClose_YahooFails_NullAndShortTtl(): void
+    #[Test]
+    public function test_prev_close_yahoo_fails_null_and_short_ttl(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-17 09:00:00', 'Asia/Seoul'));
         $ttl = $this->captureTtl();
@@ -422,13 +423,13 @@ class FxServicePrevCloseTest extends TestCase
     }
 
     /**
-     * @test
      * 불변식: 캐시가 살아있는 동안 기준일은 안 바뀐다 — ref(T) == ref(T + ttl(T) - 1s).
      *
      * 즉 TTL 이 경계를 넘지 않는다(stale 0). 7월 2주 + 설연휴 구간을 1시간 격자로 훑는다.
      * 날짜마다 종가를 다르게 둬(1400 + 통산일) 기준일이 반환값에 1:1로 드러나게 했다.
      */
-    public function testPrevClose_RefDateIsConstantWhileCacheLives(): void
+    #[Test]
+    public function test_prev_close_ref_date_is_constant_while_cache_lives(): void
     {
         $bars = [];
         foreach ([['2026-02-09', '2026-02-27'], ['2026-07-06', '2026-07-31']] as $span) {
@@ -441,7 +442,7 @@ class FxServicePrevCloseTest extends TestCase
         $ttl = $this->captureTtl();
 
         foreach ([['2026-02-13 00:00', '2026-02-23 00:00'], ['2026-07-13 00:00', '2026-07-27 00:00']] as $span) {
-            $t   = Carbon::parse($span[0], 'Asia/Seoul');
+            $t = Carbon::parse($span[0], 'Asia/Seoul');
             $end = Carbon::parse($span[1], 'Asia/Seoul');
 
             for (; $t->lte($end); $t->addHour()) {

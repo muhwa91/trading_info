@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Services\KrStockResolver;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -32,27 +33,27 @@ class KrStockResolverPureTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->resolver = new KrStockResolver();
+        $this->resolver = new KrStockResolver;
     }
 
     // ──────────────────────────────────────────────────────────────
     // 1. normalize: .KS 접미사 제거
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testNormalizeRemovesKsSuffix(): void
+    #[Test]
+    public function test_normalize_removes_ks_suffix(): void
     {
         $this->assertSame('005930', $this->resolver->normalize('005930.KS'));
     }
 
-    /** @test */
-    public function testNormalizeRemovesKqSuffix(): void
+    #[Test]
+    public function test_normalize_removes_kq_suffix(): void
     {
         $this->assertSame('0167A0', $this->resolver->normalize('0167A0.KQ'));
     }
 
-    /** @test */
-    public function testNormalizeCaseInsensitiveSuffix(): void
+    #[Test]
+    public function test_normalize_case_insensitive_suffix(): void
     {
         // 소문자 .ks 도 제거
         $this->assertSame('005930', $this->resolver->normalize('005930.ks'));
@@ -60,28 +61,28 @@ class KrStockResolverPureTest extends TestCase
         $this->assertSame('000660', $this->resolver->normalize('000660.kq'));
     }
 
-    /** @test */
-    public function testNormalizeUppercasesResult(): void
+    #[Test]
+    public function test_normalize_uppercases_result(): void
     {
         // 알파벳 포함 코드: 소문자 입력이어도 대문자로
         $this->assertSame('0167A0', $this->resolver->normalize('0167a0.KQ'));
     }
 
-    /** @test */
-    public function testNormalizeNoSuffixPassThrough(): void
+    #[Test]
+    public function test_normalize_no_suffix_pass_through(): void
     {
         // 접미사 없는 6자리 코드 → 그대로(대문자화)
         $this->assertSame('005930', $this->resolver->normalize('005930'));
     }
 
-    /** @test */
-    public function testNormalizeTrimsWhitespace(): void
+    #[Test]
+    public function test_normalize_trims_whitespace(): void
     {
         $this->assertSame('005930', $this->resolver->normalize('  005930.KS  '));
     }
 
-    /** @test */
-    public function testNormalizeSpecialAlphanumericCode(): void
+    #[Test]
+    public function test_normalize_special_alphanumeric_code(): void
     {
         // 0167AO (오 아님 영문 O) 접미사 포함
         $this->assertSame('0167AO', $this->resolver->normalize('0167AO.KS'));

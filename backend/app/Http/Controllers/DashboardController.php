@@ -84,15 +84,19 @@ class DashboardController extends Controller
     /** session 별 배지 레이블 */
     private const SESSION_BADGE = [
         'regular' => 'REG',
-        'pre'     => 'PRE',
-        'after'   => 'AFT',
+        'pre' => 'PRE',
+        'after' => 'AFT',
     ];
 
-    private PriceService         $priceService;
-    private FxService            $fxService;
-    private PnlService           $pnlService;
+    private PriceService $priceService;
+
+    private FxService $fxService;
+
+    private PnlService $pnlService;
+
     private MarketSessionService $sessionService;
-    private TossStockMaster      $stockMaster;
+
+    private TossStockMaster $stockMaster;
 
     public function __construct(
         PriceService $priceService,
@@ -101,22 +105,19 @@ class DashboardController extends Controller
         MarketSessionService $sessionService,
         TossStockMaster $stockMaster
     ) {
-        $this->priceService   = $priceService;
-        $this->fxService      = $fxService;
-        $this->pnlService     = $pnlService;
+        $this->priceService = $priceService;
+        $this->fxService = $fxService;
+        $this->pnlService = $pnlService;
         $this->sessionService = $sessionService;
-        $this->stockMaster    = $stockMaster;
+        $this->stockMaster = $stockMaster;
     }
 
     /**
      * GET /api/portfolio/dashboard
-     *
-     * @param  Request $request
-     * @return JsonResponse
      */
     public function dashboard(Request $request): JsonResponse
     {
-        $session = $this->resolveSession((string)$request->query('session', 'regular'));
+        $session = $this->resolveSession((string) $request->query('session', 'regular'));
 
         // ── 1. 보유/관심 종목 합집합 stock_id 확보 ─────────────────
         /** @var \Illuminate\Database\Eloquent\Collection<int, Portfolio> $holdings */
@@ -132,14 +133,14 @@ class DashboardController extends Controller
             ->orderBy('sort_order')
             ->get();
 
-        $holdingStockIds   = $holdings->pluck('stock_id')->map('intval')->toArray();
+        $holdingStockIds = $holdings->pluck('stock_id')->map('intval')->toArray();
         $watchlistStockIds = $watchlistItems->pluck('stock_id')->map('intval')->toArray();
 
         $allStockIds = array_values(array_unique(array_merge($holdingStockIds, $watchlistStockIds)));
 
         // ── 2. 시세 일괄 갱신 + 환율 확보 ──────────────────────────
         $prices = [];
-        if (!empty($allStockIds)) {
+        if (! empty($allStockIds)) {
             try {
                 $prices = $this->priceService->refresh($allStockIds, $session);
             } catch (\Throwable $e) {
@@ -162,7 +163,7 @@ class DashboardController extends Controller
                 $allSymbols[] = $item->stock->symbol;
             }
         }
-        if (!empty($allSymbols)) {
+        if (! empty($allSymbols)) {
             try {
                 $this->stockMaster->getInfoBatch(array_unique($allSymbols));
             } catch (\Throwable $e) {
@@ -171,7 +172,7 @@ class DashboardController extends Controller
         }
 
         $fxData = null;
-        $fxNow  = 1.0;
+        $fxNow = 1.0;
         try {
             $fxData = $this->fxService->getUsdKrw();
             if ($fxData !== null) {
@@ -182,8 +183,8 @@ class DashboardController extends Controller
         }
 
         // ── 3. 보유 손익 계산 ────────────────────────────────────────
-        $holdingRows  = [];
-        $evaluations  = [];
+        $holdingRows = [];
+        $evaluations = [];
         $sessionBadge = self::SESSION_BADGE[$session] ?? 'REG';
 
         foreach ($holdings as $holding) {
@@ -192,23 +193,23 @@ class DashboardController extends Controller
                 continue;
             }
 
-            $stockId      = (int)$holding->stock_id;
-            $priceData    = $prices[$stockId] ?? null;
-            $hasPrice     = ($priceData !== null && isset($priceData['price']));
-            $currentPrice = $hasPrice ? (float)$priceData['price'] : 0.0;
+            $stockId = (int) $holding->stock_id;
+            $priceData = $prices[$stockId] ?? null;
+            $hasPrice = ($priceData !== null && isset($priceData['price']));
+            $currentPrice = $hasPrice ? (float) $priceData['price'] : 0.0;
 
             // US 종목 전용: 정규장 마지막 종가 (KIS base 필드).
             // KR 종목은 regular_close_price = null (장전 손익 없음).
             $regularClosePrice = null;
             if ($hasPrice && $stock->market === 'US') {
-                $regularClosePrice = isset($priceData['regular_close']) && (float)$priceData['regular_close'] > 0
-                    ? (float)$priceData['regular_close']
+                $regularClosePrice = isset($priceData['regular_close']) && (float) $priceData['regular_close'] > 0
+                    ? (float) $priceData['regular_close']
                     : $currentPrice; // base 없으면 current 로 폴백 → 장전 손익 = 0
             }
 
-            $qty    = (float)$holding->quantity;
-            $avg    = (float)$holding->average_price;
-            $fxBuy  = (float)$holding->avg_fx_rate;
+            $qty = (float) $holding->quantity;
+            $avg = (float) $holding->average_price;
+            $fxBuy = (float) $holding->avg_fx_rate;
 
             $evaluation = null;
             if ($hasPrice) {
@@ -221,7 +222,7 @@ class DashboardController extends Controller
                     $qty,
                     $avg,
                     $fxBuy,
-                    (string)$stock->currency,
+                    (string) $stock->currency,
                     $evalPrice,
                     $fxNow
                 );
@@ -229,37 +230,37 @@ class DashboardController extends Controller
             }
 
             $row = [
-                'portfolio_id'        => (int)$holding->id,
-                'stock_id'            => $stockId,
-                'symbol'              => $stock->symbol,
-                'name'                => $stock->name,
-                'market'              => $stock->market,
-                'currency'            => $stock->currency,
-                'type'                => $stock->type,
-                'quantity'            => $holding->quantity,
-                'average_price'       => $holding->average_price,
-                'avg_fx_rate'         => $holding->avg_fx_rate,
-                'current_price'       => $hasPrice ? $currentPrice : null,
+                'portfolio_id' => (int) $holding->id,
+                'stock_id' => $stockId,
+                'symbol' => $stock->symbol,
+                'name' => $stock->name,
+                'market' => $stock->market,
+                'currency' => $stock->currency,
+                'type' => $stock->type,
+                'quantity' => $holding->quantity,
+                'average_price' => $holding->average_price,
+                'avg_fx_rate' => $holding->avg_fx_rate,
+                'current_price' => $hasPrice ? $currentPrice : null,
                 'regular_close_price' => $regularClosePrice,
-                'session_badge'       => $sessionBadge,
-                'live_session'        => $this->resolveHoldingSession($stock),
-                'price_available'     => $hasPrice,
+                'session_badge' => $sessionBadge,
+                'live_session' => $this->resolveHoldingSession($stock),
+                'price_available' => $hasPrice,
             ];
 
             if ($evaluation !== null) {
-                $row['marketValueKRW']  = $evaluation['marketValueKRW'];
-                $row['costKRW']         = $evaluation['costKRW'];
-                $row['profitKRW']       = $evaluation['profitKRW'];
-                $row['priceProfitKRW']  = $evaluation['priceProfitKRW'];
-                $row['fxProfitKRW']     = $evaluation['fxProfitKRW'];
-                $row['profitRate']      = $evaluation['profitRate'];
+                $row['marketValueKRW'] = $evaluation['marketValueKRW'];
+                $row['costKRW'] = $evaluation['costKRW'];
+                $row['profitKRW'] = $evaluation['profitKRW'];
+                $row['priceProfitKRW'] = $evaluation['priceProfitKRW'];
+                $row['fxProfitKRW'] = $evaluation['fxProfitKRW'];
+                $row['profitRate'] = $evaluation['profitRate'];
             } else {
-                $row['marketValueKRW']  = null;
-                $row['costKRW']         = null;
-                $row['profitKRW']       = null;
-                $row['priceProfitKRW']  = null;
-                $row['fxProfitKRW']     = null;
-                $row['profitRate']      = null;
+                $row['marketValueKRW'] = null;
+                $row['costKRW'] = null;
+                $row['profitKRW'] = null;
+                $row['priceProfitKRW'] = null;
+                $row['fxProfitKRW'] = null;
+                $row['profitRate'] = null;
             }
 
             $holdingRows[] = $row;
@@ -275,37 +276,37 @@ class DashboardController extends Controller
                 continue;
             }
 
-            $stockId   = (int)$item->stock_id;
+            $stockId = (int) $item->stock_id;
             $priceData = $prices[$stockId] ?? null;
-            $hasPrice  = ($priceData !== null && isset($priceData['price']));
+            $hasPrice = ($priceData !== null && isset($priceData['price']));
 
             $watchlistRows[] = [
-                'watchlist_id'   => (int)$item->id,
-                'stock_id'       => $stockId,
-                'symbol'         => $stock->symbol,
-                'name'           => $stock->name,
-                'market'         => $stock->market,
-                'currency'       => $stock->currency,
-                'type'           => $stock->type,
-                'sort_order'     => $item->sort_order,
-                'current_price'  => $hasPrice ? (float)$priceData['price'] : null,
-                'change_amount'  => $hasPrice ? (float)$priceData['change_amount'] : null,
-                'change_percent' => $hasPrice ? (float)$priceData['change_percent'] : null,
+                'watchlist_id' => (int) $item->id,
+                'stock_id' => $stockId,
+                'symbol' => $stock->symbol,
+                'name' => $stock->name,
+                'market' => $stock->market,
+                'currency' => $stock->currency,
+                'type' => $stock->type,
+                'sort_order' => $item->sort_order,
+                'current_price' => $hasPrice ? (float) $priceData['price'] : null,
+                'change_amount' => $hasPrice ? (float) $priceData['change_amount'] : null,
+                'change_percent' => $hasPrice ? (float) $priceData['change_percent'] : null,
                 'price_available' => $hasPrice,
             ];
         }
 
         return response()->json([
-            'session'       => $session,
+            'session' => $session,
             'exchange_rate' => $fxData !== null ? [
-                'USD_KRW'    => $fxData['rate'],
+                'USD_KRW' => $fxData['rate'],
                 'recorded_at' => $fxData['recorded_at'],
-                'source'     => $fxData['source'] ?? null,
+                'source' => $fxData['source'] ?? null,
                 'prev_close' => $fxData['prev_close'] ?? null,
             ] : null,
-            'summary'       => $summary,
-            'holdings'      => $holdingRows,
-            'watchlist'     => $watchlistRows,
+            'summary' => $summary,
+            'holdings' => $holdingRows,
+            'watchlist' => $watchlistRows,
         ]);
     }
 
@@ -315,6 +316,7 @@ class DashboardController extends Controller
     private function resolveSession(string $raw): string
     {
         $allowed = ['regular', 'pre', 'after'];
+
         return in_array($raw, $allowed, true) ? $raw : 'regular';
     }
 
@@ -332,6 +334,7 @@ class DashboardController extends Controller
         if ($stock->market === 'KR') {
             return $this->sessionService->getKrSession($now);
         }
+
         return '장마감';
     }
 }

@@ -16,17 +16,17 @@ class AddUniqueToPricesAndExchangeRates extends Migration
 {
     public function up(): void
     {
-        $driver = \Illuminate\Support\Facades\DB::getDriverName();
+        $driver = Illuminate\Support\Facades\DB::getDriverName();
 
         // prices: 중복 제거 후 unique 추가
         // MySQL 전용 multi-table DELETE — SQLite(:memory: 테스트)에서는 건너뜀
         if ($driver === 'mysql') {
-            \Illuminate\Support\Facades\DB::statement(
-                "DELETE p1 FROM prices p1
+            Illuminate\Support\Facades\DB::statement(
+                'DELETE p1 FROM prices p1
                  INNER JOIN prices p2
                  ON p1.stock_id = p2.stock_id
                  AND p1.session = p2.session
-                 AND p1.updated_at < p2.updated_at"
+                 AND p1.updated_at < p2.updated_at'
             );
         }
 
@@ -36,12 +36,12 @@ class AddUniqueToPricesAndExchangeRates extends Migration
 
         // exchange_rates: 중복 제거 후 unique 추가
         if ($driver === 'mysql') {
-            \Illuminate\Support\Facades\DB::statement(
-                "DELETE e1 FROM exchange_rates e1
+            Illuminate\Support\Facades\DB::statement(
+                'DELETE e1 FROM exchange_rates e1
                  INNER JOIN exchange_rates e2
                  ON e1.from_currency = e2.from_currency
                  AND e1.to_currency = e2.to_currency
-                 AND e1.recorded_at < e2.recorded_at"
+                 AND e1.recorded_at < e2.recorded_at'
             );
         }
 

@@ -8,6 +8,14 @@ set "BASE=%~dp0"
 set "BACKEND=%BASE%backend"
 set "FRONTEND=%BASE%frontend"
 
+:: PHP 실행 파일 — 경로는 php_path.txt 한 곳에서만 정의(전 스크립트 공용).
+::   PATH 의 php 를 쓰지 않는 이유: XAMPP php 7.4 가 먼저 잡혀 artisan 이 아예 뜨지 않음
+::   (Composer detected issues in your platform). 조용히 폴백하지 말고 여기서 멈춘다.
+set "PHP="
+if exist "%BASE%php_path.txt" set /p PHP=<"%BASE%php_path.txt"
+if not defined PHP goto :php_missing
+if not exist "%PHP%" goto :php_missing
+
 echo ====================================================
 echo  trading_info 주식 모니터링 서비스 시작 중...
 echo ====================================================
@@ -21,14 +29,16 @@ timeout /t 1 /nobreak > nul
 
 :: 1. 백엔드 API 서버 (Port 8000) — 위에서 정리했으므로 무조건 새로 시작
 echo [..] Laravel API 서버 시작 중...
-start "trading_info API" /min cmd /c "cd /d "%BACKEND%" && php artisan serve --port=8000"
+start "trading_info API" /min cmd /c "cd /d "%BACKEND%" && "%PHP%" artisan serve --port=8000"
 
 :: 2. 백엔드 웹소켓 서버 (Port 8080) — 위에서 정리했으므로 무조건 새로 시작
 echo [..] WebSocket 에이전트 서버 시작 중...
-start "trading_info WS" /min cmd /c "cd /d "%BACKEND%" && php artisan agent:serve"
+start "trading_info WS" /min cmd /c "cd /d "%BACKEND%" && "%PHP%" artisan agent:serve"
 
 :: 3. 프론트엔드 개발 서버 (Port 5173) — node 프로세스라 정리 대상 아님, 중복 실행만 방지
-netstat -o -n -a | findstr :5173 > nul
+::    LISTENING 필터 필수 — 접속 종료 후 남는 TIME_WAIT 소켓도 ":5173" 에 매치돼,
+::    Vite 가 떠 있지 않은데 "이미 실행 중"으로 오판하고 건너뛸 수 있음.
+netstat -o -n -a | findstr :5173 | findstr LISTENING > nul
 if %errorlevel% equ 0 (
     echo [OK] Vite 개발 서버가 이미 실행 중입니다. ^(Port 5173^)
 ) else (
@@ -48,3 +58,14 @@ echo  실행이 완료되었습니다. 이 창은 5초 후 닫힙니다.
 echo ====================================================
 timeout /t 5 > nul
 endlocal
+exit /b 0
+
+:php_missing
+echo.
+echo [!] PHP 실행 파일을 찾을 수 없습니다: "%PHP%"
+echo     php_path.txt 에 PHP 8.4+ php.exe 의 전체 경로를 적어주세요 ^(예: C:\php84\php.exe^).
+echo     ※ PATH 의 php^(XAMPP 7.4^)로는 artisan 이 실행되지 않아 폴백하지 않습니다.
+echo.
+pause
+endlocal
+exit /b 1

@@ -49,12 +49,13 @@ class TossStockMaster
 
     /** securityType → 내부 type 소문자 매핑 */
     private const TYPE_MAP = [
-        'STOCK'   => 'stock',
-        'ETF'     => 'etf',
+        'STOCK' => 'stock',
+        'ETF' => 'etf',
         'FUTURES' => 'stock', // 선물은 stock 폴백
     ];
 
     private TossApiClient $client;
+
     private TossSymbolMapper $mapper;
 
     public function __construct(TossApiClient $client, TossSymbolMapper $mapper)
@@ -72,9 +73,9 @@ class TossStockMaster
      *
      * 캐시 미스 시 /stocks 를 단건 호출(권장: 사전에 getInfoBatch 로 워밍).
      *
-     * @param  string $appSymbol  앱 내부 심볼 (예: 005930.KS, TSLA)
+     * @param  string  $appSymbol  앱 내부 심볼 (예: 005930.KS, TSLA)
      * @return array{name:string, type:string, currency:string, isEtf:bool}|null
-     *         지수(INDEX) 는 null 반환.
+     *                                                                           지수(INDEX) 는 null 반환.
      */
     public function getInfo(string $appSymbol): ?array
     {
@@ -107,9 +108,9 @@ class TossStockMaster
      * 컨트롤러는 이 메서드로 목록 전체를 한 번에 워밍한 뒤
      * getName()/getType() 을 호출하면 모두 캐시 히트가 된다.
      *
-     * @param  string[] $appSymbols  앱 내부 심볼 배열
+     * @param  string[]  $appSymbols  앱 내부 심볼 배열
      * @return array<string, array{name:string, type:string, currency:string, isEtf:bool}>
-     *         키 = 앱 내부 심볼(tossSymbol), 지수/실패는 제외됨.
+     *                                                                                     키 = 앱 내부 심볼(tossSymbol), 지수/실패는 제외됨.
      */
     public function getInfoBatch(array $appSymbols): array
     {
@@ -127,12 +128,12 @@ class TossStockMaster
         }
 
         // 2) 캐시 히트 분리
-        $result      = [];
+        $result = [];
         $missSymbols = [];
 
         foreach ($tossSymbolMap as $tossSymbol => $appSymbol) {
             $cacheKey = self::CACHE_PREFIX . $tossSymbol;
-            $cached   = Cache::get($cacheKey);
+            $cached = Cache::get($cacheKey);
             if ($cached !== null) {
                 $result[$tossSymbol] = $cached;
             } else {
@@ -141,9 +142,9 @@ class TossStockMaster
         }
 
         // 3) 캐시 미스 심볼만 배치 호출
-        if (!empty($missSymbols)) {
+        if (! empty($missSymbols)) {
             $fetched = $this->fetchFromToss($missSymbols);
-            $result  = array_merge($result, $fetched);
+            $result = array_merge($result, $fetched);
         }
 
         return $result;
@@ -151,25 +152,23 @@ class TossStockMaster
 
     /**
      * 종목명 반환 (폴백 = 심볼 그대로).
-     *
-     * @param  string $appSymbol
-     * @return string
      */
     public function getName(string $appSymbol): string
     {
         $info = $this->getInfo($appSymbol);
+
         return $info['name'] ?? $appSymbol;
     }
 
     /**
      * 종목 타입 반환 (폴백 = 'stock').
      *
-     * @param  string $appSymbol
-     * @return string  'stock' | 'etf'
+     * @return string 'stock' | 'etf'
      */
     public function getType(string $appSymbol): string
     {
         $info = $this->getInfo($appSymbol);
+
         return $info['type'] ?? 'stock';
     }
 
@@ -182,7 +181,7 @@ class TossStockMaster
      *
      * 결과를 캐시에 저장하고 tossSymbol => info 맵으로 반환.
      *
-     * @param  string[] $tossSymbols  정규화된 토스 심볼 목록
+     * @param  string[]  $tossSymbols  정규화된 토스 심볼 목록
      * @return array<string, array{name:string, type:string, currency:string, isEtf:bool}>
      */
     private function fetchFromToss(array $tossSymbols): array
@@ -209,16 +208,17 @@ class TossStockMaster
                 Log::warning('[TossStockMaster] /stocks 응답 비어 있음', [
                     'symbols' => implode(',', array_slice($chunk, 0, 5)) . (count($chunk) > 5 ? '...' : ''),
                 ]);
+
                 continue;
             }
 
             foreach ($items as $item) {
-                if (!isset($item['symbol'])) {
+                if (! isset($item['symbol'])) {
                     continue;
                 }
 
                 $tossSymbol = (string) $item['symbol'];
-                $info       = $this->parseItem($item);
+                $info = $this->parseItem($item);
 
                 Cache::put(self::CACHE_PREFIX . $tossSymbol, $info, self::CACHE_TTL_SECONDS);
                 $result[$tossSymbol] = $info;
@@ -231,16 +231,16 @@ class TossStockMaster
     /**
      * 토스 /stocks 단일 항목을 내부 형식으로 변환.
      *
-     * @param  array<string, mixed> $item
+     * @param  array<string, mixed>  $item
      * @return array{name:string, type:string, currency:string, isEtf:bool}
      */
     private function parseItem(array $item): array
     {
         // 이름: 한글명 우선, 없으면 영문명, 없으면 심볼
         $name = '';
-        if (!empty($item['name'])) {
+        if (! empty($item['name'])) {
             $name = (string) $item['name'];
-        } elseif (!empty($item['englishName'])) {
+        } elseif (! empty($item['englishName'])) {
             $name = (string) $item['englishName'];
         } else {
             $name = (string) ($item['symbol'] ?? '');
@@ -257,10 +257,10 @@ class TossStockMaster
         $currency = strtoupper((string) ($item['currency'] ?? 'USD'));
 
         return [
-            'name'     => $name,
-            'type'     => $type,
+            'name' => $name,
+            'type' => $type,
             'currency' => $currency,
-            'isEtf'    => $isEtf,
+            'isEtf' => $isEtf,
         ];
     }
 }

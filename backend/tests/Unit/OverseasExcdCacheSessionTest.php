@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -28,24 +29,24 @@ class OverseasExcdCacheSessionTest extends TestCase
     {
         parent::setUp();
         $path = __DIR__ . '/../../app/Http/Controllers/StockController.php';
-        $src  = file_get_contents($path);
+        $src = file_get_contents($path);
         $this->assertNotFalse($src, 'StockController.php 읽기 실패');
-        $this->src = (string)$src;
+        $this->src = (string) $src;
     }
 
     // ──────────────────────────────────────────────────────────────────────
     // 1. fetchOverseasPriceFromKis 삭제 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testRegularSessionExchangeListExcludesBlueOcean(): void
+    #[Test]
+    public function test_regular_session_exchange_list_excludes_blue_ocean(): void
     {
         // KIS 완전 제거 후: fetchOverseasPriceFromKis 메서드가 없어야 한다.
         $this->assertStringNotContainsString(
             'function fetchOverseasPriceFromKis',
             $this->src,
-            "fetchOverseasPriceFromKis 메서드가 StockController 에 남아있음 — " .
-            "KIS 완전 제거 후 이 메서드는 삭제되어야 한다."
+            'fetchOverseasPriceFromKis 메서드가 StockController 에 남아있음 — ' .
+            'KIS 완전 제거 후 이 메서드는 삭제되어야 한다.'
         );
     }
 
@@ -53,15 +54,15 @@ class OverseasExcdCacheSessionTest extends TestCase
     // 2. fetchMinuteFromKis 삭제 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testExcdCacheKeyIsSeparatedBySession(): void
+    #[Test]
+    public function test_excd_cache_key_is_separated_by_session(): void
     {
         // KIS 완전 제거 후: fetchMinuteFromKis 메서드가 없어야 한다.
         $this->assertStringNotContainsString(
             'function fetchMinuteFromKis',
             $this->src,
-            "fetchMinuteFromKis 메서드가 StockController 에 남아있음 — " .
-            "KIS 완전 제거 후 이 메서드는 삭제되어야 한다."
+            'fetchMinuteFromKis 메서드가 StockController 에 남아있음 — ' .
+            'KIS 완전 제거 후 이 메서드는 삭제되어야 한다.'
         );
     }
 
@@ -69,15 +70,15 @@ class OverseasExcdCacheSessionTest extends TestCase
     // 3. getAccessToken 삭제 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testPremarketCacheDoesNotAffectRegularSessionLookup(): void
+    #[Test]
+    public function test_premarket_cache_does_not_affect_regular_session_lookup(): void
     {
         // KIS 완전 제거 후: StockController::getAccessToken 메서드가 없어야 한다.
         $this->assertStringNotContainsString(
             'function getAccessToken',
             $this->src,
-            "getAccessToken 메서드가 StockController 에 남아있음 — " .
-            "KIS 완전 제거 후 이 메서드는 삭제되어야 한다."
+            'getAccessToken 메서드가 StockController 에 남아있음 — ' .
+            'KIS 완전 제거 후 이 메서드는 삭제되어야 한다.'
         );
     }
 }

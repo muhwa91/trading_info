@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Services\PnlService;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -30,15 +31,15 @@ class PnlServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new PnlService();
+        $this->service = new PnlService;
     }
 
     // ──────────────────────────────────────────────────────────────
     // 1. 분해 검증: priceProfitKRW + fxProfitKRW === profitKRW
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testDecompositionHoldsForKrStock(): void
+    #[Test]
+    public function test_decomposition_holds_for_kr_stock(): void
     {
         $result = $this->service->evaluate(
             10.0,       // quantity
@@ -57,8 +58,8 @@ class PnlServiceTest extends TestCase
         );
     }
 
-    /** @test */
-    public function testDecompositionHoldsForUsStock(): void
+    #[Test]
+    public function test_decomposition_holds_for_us_stock(): void
     {
         $result = $this->service->evaluate(
             5.0,        // quantity
@@ -81,8 +82,8 @@ class PnlServiceTest extends TestCase
     // 2. 한국장 환율손익 = 0
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKrStockHasZeroFxProfit(): void
+    #[Test]
+    public function test_kr_stock_has_zero_fx_profit(): void
     {
         $result = $this->service->evaluate(
             20.0,       // quantity
@@ -106,8 +107,8 @@ class PnlServiceTest extends TestCase
     // 3. USD 종목 환율 상승 → 환율손익 양수
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testUsdStockFxRiseGivesPositiveFxProfit(): void
+    #[Test]
+    public function test_usd_stock_fx_rise_gives_positive_fx_profit(): void
     {
         // 매입환율 1300, 현재환율 1400, 주가 변동 없음
         // fxProfitKRW = (fxCur - fxBuy) * avg * qty = (1400-1300)*100*10 = 100,000
@@ -130,8 +131,8 @@ class PnlServiceTest extends TestCase
     // 4. USD 종목 환율 하락 → 환율손익 음수
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testUsdStockFxFallGivesNegativeFxProfit(): void
+    #[Test]
+    public function test_usd_stock_fx_fall_gives_negative_fx_profit(): void
     {
         // 매입환율 1400, 현재환율 1300, 주가 변동 없음
         // fxProfitKRW = (fxCur - fxBuy) * avg * qty = (1300-1400)*100*10 = -100,000
@@ -154,8 +155,8 @@ class PnlServiceTest extends TestCase
     // 5. profitRate 검증
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testProfitRateCalculation(): void
+    #[Test]
+    public function test_profit_rate_calculation(): void
     {
         // avg=100, price=110 → profitRate = 0.1
         $result = $this->service->evaluate(
@@ -170,8 +171,8 @@ class PnlServiceTest extends TestCase
         $this->assertEqualsWithDelta(0.1, $result['profitRate'], 0.000001);
     }
 
-    /** @test */
-    public function testProfitRateIsCurrencyAgnosticForUsd(): void
+    #[Test]
+    public function test_profit_rate_is_currency_agnostic_for_usd(): void
     {
         // avg=$200, price=$220 → profitRate = 0.1 (환율과 무관)
         $result = $this->service->evaluate(
@@ -190,8 +191,8 @@ class PnlServiceTest extends TestCase
     // 6. 경계: avg=0 → profitRate=0 (division by zero 방지)
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testZeroAvgPriceReturnsZeroProfitRate(): void
+    #[Test]
+    public function test_zero_avg_price_returns_zero_profit_rate(): void
     {
         $result = $this->service->evaluate(
             1.0,    // quantity
@@ -209,11 +210,11 @@ class PnlServiceTest extends TestCase
     // 7. summarize() 합산
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testSummarizeAggregatesCorrectly(): void
+    #[Test]
+    public function test_summarize_aggregates_correctly(): void
     {
-        $evalKr = $this->service->evaluate(10.0, 70000.0, 1.0,    'KRW', 75000.0, 1380.0);
-        $evalUs = $this->service->evaluate(5.0,  200.0,   1300.0, 'USD', 210.0,   1380.0);
+        $evalKr = $this->service->evaluate(10.0, 70000.0, 1.0, 'KRW', 75000.0, 1380.0);
+        $evalUs = $this->service->evaluate(5.0, 200.0, 1300.0, 'USD', 210.0, 1380.0);
 
         $summary = $this->service->summarize([$evalKr, $evalUs]);
 
@@ -238,8 +239,8 @@ class PnlServiceTest extends TestCase
         );
     }
 
-    /** @test */
-    public function testSummarizeEmptyReturnsZeros(): void
+    #[Test]
+    public function test_summarize_empty_returns_zeros(): void
     {
         $summary = $this->service->summarize([]);
 
@@ -252,16 +253,16 @@ class PnlServiceTest extends TestCase
     // 8. 구체 수치 검증 (KR 종목)
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testConcreteValuesKrStock(): void
+    #[Test]
+    public function test_concrete_values_kr_stock(): void
     {
         // 삼성전자 10주, 평단 75,000원, 현재가 78,000원
         $result = $this->service->evaluate(10.0, 75000.0, 1.0, 'KRW', 78000.0, 1.0);
 
         $this->assertEqualsWithDelta(780000.0, $result['marketValueKRW'], 0.01);
-        $this->assertEqualsWithDelta(750000.0, $result['costKRW'],        0.01);
-        $this->assertEqualsWithDelta(30000.0,  $result['profitKRW'],      0.01);
-        $this->assertEqualsWithDelta(30000.0,  $result['priceProfitKRW'], 0.01);
+        $this->assertEqualsWithDelta(750000.0, $result['costKRW'], 0.01);
+        $this->assertEqualsWithDelta(30000.0, $result['profitKRW'], 0.01);
+        $this->assertEqualsWithDelta(30000.0, $result['priceProfitKRW'], 0.01);
         $this->assertSame(0.0, $result['fxProfitKRW']);
         $this->assertEqualsWithDelta(0.04, $result['profitRate'], 0.000001);
     }
@@ -270,8 +271,8 @@ class PnlServiceTest extends TestCase
     // 9. 구체 수치 검증 (USD 종목)
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testConcreteValuesUsdStock(): void
+    #[Test]
+    public function test_concrete_values_usd_stock(): void
     {
         // AAPL 5주, 평단 $200, 현재가 $210, 매입환율 1300, 현재환율 1380
         $result = $this->service->evaluate(5.0, 200.0, 1300.0, 'USD', 210.0, 1380.0);

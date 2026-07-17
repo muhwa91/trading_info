@@ -10,6 +10,7 @@ use App\Services\Toss\TossApiClient;
 use App\Services\Toss\TossStockMaster;
 use App\Services\Toss\TossSymbolMapper;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
@@ -71,9 +72,9 @@ class KrStockResolverDbTest extends TestCase
         });
 
         // accessor 가 부르는 app(TossStockMaster) 가 대역 클라이언트 버전을 받도록 교체.
-        $this->app->instance(TossStockMaster::class, new TossStockMaster($client, new TossSymbolMapper()));
+        $this->app->instance(TossStockMaster::class, new TossStockMaster($client, new TossSymbolMapper));
 
-        $this->resolver = new KrStockResolver();
+        $this->resolver = new KrStockResolver;
     }
 
     /**
@@ -97,8 +98,8 @@ class KrStockResolverDbTest extends TestCase
     // 1. 접미사 포함 심볼 → 정규화 코드로 DB 저장
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testResolveOrCreateStripsKsSuffix(): void
+    #[Test]
+    public function test_resolve_or_create_strips_ks_suffix(): void
     {
         $stock = $this->resolver->resolveOrCreate('005930.KS', '삼성전자');
 
@@ -107,8 +108,8 @@ class KrStockResolverDbTest extends TestCase
         $this->assertDatabaseHas('stocks', ['symbol' => '005930', 'market' => 'KR']);
     }
 
-    /** @test */
-    public function testResolveOrCreateStripsKqSuffix(): void
+    #[Test]
+    public function test_resolve_or_create_strips_kq_suffix(): void
     {
         $stock = $this->resolver->resolveOrCreate('0167A0.KQ', 'SOL AI반도체TOP2플러스');
 
@@ -120,11 +121,11 @@ class KrStockResolverDbTest extends TestCase
     // 2. 접미사 없는 심볼 → 이미 있는 Stock 반환(중복 없음)
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testResolveOrCreateNoSuffixReusesSameStock(): void
+    #[Test]
+    public function test_resolve_or_create_no_suffix_reuses_same_stock(): void
     {
         // 접미사 있는 버전으로 먼저 생성
-        $first  = $this->resolver->resolveOrCreate('005930.KS', '삼성전자');
+        $first = $this->resolver->resolveOrCreate('005930.KS', '삼성전자');
         // 접미사 없는 버전으로 다시 조회
         $second = $this->resolver->resolveOrCreate('005930', '삼성전자');
 
@@ -136,8 +137,8 @@ class KrStockResolverDbTest extends TestCase
     // 3. name 출처 — 토스 마스터 (nameHint 는 반영되지 않는다)
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testNameHintIsStoredAsName(): void
+    #[Test]
+    public function test_name_hint_is_stored_as_name(): void
     {
         // nameHint 를 넘겨도 무시된다 — resolveOrCreate()는 exchange 만 저장하고
         // name 은 Stock accessor 가 토스 마스터에서 가져온다(nameHint 는 죽은 파라미터).
@@ -146,8 +147,8 @@ class KrStockResolverDbTest extends TestCase
         $this->assertSame('테스트종목-HYNIX', $stock->name, 'nameHint 가 아니라 토스 마스터 값이어야 한다');
     }
 
-    /** @test */
-    public function testNameHintNullFallsBackToMap(): void
+    #[Test]
+    public function test_name_hint_null_falls_back_to_map(): void
     {
         // nameHint 없이도 name 은 토스 마스터에서 온다 (KR_NAME_MAP 은 Phase 7 에서 삭제됨).
         $stock = $this->resolver->resolveOrCreate('005930', null);
@@ -155,8 +156,8 @@ class KrStockResolverDbTest extends TestCase
         $this->assertSame('테스트종목-XYZ', $stock->name);
     }
 
-    /** @test */
-    public function testNameHintNullUnknownCodeFallsBackToCode(): void
+    #[Test]
+    public function test_name_hint_null_unknown_code_falls_back_to_code(): void
     {
         // 토스가 모르는 코드 → 마스터 응답 없음
         $stock = $this->resolver->resolveOrCreate('999999.KS', null);
@@ -172,8 +173,8 @@ class KrStockResolverDbTest extends TestCase
     //      type 이 대역에서 왔음(네트워크 미접촉)을 드러낸다.
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKodexNameCreatesEtfType(): void
+    #[Test]
+    public function test_kodex_name_creates_etf_type(): void
     {
         $stock = $this->resolver->resolveOrCreate('069500.KS', 'KODEX 200');
 
@@ -181,8 +182,8 @@ class KrStockResolverDbTest extends TestCase
         $this->assertSame('테스트ETF-KODEX', $stock->name);
     }
 
-    /** @test */
-    public function testSolNameCreatesEtfType(): void
+    #[Test]
+    public function test_sol_name_creates_etf_type(): void
     {
         $stock = $this->resolver->resolveOrCreate('0167A0.KQ', 'SOL AI반도체TOP2플러스');
 
@@ -190,8 +191,8 @@ class KrStockResolverDbTest extends TestCase
         $this->assertSame('테스트ETF-SOL', $stock->name);
     }
 
-    /** @test */
-    public function testTigerNameCreatesEtfType(): void
+    #[Test]
+    public function test_tiger_name_creates_etf_type(): void
     {
         $stock = $this->resolver->resolveOrCreate('102110.KS', 'TIGER 200');
 
@@ -199,8 +200,8 @@ class KrStockResolverDbTest extends TestCase
         $this->assertSame('테스트ETF-TIGER', $stock->name);
     }
 
-    /** @test */
-    public function testOrdinaryNameCreatesStockType(): void
+    #[Test]
+    public function test_ordinary_name_creates_stock_type(): void
     {
         $stock = $this->resolver->resolveOrCreate('005930.KS', '삼성전자');
 
@@ -212,16 +213,16 @@ class KrStockResolverDbTest extends TestCase
     // 7. market='KR', currency='KRW' 고정
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testMarketIsAlwaysKr(): void
+    #[Test]
+    public function test_market_is_always_kr(): void
     {
         $stock = $this->resolver->resolveOrCreate('035420.KS', 'NAVER');
 
         $this->assertSame('KR', $stock->market);
     }
 
-    /** @test */
-    public function testCurrencyIsAlwaysKrw(): void
+    #[Test]
+    public function test_currency_is_always_krw(): void
     {
         $stock = $this->resolver->resolveOrCreate('035420.KS', 'NAVER');
 
@@ -232,16 +233,16 @@ class KrStockResolverDbTest extends TestCase
     // 8-9. exchange 추론 (접미사 폴백 — .KS→KOSPI, .KQ→KOSDAQ)
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKsSuffixGivesKospiExchange(): void
+    #[Test]
+    public function test_ks_suffix_gives_kospi_exchange(): void
     {
         $stock = $this->resolver->resolveOrCreate('999991.KS', '테스트종목A');
 
         $this->assertSame('KOSPI', $stock->exchange);
     }
 
-    /** @test */
-    public function testKqSuffixGivesKosdaqExchange(): void
+    #[Test]
+    public function test_kq_suffix_gives_kosdaq_exchange(): void
     {
         $stock = $this->resolver->resolveOrCreate('999992.KQ', '테스트종목B');
 
@@ -252,12 +253,12 @@ class KrStockResolverDbTest extends TestCase
     // 10. 동일 코드 두 번 호출 → DB row 1개 (firstOrCreate)
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testFirstOrCreateDoesNotDuplicate(): void
+    #[Test]
+    public function test_first_or_create_does_not_duplicate(): void
     {
         $this->resolver->resolveOrCreate('005930.KS', '삼성전자');
         $this->resolver->resolveOrCreate('005930.KS', '삼성전자');
-        $this->resolver->resolveOrCreate('005930',    '삼성전자');
+        $this->resolver->resolveOrCreate('005930', '삼성전자');
 
         $count = Stock::where('symbol', '005930')->where('market', 'KR')->count();
         $this->assertSame(1, $count, '같은 코드로 여러 번 호출해도 row 1개');
@@ -268,8 +269,8 @@ class KrStockResolverDbTest extends TestCase
     // (KR/US 심볼이 stocks 테이블에 공존 가능한지 확인)
     // ──────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKrAndUsStockCanCoexistInStocksTable(): void
+    #[Test]
+    public function test_kr_and_us_stock_can_coexist_in_stocks_table(): void
     {
         // KR 종목
         $kr = $this->resolver->resolveOrCreate('005930.KS', '삼성전자');
@@ -278,8 +279,8 @@ class KrStockResolverDbTest extends TestCase
         $us = Stock::firstOrCreate(
             ['symbol' => 'MU', 'market' => 'US'],
             [
-                'name'     => '마이크론 테크놀로지',
-                'type'     => 'stock',
+                'name' => '마이크론 테크놀로지',
+                'type' => 'stock',
                 'currency' => 'USD',
                 'exchange' => 'NAS',
             ]
@@ -296,8 +297,8 @@ class KrStockResolverDbTest extends TestCase
         $this->assertSame('USD', $us->currency);
     }
 
-    /** @test */
-    public function testUsLazyCreateFirstOrCreate(): void
+    #[Test]
+    public function test_us_lazy_create_first_or_create(): void
     {
         // 같은 US 심볼 두 번 firstOrCreate → 1개만
         Stock::firstOrCreate(

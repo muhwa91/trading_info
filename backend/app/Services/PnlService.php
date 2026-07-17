@@ -21,12 +21,12 @@ class PnlService
     /**
      * 보유 종목 1건의 평가손익을 계산한다.
      *
-     * @param  float  $quantity      보유 수량
+     * @param  float  $quantity  보유 수량
      * @param  float  $averagePrice  매입 평균가(종목 원래 통화)
-     * @param  float  $avgFxRate     매입 시 환율(USD 종목: USD→KRW, KR 종목: 1)
-     * @param  string $currency      'KRW' | 'USD'
+     * @param  float  $avgFxRate  매입 시 환율(USD 종목: USD→KRW, KR 종목: 1)
+     * @param  string  $currency  'KRW' | 'USD'
      * @param  float  $currentPrice  현재가(종목 원래 통화, 선택 session)
-     * @param  float  $fxNow         현재 USD→KRW 환율 (KR 종목은 1 로 넘겨도 무관)
+     * @param  float  $fxNow  현재 USD→KRW 환율 (KR 종목은 1 로 넘겨도 무관)
      * @return array{
      *   marketValueKRW: float,
      *   costKRW: float,
@@ -73,11 +73,11 @@ class PnlService
 
         return [
             'marketValueKRW' => round($marketValueKRW, 2),
-            'costKRW'        => round($costKRW, 2),
-            'profitKRW'      => round($profitKRW, 2),
+            'costKRW' => round($costKRW, 2),
+            'profitKRW' => round($profitKRW, 2),
             'priceProfitKRW' => round($priceProfitKRW, 2),
-            'fxProfitKRW'    => round($fxProfitKRW, 2),
-            'profitRate'     => round($profitRate, 6),
+            'fxProfitKRW' => round($fxProfitKRW, 2),
+            'profitRate' => round($profitRate, 6),
         ];
     }
 
@@ -103,29 +103,29 @@ class PnlService
      */
     public function summarize(array $evaluations): array
     {
-        $totalMarketValue  = 0.0;
-        $totalCost         = 0.0;
-        $totalProfit       = 0.0;
-        $totalPriceProfit  = 0.0;
-        $totalFxProfit     = 0.0;
+        $totalMarketValue = 0.0;
+        $totalCost = 0.0;
+        $totalProfit = 0.0;
+        $totalPriceProfit = 0.0;
+        $totalFxProfit = 0.0;
 
         foreach ($evaluations as $e) {
             $totalMarketValue += $e['marketValueKRW'];
-            $totalCost        += $e['costKRW'];
-            $totalProfit      += $e['profitKRW'];
+            $totalCost += $e['costKRW'];
+            $totalProfit += $e['profitKRW'];
             $totalPriceProfit += $e['priceProfitKRW'];
-            $totalFxProfit    += $e['fxProfitKRW'];
+            $totalFxProfit += $e['fxProfitKRW'];
         }
 
         $totalProfitRate = $totalCost > 0.0 ? $totalProfit / $totalCost : 0.0;
 
         return [
-            'totalMarketValueKRW'  => round($totalMarketValue, 2),
-            'totalCostKRW'         => round($totalCost, 2),
-            'totalProfitKRW'       => round($totalProfit, 2),
-            'totalPriceProfitKRW'  => round($totalPriceProfit, 2),
-            'totalFxProfitKRW'     => round($totalFxProfit, 2),
-            'totalProfitRate'      => round($totalProfitRate, 6),
+            'totalMarketValueKRW' => round($totalMarketValue, 2),
+            'totalCostKRW' => round($totalCost, 2),
+            'totalProfitKRW' => round($totalProfit, 2),
+            'totalPriceProfitKRW' => round($totalPriceProfit, 2),
+            'totalFxProfitKRW' => round($totalFxProfit, 2),
+            'totalProfitRate' => round($totalProfitRate, 6),
         ];
     }
 }

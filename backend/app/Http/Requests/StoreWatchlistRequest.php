@@ -22,9 +22,9 @@ class StoreWatchlistRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'stock_id'   => 'nullable|integer|exists:stocks,id',
-            'symbol'     => 'nullable|string|max:20',
-            'market'     => 'nullable|string|in:KR,US',
+            'stock_id' => 'nullable|integer|exists:stocks,id',
+            'symbol' => 'nullable|string|max:20',
+            'market' => 'nullable|string|in:KR,US',
             'sort_order' => 'nullable|integer|min:0',
         ];
     }

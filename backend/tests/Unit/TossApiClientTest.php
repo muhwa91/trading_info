@@ -12,7 +12,7 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
@@ -44,18 +44,18 @@ class TossApiClientTest extends TestCase
      * TossApiClient 는 생성자에서 Guzzle Client 를 new 하므로,
      * 리플렉션으로 httpClient 프로퍼티를 교체한다.
      *
-     * @param  array<\GuzzleHttp\Psr7\Response|\Exception>  $responses
+     * @param  array<Response|\Exception>  $responses
      */
     private function makeClientWithMock(array $responses): TossApiClient
     {
-        $mock    = new MockHandler($responses);
+        $mock = new MockHandler($responses);
         $handler = HandlerStack::create($mock);
-        $http    = new Client(['handler' => $handler]);
+        $http = new Client(['handler' => $handler]);
 
-        $client = new TossApiClient();
+        $client = new TossApiClient;
 
         // private $httpClient 교체 (PHP 7.4 리플렉션)
-        $ref  = new \ReflectionClass($client);
+        $ref = new \ReflectionClass($client);
         $prop = $ref->getProperty('httpClient');
         $prop->setAccessible(true);
         $prop->setValue($client, $http);
@@ -68,8 +68,9 @@ class TossApiClientTest extends TestCase
      */
     private function makeClientException(int $status, string $body = '{}'): ClientException
     {
-        $request  = new Request('GET', '/test');
+        $request = new Request('GET', '/test');
         $response = new Response($status, [], $body);
+
         return new ClientException("HTTP {$status}", $request, $response);
     }
 
@@ -77,8 +78,8 @@ class TossApiClientTest extends TestCase
     // 401 자동복구 — 핵심 검증
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testGet_401ThenSuccess_RetriesTokenAndReturnsData(): void
+    #[Test]
+    public function test_get_401_then_success_retries_token_and_returns_data(): void
     {
         // 토큰을 캐시에 미리 세팅 (401 전 상태)
         Cache::put(self::TOKEN_CACHE_KEY, 'old-invalid-token', 3600);
@@ -91,8 +92,8 @@ class TossApiClientTest extends TestCase
             // getAccessToken(true) 는 POST /oauth2/token 를 호출 — 토큰 발급 응답
             new Response(200, [], json_encode([
                 'access_token' => 'new-valid-token',
-                'token_type'   => 'Bearer',
-                'expires_in'   => 86399,
+                'token_type' => 'Bearer',
+                'expires_in' => 86399,
             ])),
             // 재시도 GET 성공
             new Response(200, [], $successBody),
@@ -108,8 +109,8 @@ class TossApiClientTest extends TestCase
         $this->assertSame('new-valid-token', Cache::get(self::TOKEN_CACHE_KEY));
     }
 
-    /** @test */
-    public function testGet_401ThenAgain401_ReturnsEmptyArrayNoLoop(): void
+    #[Test]
+    public function test_get_401_then_again401_returns_empty_array_no_loop(): void
     {
         Cache::put(self::TOKEN_CACHE_KEY, 'old-token', 3600);
 
@@ -118,8 +119,8 @@ class TossApiClientTest extends TestCase
             // 토큰 재발급 응답
             new Response(200, [], json_encode([
                 'access_token' => 'new-token',
-                'token_type'   => 'Bearer',
-                'expires_in'   => 86399,
+                'token_type' => 'Bearer',
+                'expires_in' => 86399,
             ])),
             // 재시도도 401 → 더 이상 재시도 없이 빈 배열 반환
             $this->makeClientException(401, '{"error":"invalid-token"}'),
@@ -131,8 +132,8 @@ class TossApiClientTest extends TestCase
         $this->assertSame([], $result);
     }
 
-    /** @test */
-    public function testGet_403Forbidden_NoRetryReturnsEmpty(): void
+    #[Test]
+    public function test_get_403_forbidden_no_retry_returns_empty(): void
     {
         Cache::put(self::TOKEN_CACHE_KEY, 'valid-token', 3600);
 
@@ -148,8 +149,8 @@ class TossApiClientTest extends TestCase
         $this->assertSame('valid-token', Cache::get(self::TOKEN_CACHE_KEY));
     }
 
-    /** @test */
-    public function testGet_404NotFound_NoRetryReturnsEmpty(): void
+    #[Test]
+    public function test_get_404_not_found_no_retry_returns_empty(): void
     {
         Cache::put(self::TOKEN_CACHE_KEY, 'valid-token', 3600);
 
@@ -164,8 +165,8 @@ class TossApiClientTest extends TestCase
         $this->assertSame('valid-token', Cache::get(self::TOKEN_CACHE_KEY));
     }
 
-    /** @test */
-    public function testGet_401NoToken_CacheIsCleared(): void
+    #[Test]
+    public function test_get_401_no_token_cache_is_cleared(): void
     {
         // 401 발생 후 토큰 캐시가 삭제되는지 검증
         // (토큰 재발급 POST 가 실패해도 캐시는 지워져야 함)

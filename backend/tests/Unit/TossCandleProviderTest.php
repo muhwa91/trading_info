@@ -9,6 +9,7 @@ use App\Services\Toss\TossCandleProvider;
 use App\Services\Toss\TossChangeCalculator;
 use App\Services\Toss\TossSymbolMapper;
 use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
@@ -17,8 +18,11 @@ use Tests\TestCase;
 class TossCandleProviderTest extends TestCase
 {
     private $clientMock;
+
     private $mapperMock;
+
     private $changeMock;
+
     private TossCandleProvider $provider;
 
     protected function setUp(): void
@@ -40,8 +44,8 @@ class TossCandleProviderTest extends TestCase
 
     // ─── 지수 skip ───────────────────────────────────────────────────
 
-    /** @test */
-    public function testGetChartData_Index_ReturnsNull(): void
+    #[Test]
+    public function test_get_chart_data_index_returns_null(): void
     {
         $this->mapperMock->method('shouldSkip')->willReturn(true);
         $this->clientMock->expects($this->never())->method('get');
@@ -53,8 +57,8 @@ class TossCandleProviderTest extends TestCase
 
     // ─── 일봉 파싱 ───────────────────────────────────────────────────
 
-    /** @test */
-    public function testGetChartData_Daily_ParsesCorrectly(): void
+    #[Test]
+    public function test_get_chart_data_daily_parses_correctly(): void
     {
         $this->mapperMock->method('shouldSkip')->willReturn(false);
         $this->mapperMock->method('toTossSymbol')->willReturn('005930');
@@ -63,20 +67,20 @@ class TossCandleProviderTest extends TestCase
             'result' => [
                 'candles' => [
                     [
-                        'timestamp'  => '2026-06-24T00:00:00.000+09:00',
-                        'openPrice'  => '75000',
-                        'highPrice'  => '76000',
-                        'lowPrice'   => '74000',
+                        'timestamp' => '2026-06-24T00:00:00.000+09:00',
+                        'openPrice' => '75000',
+                        'highPrice' => '76000',
+                        'lowPrice' => '74000',
                         'closePrice' => '75500',
-                        'volume'     => '1000',
+                        'volume' => '1000',
                     ],
                     [
-                        'timestamp'  => '2026-06-23T00:00:00.000+09:00',
-                        'openPrice'  => '74000',
-                        'highPrice'  => '75000',
-                        'lowPrice'   => '73500',
+                        'timestamp' => '2026-06-23T00:00:00.000+09:00',
+                        'openPrice' => '74000',
+                        'highPrice' => '75000',
+                        'lowPrice' => '73500',
                         'closePrice' => '74800',
-                        'volume'     => '900',
+                        'volume' => '900',
                     ],
                 ],
                 'nextBefore' => null,
@@ -84,9 +88,9 @@ class TossCandleProviderTest extends TestCase
         ]);
 
         $this->changeMock->method('calculate')->willReturn([
-            'change_amount'  => 700.0,
+            'change_amount' => 700.0,
             'change_percent' => 0.9358,
-            'prev_close'     => 74800.0,
+            'prev_close' => 74800.0,
         ]);
 
         $result = $this->provider->getChartData('005930.KS', '1d');
@@ -104,8 +108,8 @@ class TossCandleProviderTest extends TestCase
 
     // ─── 분봉 파싱 ───────────────────────────────────────────────────
 
-    /** @test */
-    public function testGetChartData_Minute_ParsesCorrectly(): void
+    #[Test]
+    public function test_get_chart_data_minute_parses_correctly(): void
     {
         $this->mapperMock->method('shouldSkip')->willReturn(false);
         $this->mapperMock->method('toTossSymbol')->willReturn('005930');
@@ -114,12 +118,12 @@ class TossCandleProviderTest extends TestCase
             'result' => [
                 'candles' => [
                     [
-                        'timestamp'  => '2026-06-24T10:31:00.000+09:00',
-                        'openPrice'  => '75000',
-                        'highPrice'  => '75100',
-                        'lowPrice'   => '74900',
+                        'timestamp' => '2026-06-24T10:31:00.000+09:00',
+                        'openPrice' => '75000',
+                        'highPrice' => '75100',
+                        'lowPrice' => '74900',
                         'closePrice' => '75050',
-                        'volume'     => '200',
+                        'volume' => '200',
                     ],
                 ],
                 'nextBefore' => null,
@@ -140,8 +144,8 @@ class TossCandleProviderTest extends TestCase
 
     // ─── 5m 집계 ────────────────────────────────────────────────────
 
-    /** @test */
-    public function testGetChartData_AggregateCandles_5m(): void
+    #[Test]
+    public function test_get_chart_data_aggregate_candles_5m(): void
     {
         $this->mapperMock->method('shouldSkip')->willReturn(false);
         $this->mapperMock->method('toTossSymbol')->willReturn('TSLA');
@@ -151,12 +155,12 @@ class TossCandleProviderTest extends TestCase
         $candles1m = [];
         for ($i = 0; $i < 6; $i++) {
             $candles1m[] = [
-                'timestamp'  => date('c', $base + $i * 60),
-                'openPrice'  => (string)(100 + $i),
-                'highPrice'  => (string)(110 + $i),
-                'lowPrice'   => (string)(90 + $i),
-                'closePrice' => (string)(105 + $i),
-                'volume'     => '100',
+                'timestamp' => date('c', $base + $i * 60),
+                'openPrice' => (string) (100 + $i),
+                'highPrice' => (string) (110 + $i),
+                'lowPrice' => (string) (90 + $i),
+                'closePrice' => (string) (105 + $i),
+                'volume' => '100',
             ];
         }
 
@@ -183,8 +187,8 @@ class TossCandleProviderTest extends TestCase
 
     // ─── OHLCV 집계 규칙 상세 ────────────────────────────────────────
 
-    /** @test */
-    public function testAggregateCandles_OHLCV_Rules(): void
+    #[Test]
+    public function test_aggregate_candles_ohlc_v_rules(): void
     {
         $this->mapperMock->method('shouldSkip')->willReturn(false);
         $this->mapperMock->method('toTossSymbol')->willReturn('TSLA');
@@ -196,28 +200,28 @@ class TossCandleProviderTest extends TestCase
 
         $candles1m = [
             [
-                'timestamp'  => date('c', $bucketStart),
-                'openPrice'  => '100',
-                'highPrice'  => '115',
-                'lowPrice'   => '95',
+                'timestamp' => date('c', $bucketStart),
+                'openPrice' => '100',
+                'highPrice' => '115',
+                'lowPrice' => '95',
                 'closePrice' => '108',
-                'volume'     => '300',
+                'volume' => '300',
             ],
             [
-                'timestamp'  => date('c', $bucketStart + 60),
-                'openPrice'  => '108',
-                'highPrice'  => '120',  // max high
-                'lowPrice'   => '90',   // min low
+                'timestamp' => date('c', $bucketStart + 60),
+                'openPrice' => '108',
+                'highPrice' => '120',  // max high
+                'lowPrice' => '90',   // min low
                 'closePrice' => '112',
-                'volume'     => '200',
+                'volume' => '200',
             ],
             [
-                'timestamp'  => date('c', $bucketStart + 120),
-                'openPrice'  => '112',
-                'highPrice'  => '118',
-                'lowPrice'   => '105',
+                'timestamp' => date('c', $bucketStart + 120),
+                'openPrice' => '112',
+                'highPrice' => '118',
+                'lowPrice' => '105',
                 'closePrice' => '116',  // last close
-                'volume'     => '400',
+                'volume' => '400',
             ],
         ];
 
@@ -235,29 +239,29 @@ class TossCandleProviderTest extends TestCase
         $this->assertCount(1, $result['candles']);
 
         $bucket = $result['candles'][0];
-        $this->assertSame(100.0,  $bucket['open']);    // 첫 봉 open
-        $this->assertSame(120.0,  $bucket['high']);    // max high
-        $this->assertSame(90.0,   $bucket['low']);     // min low
-        $this->assertSame(116.0,  $bucket['close']);   // 마지막 봉 close
-        $this->assertSame(900,    $bucket['volume']);  // sum
+        $this->assertSame(100.0, $bucket['open']);    // 첫 봉 open
+        $this->assertSame(120.0, $bucket['high']);    // max high
+        $this->assertSame(90.0, $bucket['low']);     // min low
+        $this->assertSame(116.0, $bucket['close']);   // 마지막 봉 close
+        $this->assertSame(900, $bucket['volume']);  // sum
     }
 
     // ─── 페이지네이션 ─────────────────────────────────────────────────
 
-    /** @test */
-    public function testGetChartData_Pagination(): void
+    #[Test]
+    public function test_get_chart_data_pagination(): void
     {
         $this->mapperMock->method('shouldSkip')->willReturn(false);
         $this->mapperMock->method('toTossSymbol')->willReturn('005930');
 
         $makeCandle = function (int $offset): array {
             return [
-                'timestamp'  => date('c', mktime(10, 0, 0, 6, 24, 2026) + $offset * 60),
-                'openPrice'  => '75000',
-                'highPrice'  => '75100',
-                'lowPrice'   => '74900',
+                'timestamp' => date('c', mktime(10, 0, 0, 6, 24, 2026) + $offset * 60),
+                'openPrice' => '75000',
+                'highPrice' => '75100',
+                'lowPrice' => '74900',
                 'closePrice' => '75050',
-                'volume'     => '100',
+                'volume' => '100',
             ];
         };
 
@@ -272,6 +276,7 @@ class TossCandleProviderTest extends TestCase
                 if ($callCount === 1) {
                     return ['result' => ['candles' => $page1Candles, 'nextBefore' => '2026-06-24T09:00:00.000+09:00']];
                 }
+
                 return ['result' => ['candles' => $page2Candles, 'nextBefore' => null]];
             }
         );
@@ -289,8 +294,8 @@ class TossCandleProviderTest extends TestCase
 
     // ─── 빈 응답 ─────────────────────────────────────────────────────
 
-    /** @test */
-    public function testGetChartData_EmptyResponse_ReturnsNull(): void
+    #[Test]
+    public function test_get_chart_data_empty_response_returns_null(): void
     {
         $this->mapperMock->method('shouldSkip')->willReturn(false);
         $this->mapperMock->method('toTossSymbol')->willReturn('005930');
@@ -304,8 +309,8 @@ class TossCandleProviderTest extends TestCase
 
     // ─── 봉 0개 ──────────────────────────────────────────────────────
 
-    /** @test */
-    public function testGetChartData_InsufficientCandles_ReturnsNull(): void
+    #[Test]
+    public function test_get_chart_data_insufficient_candles_returns_null(): void
     {
         $this->mapperMock->method('shouldSkip')->willReturn(false);
         $this->mapperMock->method('toTossSymbol')->willReturn('005930');
@@ -321,8 +326,8 @@ class TossCandleProviderTest extends TestCase
 
     // ─── 국내 심볼 toTossSymbol 호출 확인 ────────────────────────────
 
-    /** @test */
-    public function testGetChartData_DomesticSymbol_MapsCorrectly(): void
+    #[Test]
+    public function test_get_chart_data_domestic_symbol_maps_correctly(): void
     {
         $this->mapperMock->method('shouldSkip')->willReturn(false);
         $this->mapperMock
@@ -335,12 +340,12 @@ class TossCandleProviderTest extends TestCase
             'result' => [
                 'candles' => [
                     [
-                        'timestamp'  => '2026-06-24T00:00:00.000+09:00',
-                        'openPrice'  => '75000',
-                        'highPrice'  => '76000',
-                        'lowPrice'   => '74000',
+                        'timestamp' => '2026-06-24T00:00:00.000+09:00',
+                        'openPrice' => '75000',
+                        'highPrice' => '76000',
+                        'lowPrice' => '74000',
                         'closePrice' => '75500',
-                        'volume'     => '1000',
+                        'volume' => '1000',
                     ],
                 ],
                 'nextBefore' => null,
@@ -357,8 +362,8 @@ class TossCandleProviderTest extends TestCase
 
     // ─── 미국 심볼 toTossSymbol 호출 확인 ────────────────────────────
 
-    /** @test */
-    public function testGetChartData_UsSymbol_MapsCorrectly(): void
+    #[Test]
+    public function test_get_chart_data_us_symbol_maps_correctly(): void
     {
         $this->mapperMock->method('shouldSkip')->willReturn(false);
         $this->mapperMock
@@ -371,12 +376,12 @@ class TossCandleProviderTest extends TestCase
             'result' => [
                 'candles' => [
                     [
-                        'timestamp'  => '2026-06-24T10:30:00.000+09:00',
-                        'openPrice'  => '310000',
-                        'highPrice'  => '311000',
-                        'lowPrice'   => '309000',
+                        'timestamp' => '2026-06-24T10:30:00.000+09:00',
+                        'openPrice' => '310000',
+                        'highPrice' => '311000',
+                        'lowPrice' => '309000',
                         'closePrice' => '310500',
-                        'volume'     => '12345',
+                        'volume' => '12345',
                     ],
                 ],
                 'nextBefore' => null,

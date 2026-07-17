@@ -31,8 +31,8 @@ return [
     ],
 
     'toss' => [
-        'api_url'       => env('TOSS_API_URL', 'https://openapi.tossinvest.com'),
-        'client_id'     => env('TOSS_CLIENT_ID'),
+        'api_url' => env('TOSS_API_URL', 'https://openapi.tossinvest.com'),
+        'client_id' => env('TOSS_CLIENT_ID'),
         'client_secret' => env('TOSS_CLIENT_SECRET'),
     ],
 

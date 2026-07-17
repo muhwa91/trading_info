@@ -1,5 +1,12 @@
 * text=auto
 
+# Pint 의 line_ending fixer 는 PHP 를 LF 로 정규화한다. 그런데 core.autocrlf=true 가
+# 체크아웃마다 CRLF 로 되돌려 놓아서, 새 클론에서는 `pint --test` 가 line_ending 위반으로
+# 다시 깨진다(2026-07-17 실측: 체크아웃 직후 671 CRLF / 0 LF). 워킹트리를 LF 로 고정한다.
+# 리포 blob 은 이미 autocrlf 로 LF 정규화돼 있어 이 줄이 diff 를 만들지 않는다.
+# 스코프는 이 파일이 있는 backend/ 이하 — 다른 프로젝트·사용자 체크아웃에 영향 없음.
+*.php text eol=lf
+
 *.blade.php diff=html
 *.css diff=css
 *.html diff=html

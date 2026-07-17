@@ -47,7 +47,9 @@ class TossCandleProvider
     private const MAX_PAGES = 20;
 
     private TossApiClient $client;
+
     private TossSymbolMapper $mapper;
+
     private TossChangeCalculator $changeCalculator;
 
     public function __construct(
@@ -55,8 +57,8 @@ class TossCandleProvider
         TossSymbolMapper $mapper,
         TossChangeCalculator $changeCalculator
     ) {
-        $this->client           = $client;
-        $this->mapper           = $mapper;
+        $this->client = $client;
+        $this->mapper = $mapper;
         $this->changeCalculator = $changeCalculator;
     }
 
@@ -66,9 +68,9 @@ class TossCandleProvider
      * 지수 심볼이면 null 반환 (호출자가 Yahoo 폴백 처리).
      * 봉이 비어있거나 API 실패 시 null 반환 (graceful).
      *
-     * @param string $appSymbol  앱 내부 심볼 (005930.KS, TSLA 등)
-     * @param string $timeframe  1m|3m|5m|10m|30m|1h|1d
-     * @param bool   $raw        true면 집계 안 함(1m 원본 그대로)
+     * @param  string  $appSymbol  앱 내부 심볼 (005930.KS, TSLA 등)
+     * @param  string  $timeframe  1m|3m|5m|10m|30m|1h|1d
+     * @param  bool  $raw  true면 집계 안 함(1m 원본 그대로)
      * @return array<string,mixed>|null
      */
     public function getChartData(string $appSymbol, string $timeframe = '1d', bool $raw = false): ?array
@@ -91,15 +93,16 @@ class TossCandleProvider
 
         if (empty($candles)) {
             Log::debug("[TossCandleProvider] {$appSymbol} 봉 없음");
+
             return null;
         }
 
         // 시간 오름차순 정렬 (오래된 것 먼저 — 집계·UI 공통 요건)
-        usort($candles, fn(array $a, array $b): int => $a['time'] <=> $b['time']);
+        usort($candles, fn (array $a, array $b): int => $a['time'] <=> $b['time']);
 
         // 집계 (분봉 + $raw=false 일 때)
         $intervalSeconds = $this->intervalSeconds($timeframe);
-        if ($interval === '1m' && !$raw && $intervalSeconds > 60) {
+        if ($interval === '1m' && ! $raw && $intervalSeconds > 60) {
             $candles = $this->aggregateCandles($candles, $intervalSeconds);
         }
 
@@ -108,20 +111,20 @@ class TossCandleProvider
         }
 
         // 현재가 = 마지막 봉 close
-        $lastCandle    = end($candles);
-        $currentPrice  = (float) $lastCandle['close'];
+        $lastCandle = end($candles);
+        $currentPrice = (float) $lastCandle['close'];
 
         // 등락 계산
         $change = $this->changeCalculator->calculate($tossSymbol, $currentPrice);
 
         return [
-            'ticker'          => $appSymbol,
-            'name'            => $appSymbol,
-            'current_price'   => round($currentPrice, 4),
-            'change_amount'   => $change['change_amount'],
-            'change_percent'  => $change['change_percent'],
-            'candles'         => $candles,
-            'source'          => 'Toss (' . $timeframe . ')',
+            'ticker' => $appSymbol,
+            'name' => $appSymbol,
+            'current_price' => round($currentPrice, 4),
+            'change_amount' => $change['change_amount'],
+            'change_percent' => $change['change_percent'],
+            'candles' => $candles,
+            'source' => 'Toss (' . $timeframe . ')',
         ];
     }
 
@@ -183,14 +186,14 @@ class TossCandleProvider
     private function fetchCandles(string $tossSymbol, string $interval, int $needed): array
     {
         $candles = [];
-        $before  = null;
+        $before = null;
 
         for ($page = 0; $page < self::MAX_PAGES && count($candles) < $needed; $page++) {
             $count = min(self::MAX_COUNT_PER_REQUEST, $needed - count($candles) + 10);
             $query = [
-                'symbol'   => $tossSymbol,
+                'symbol' => $tossSymbol,
                 'interval' => $interval,
-                'count'    => $count,
+                'count' => $count,
             ];
             if ($before !== null) {
                 $query['before'] = $before;
@@ -202,10 +205,10 @@ class TossCandleProvider
                 break;
             }
 
-            $result     = $resp['result'] ?? [];
+            $result = $resp['result'] ?? [];
             $rawCandles = $result['candles'] ?? [];
 
-            if (!is_array($rawCandles) || empty($rawCandles)) {
+            if (! is_array($rawCandles) || empty($rawCandles)) {
                 break;
             }
 
@@ -232,18 +235,18 @@ class TossCandleProvider
      * 일봉: time = 'Y-m-d' (string, KST 기준)
      * openPrice 등이 null 이거나 '0' 이면 skip → null 반환.
      *
-     * @param array<string,mixed> $raw
-     * @param string              $interval '1m' | '1d'
+     * @param  array<string,mixed>  $raw
+     * @param  string  $interval  '1m' | '1d'
      * @return array<string,mixed>|null
      */
     private function parseCandle(array $raw, string $interval): ?array
     {
-        $open   = $raw['openPrice']  ?? null;
-        $high   = $raw['highPrice']  ?? null;
-        $low    = $raw['lowPrice']   ?? null;
-        $close  = $raw['closePrice'] ?? null;
-        $vol    = $raw['volume']     ?? '0';
-        $ts     = $raw['timestamp']  ?? null;
+        $open = $raw['openPrice'] ?? null;
+        $high = $raw['highPrice'] ?? null;
+        $low = $raw['lowPrice'] ?? null;
+        $close = $raw['closePrice'] ?? null;
+        $vol = $raw['volume'] ?? '0';
+        $ts = $raw['timestamp'] ?? null;
 
         // null 봉 제거
         if ($open === null || $high === null || $low === null || $close === null || $ts === null) {
@@ -262,11 +265,11 @@ class TossCandleProvider
         }
 
         return [
-            'time'   => $time,
-            'open'   => (float) $open,
-            'high'   => (float) $high,
-            'low'    => (float) $low,
-            'close'  => (float) $close,
+            'time' => $time,
+            'open' => (float) $open,
+            'high' => (float) $high,
+            'low' => (float) $low,
+            'close' => (float) $close,
             'volume' => (int) $vol,
         ];
     }
@@ -283,8 +286,7 @@ class TossCandleProvider
      *
      * 전제: $candles1m 은 time 오름차순 정렬 완료 상태.
      *
-     * @param array<int,array<string,mixed>> $candles1m
-     * @param int                            $intervalSeconds
+     * @param  array<int,array<string,mixed>>  $candles1m
      * @return array<int,array<string,mixed>>
      */
     private function aggregateCandles(array $candles1m, int $intervalSeconds): array
@@ -292,17 +294,17 @@ class TossCandleProvider
         $buckets = [];
 
         foreach ($candles1m as $c) {
-            $time   = (int) $c['time'];
+            $time = (int) $c['time'];
             $bucket = $time - ($time % $intervalSeconds);
 
-            if (!isset($buckets[$bucket])) {
+            if (! isset($buckets[$bucket])) {
                 $buckets[$bucket] = [
-                    'time'   => $bucket,
-                    'open'   => (float) $c['open'],
-                    'high'   => (float) $c['high'],
-                    'low'    => (float) $c['low'],
-                    'close'  => (float) $c['close'],
-                    'volume' => (int)   $c['volume'],
+                    'time' => $bucket,
+                    'open' => (float) $c['open'],
+                    'high' => (float) $c['high'],
+                    'low' => (float) $c['low'],
+                    'close' => (float) $c['close'],
+                    'volume' => (int) $c['volume'],
                 ];
             } else {
                 if ((float) $c['high'] > $buckets[$bucket]['high']) {
@@ -311,8 +313,8 @@ class TossCandleProvider
                 if ((float) $c['low'] < $buckets[$bucket]['low']) {
                     $buckets[$bucket]['low'] = (float) $c['low'];
                 }
-                $buckets[$bucket]['close']   = (float) $c['close'];
-                $buckets[$bucket]['volume'] += (int)   $c['volume'];
+                $buckets[$bucket]['close'] = (float) $c['close'];
+                $buckets[$bucket]['volume'] += (int) $c['volume'];
             }
         }
 

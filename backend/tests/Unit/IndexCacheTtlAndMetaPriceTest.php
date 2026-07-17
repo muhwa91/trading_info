@@ -34,8 +34,8 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
     // 1. 지수 분기(NQ=F/^KS200/USDKRW=X) — Cache::remember TTL ≤ 15초
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testIndexYahooCacheTtlIsReducedTo15(): void
+    #[Test]
+    public function test_index_yahoo_cache_ttl_is_reduced_to15(): void
     {
         $src = $this->getIndexBranchSource();
 
@@ -52,8 +52,8 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
     // 2. KOSPI200 분기 — Cache::remember TTL ≤ 15초 (2026-06-24 Yahoo 전환 후)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKospi200CacheTtlIsReducedTo15(): void
+    #[Test]
+    public function test_kospi200_cache_ttl_is_reduced_to15(): void
     {
         $src = $this->getKospi200BranchSource();
 
@@ -70,8 +70,8 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
     // 3. 국내 개별주식 — Yahoo 캐시 TTL 90초 유지 (회귀 방지)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testDomesticStockYahooCacheTtlRemainsAt90(): void
+    #[Test]
+    public function test_domestic_stock_yahoo_cache_ttl_remains_at90(): void
     {
         $src = $this->getDomesticStockBranchSource();
 
@@ -88,8 +88,8 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
     // 4. 미국 개별주식 — Yahoo 캐시 TTL 90초 유지 (회귀 방지)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testUsStockYahooCacheTtlRemainsAt90(): void
+    #[Test]
+    public function test_us_stock_yahoo_cache_ttl_remains_at90(): void
     {
         $src = $this->getUsStockBranchSource();
 
@@ -106,8 +106,8 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
     // 5. meta.regularMarketPrice 보정 블록 — 지수 분기에 존재
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testIndexBranchAppliesMetaRegularMarketPriceCorrection(): void
+    #[Test]
+    public function test_index_branch_applies_meta_regular_market_price_correction(): void
     {
         $src = $this->getIndexBranchSource();
 
@@ -121,7 +121,7 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
 
         // $livePrice 로 current_price 를 갱신하는 코드 존재
         $this->assertStringContainsString(
-            "current_price",
+            'current_price',
             $src,
             '지수 분기에 current_price 갱신 코드가 없음. ' .
             'meta.regularMarketPrice 를 current_price 에도 반영해야 한다.'
@@ -140,8 +140,8 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
     // 6. 1d 타임프레임 — meta 보정 블록 제외 조건 존재
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testMetaCorrectionExcludesDailyTimeframe(): void
+    #[Test]
+    public function test_meta_correction_excludes_daily_timeframe(): void
     {
         $src = $this->getIndexBranchSource();
 
@@ -158,8 +158,8 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
     // 7. change_amount / change_percent — 보정 블록에서 변경 금지
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testMetaCorrectionDoesNotAlterChangeFields(): void
+    #[Test]
+    public function test_meta_correction_does_not_alter_change_fields(): void
     {
         // 보정 블록 내에서 change_amount 나 change_percent 를 쓰는 코드가 없어야 한다.
         // 등락률은 getYahooChartData() 내부(prevClose 기반)에서 이미 계산 완료.
@@ -184,8 +184,8 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
     // 8. WS refreshYahooCache — 지수용 freshnessTtl = 15 분기 존재
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testRefreshYahooCacheHasIndexFreshnessTtl15(): void
+    #[Test]
+    public function test_refresh_yahoo_cache_has_index_freshness_ttl15(): void
     {
         $src = $this->getRefreshYahooCacheSource();
 
@@ -221,17 +221,19 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
     private function getControllerSource(): string
     {
         $path = __DIR__ . '/../../app/Http/Controllers/StockController.php';
-        $src  = file_get_contents($path);
+        $src = file_get_contents($path);
         $this->assertNotFalse($src, 'StockController.php 읽기 실패');
-        return (string)$src;
+
+        return (string) $src;
     }
 
     private function getServerSource(): string
     {
         $path = __DIR__ . '/../../app/Console/Commands/WebSocketAgentServer.php';
-        $src  = file_get_contents($path);
+        $src = file_get_contents($path);
         $this->assertNotFalse($src, 'WebSocketAgentServer.php 읽기 실패');
-        return (string)$src;
+
+        return (string) $src;
     }
 
     /**
@@ -255,8 +257,8 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
         }
 
         // 중괄호 매칭으로 블록 끝 탐색
-        $depth  = 0;
-        $end    = $openPos;
+        $depth = 0;
+        $end = $openPos;
         for ($i = $openPos, $len = strlen($src); $i < $len; $i++) {
             if ($src[$i] === '{') {
                 $depth++;
@@ -277,7 +279,7 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
      */
     private function getKospi200BranchSource(): string
     {
-        $src   = $this->getControllerSource();
+        $src = $this->getControllerSource();
         $start = strpos($src, "ticker === 'KOSPI200'");
         if ($start === false) {
             return '';
@@ -289,7 +291,7 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
         }
 
         $depth = 0;
-        $end   = $openPos;
+        $end = $openPos;
         for ($i = $openPos, $len = strlen($src); $i < $len; $i++) {
             if ($src[$i] === '{') {
                 $depth++;
@@ -315,11 +317,12 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
         $src = $this->getControllerSource();
         // yahoo_stock_data_{$ticker}_{$timeframe}_raw 는 국내 개별주식 분기에만 나타남
         $marker = '"yahoo_stock_data_{$ticker}_{$timeframe}_raw"';
-        $start  = strpos($src, $marker);
+        $start = strpos($src, $marker);
         if ($start === false) {
             // 약 200자 앞으로 당겨서 Cache::remember 포함 영역 반환
             return '';
         }
+
         // 이 지점 직후에 Cache::remember($cacheKey, 90, ...) 가 있으므로 300자면 충분
         return substr($src, $start, 300);
     }
@@ -329,9 +332,9 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
      */
     private function getUsStockBranchSource(): string
     {
-        $src    = $this->getControllerSource();
+        $src = $this->getControllerSource();
         $marker = '// US Stock flow (non-index, non-domestic)';
-        $start  = strpos($src, $marker);
+        $start = strpos($src, $marker);
         if ($start === false) {
             return '';
         }
@@ -352,6 +355,7 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
         }
         // 보정 블록 시작은 보통 if ( 직전이므로 앞 200자 + 뒤 800자
         $start = max(0, $pos - 200);
+
         return substr($src, $start, 1000);
     }
 
@@ -371,7 +375,7 @@ class IndexCacheTtlAndMetaPriceTest extends TestCase
         }
 
         $depth = 0;
-        $end   = $openPos;
+        $end = $openPos;
         for ($i = $openPos, $len = strlen($src); $i < $len; $i++) {
             if ($src[$i] === '{') {
                 $depth++;

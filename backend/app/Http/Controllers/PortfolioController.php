@@ -30,8 +30,10 @@ class PortfolioController extends Controller
     /** 기본 account_id */
     private const DEFAULT_ACCOUNT_ID = 1;
 
-    private PriceService    $priceService;
-    private FxService       $fxService;
+    private PriceService $priceService;
+
+    private FxService $fxService;
+
     private KrStockResolver $krStockResolver;
 
     public function __construct(
@@ -39,8 +41,8 @@ class PortfolioController extends Controller
         FxService $fxService,
         KrStockResolver $krStockResolver
     ) {
-        $this->priceService    = $priceService;
-        $this->fxService       = $fxService;
+        $this->priceService = $priceService;
+        $this->fxService = $fxService;
         $this->krStockResolver = $krStockResolver;
     }
 
@@ -57,13 +59,13 @@ class PortfolioController extends Controller
      */
     public function prices(Request $request): JsonResponse
     {
-        $session  = $this->resolveSession((string)$request->query('session', 'regular'));
-        $idsParam = (string)$request->query('ids', '');
+        $session = $this->resolveSession((string) $request->query('session', 'regular'));
+        $idsParam = (string) $request->query('ids', '');
 
         $stockIds = $this->resolveStockIds($idsParam);
 
         $prices = [];
-        if (!empty($stockIds)) {
+        if (! empty($stockIds)) {
             try {
                 $prices = $this->priceService->refresh($stockIds, $session);
             } catch (\Throwable $e) {
@@ -80,12 +82,12 @@ class PortfolioController extends Controller
         }
 
         return response()->json([
-            'session'       => $session,
+            'session' => $session,
             'exchange_rate' => $fxData !== null ? [
-                'USD_KRW'     => $fxData['rate'],
+                'USD_KRW' => $fxData['rate'],
                 'recorded_at' => $fxData['recorded_at'],
             ] : null,
-            'prices'        => $prices,
+            'prices' => $prices,
         ]);
     }
 
@@ -99,7 +101,7 @@ class PortfolioController extends Controller
      */
     public function store(StorePortfolioRequest $request): JsonResponse
     {
-        $data  = $request->validated();
+        $data = $request->validated();
         $stock = $this->resolveOrCreateStock($data);
 
         if ($stock === null) {
@@ -110,25 +112,25 @@ class PortfolioController extends Controller
 
         // KR 종목은 avg_fx_rate 자동 1.0
         $avgFxRate = ($stock->currency === 'USD')
-            ? (float)($data['avg_fx_rate'] ?? 1.0)
+            ? (float) ($data['avg_fx_rate'] ?? 1.0)
             : 1.0;
 
-        $accountId = isset($data['account_id']) ? (int)$data['account_id'] : self::DEFAULT_ACCOUNT_ID;
-        $source    = $data['source'] ?? 'manual';
+        $accountId = isset($data['account_id']) ? (int) $data['account_id'] : self::DEFAULT_ACCOUNT_ID;
+        $source = $data['source'] ?? 'manual';
 
         $portfolio = DB::transaction(function () use ($stock, $data, $avgFxRate, $accountId, $source): Portfolio {
             return Portfolio::create([
-                'account_id'    => $accountId,
-                'stock_id'      => $stock->id,
-                'quantity'      => (float)$data['quantity'],
-                'average_price' => (float)$data['average_price'],
-                'avg_fx_rate'   => $avgFxRate,
-                'source'        => $source,
+                'account_id' => $accountId,
+                'stock_id' => $stock->id,
+                'quantity' => (float) $data['quantity'],
+                'average_price' => (float) $data['average_price'],
+                'avg_fx_rate' => $avgFxRate,
+                'source' => $source,
             ]);
         });
 
         return response()->json([
-            'message'   => '보유 종목이 추가되었습니다.',
+            'message' => '보유 종목이 추가되었습니다.',
             'portfolio' => $this->formatPortfolioRow($portfolio->load('stock')),
         ], 201);
     }
@@ -152,7 +154,7 @@ class PortfolioController extends Controller
         });
 
         return response()->json([
-            'message'   => '보유 종목이 수정되었습니다.',
+            'message' => '보유 종목이 수정되었습니다.',
             'portfolio' => $this->formatPortfolioRow($portfolio->load('stock')),
         ]);
     }
@@ -185,18 +187,17 @@ class PortfolioController extends Controller
      * US : stocks 에 없으면 firstOrCreate (lazy 생성).
      * KR : 심볼 정규화(.KS/.KQ 접미사 제거) 후 조회. 없으면 KrStockResolver 로 lazy 생성.
      *
-     * @param  array<string, mixed> $data
-     * @return Stock|null
+     * @param  array<string, mixed>  $data
      */
     private function resolveOrCreateStock(array $data): ?Stock
     {
         // stock_id 우선
-        if (!empty($data['stock_id'])) {
-            return Stock::find((int)$data['stock_id']);
+        if (! empty($data['stock_id'])) {
+            return Stock::find((int) $data['stock_id']);
         }
 
-        $symbol = isset($data['symbol']) ? trim((string)$data['symbol']) : '';
-        $market = isset($data['market']) ? strtoupper(trim((string)$data['market'])) : '';
+        $symbol = isset($data['symbol']) ? trim((string) $data['symbol']) : '';
+        $market = isset($data['market']) ? strtoupper(trim((string) $data['market'])) : '';
 
         if ($symbol === '' || $market === '') {
             return null;
@@ -207,11 +208,12 @@ class PortfolioController extends Controller
             // 마이그레이션 실행 전까지는 NOT NULL 제약을 위해 기본값을 유지하고,
             // 실행 후에는 컬럼이 사라지므로 자동으로 무해화된다.
             $symbolUpper = strtoupper($symbol);
+
             return Stock::firstOrCreate(
                 ['symbol' => $symbolUpper, 'market' => 'US'],
                 [
-                    'name'     => $symbolUpper, // 마이그레이션 전 NOT NULL 대비 기본값; 표시명은 TossStockMaster accessor 경유
-                    'type'     => 'stock',       // 동일
+                    'name' => $symbolUpper, // 마이그레이션 전 NOT NULL 대비 기본값; 표시명은 TossStockMaster accessor 경유
+                    'type' => 'stock',       // 동일
                     'currency' => 'USD',         // 동일
                     'exchange' => null,
                 ]
@@ -220,7 +222,8 @@ class PortfolioController extends Controller
 
         if ($market === 'KR') {
             // KR 종목: 정규화(접미사 제거) 후 조회. 없으면 lazy 생성.
-            $nameHint = isset($data['name']) ? trim((string)$data['name']) : null;
+            $nameHint = isset($data['name']) ? trim((string) $data['name']) : null;
+
             return $this->krStockResolver->resolveOrCreate($symbol, $nameHint ?: null);
         }
 
@@ -230,26 +233,27 @@ class PortfolioController extends Controller
     /**
      * Portfolio 행을 응답용 배열로 포맷.
      *
-     * @param  Portfolio $portfolio  stock 관계가 로드된 모델
+     * @param  Portfolio  $portfolio  stock 관계가 로드된 모델
      * @return array<string, mixed>
      */
     private function formatPortfolioRow(Portfolio $portfolio): array
     {
         $stock = $portfolio->stock;
+
         return [
-            'id'            => $portfolio->id,
-            'account_id'    => $portfolio->account_id,
-            'stock_id'      => $portfolio->stock_id,
-            'symbol'        => $stock ? $stock->symbol : null,
-            'name'          => $stock ? $stock->name   : null,
-            'market'        => $stock ? $stock->market  : null,
-            'currency'      => $stock ? $stock->currency : null,
-            'quantity'      => $portfolio->quantity,
+            'id' => $portfolio->id,
+            'account_id' => $portfolio->account_id,
+            'stock_id' => $portfolio->stock_id,
+            'symbol' => $stock ? $stock->symbol : null,
+            'name' => $stock ? $stock->name : null,
+            'market' => $stock ? $stock->market : null,
+            'currency' => $stock ? $stock->currency : null,
+            'quantity' => $portfolio->quantity,
             'average_price' => $portfolio->average_price,
-            'avg_fx_rate'   => $portfolio->avg_fx_rate,
-            'source'        => $portfolio->source,
-            'created_at'    => $portfolio->created_at ? $portfolio->created_at->toDateTimeString() : null,
-            'updated_at'    => $portfolio->updated_at ? $portfolio->updated_at->toDateTimeString() : null,
+            'avg_fx_rate' => $portfolio->avg_fx_rate,
+            'source' => $portfolio->source,
+            'created_at' => $portfolio->created_at ? $portfolio->created_at->toDateTimeString() : null,
+            'updated_at' => $portfolio->updated_at ? $portfolio->updated_at->toDateTimeString() : null,
         ];
     }
 
@@ -268,6 +272,7 @@ class PortfolioController extends Controller
                     return $id > 0;
                 }
             );
+
             return array_values(array_unique($ids));
         }
 
@@ -275,6 +280,7 @@ class PortfolioController extends Controller
         $watchlistIds = Watchlist::pluck('stock_id')->toArray();
 
         $merged = array_unique(array_merge($portfolioIds, $watchlistIds));
+
         return array_values(array_map('intval', $merged));
     }
 
@@ -284,6 +290,7 @@ class PortfolioController extends Controller
     private function resolveSession(string $raw): string
     {
         $allowed = ['regular', 'pre', 'after'];
+
         return in_array($raw, $allowed, true) ? $raw : 'regular';
     }
 }

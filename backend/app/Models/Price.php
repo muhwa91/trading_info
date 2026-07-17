@@ -27,12 +27,12 @@ class Price extends Model
     ];
 
     protected $casts = [
-        'price'          => 'decimal:4',
-        'regular_close'  => 'decimal:4',
-        'change_amount'  => 'decimal:4',
+        'price' => 'decimal:4',
+        'regular_close' => 'decimal:4',
+        'change_amount' => 'decimal:4',
         'change_percent' => 'decimal:4',
-        'recorded_at'    => 'datetime',
-        'updated_at'     => 'datetime',
+        'recorded_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
     public function stock(): BelongsTo

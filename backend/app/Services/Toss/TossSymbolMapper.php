@@ -52,7 +52,7 @@ class TossSymbolMapper
      * 지수/환율 skip 목록이면 null 반환 — 호출자는 null 을 필터링해야 한다.
      *
      * @param  string  $appSymbol  앱 내부 심볼 (예: 005930.KS, TSLA, 0167AO)
-     * @return string|null  토스 symbols 값 (지수면 null)
+     * @return string|null 토스 symbols 값 (지수면 null)
      */
     public function toTossSymbol(string $appSymbol): ?string
     {
@@ -69,7 +69,7 @@ class TossSymbolMapper
      * 심볼의 시장을 반환한다.
      *
      * @param  string  $appSymbol  앱 내부 심볼
-     * @return string  'KR' | 'US' | 'INDEX'
+     * @return string 'KR' | 'US' | 'INDEX'
      */
     public function market(string $appSymbol): string
     {
@@ -97,13 +97,12 @@ class TossSymbolMapper
     {
         // 정규화 후 skip 목록 조회 (대소문자 무관하게 strtoupper 통일)
         $upper = strtoupper(trim($appSymbol));
+
         return in_array($upper, self::INDEX_SKIP_LIST, true);
     }
 
     /**
      * isIndex 의 별칭 — 호출 가독성용.
-     *
-     * @param  string  $appSymbol
      */
     public function shouldSkip(string $appSymbol): bool
     {
@@ -114,7 +113,7 @@ class TossSymbolMapper
      * 복수 심볼을 한 번에 토스 심볼로 변환한다 (null = 지수, 필터링됨).
      *
      * @param  string[]  $appSymbols
-     * @return string[]  지수가 제외된 토스 symbols 배열
+     * @return string[] 지수가 제외된 토스 symbols 배열
      */
     public function toTossSymbols(array $appSymbols): array
     {
@@ -125,6 +124,7 @@ class TossSymbolMapper
                 $result[] = $toss;
             }
         }
+
         return $result;
     }
 

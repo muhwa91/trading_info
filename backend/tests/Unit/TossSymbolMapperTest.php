@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Services\Toss\TossSymbolMapper;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -32,33 +33,33 @@ class TossSymbolMapperTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->mapper = new TossSymbolMapper();
+        $this->mapper = new TossSymbolMapper;
     }
 
     // ──────────────────────────────────────────────────────────────────
     // toTossSymbol — 미국 티커
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testUsTicker_TSLA_PassesThrough(): void
+    #[Test]
+    public function test_us_ticker_tsl_a_passes_through(): void
     {
         $this->assertSame('TSLA', $this->mapper->toTossSymbol('TSLA'));
     }
 
-    /** @test */
-    public function testUsTicker_MU_PassesThrough(): void
+    #[Test]
+    public function test_us_ticker_m_u_passes_through(): void
     {
         $this->assertSame('MU', $this->mapper->toTossSymbol('MU'));
     }
 
-    /** @test */
-    public function testUsTicker_SOXL_PassesThrough(): void
+    #[Test]
+    public function test_us_ticker_sox_l_passes_through(): void
     {
         $this->assertSame('SOXL', $this->mapper->toTossSymbol('SOXL'));
     }
 
-    /** @test */
-    public function testUsTicker_TQQQ_PassesThrough(): void
+    #[Test]
+    public function test_us_ticker_tqq_q_passes_through(): void
     {
         $this->assertSame('TQQQ', $this->mapper->toTossSymbol('TQQQ'));
     }
@@ -67,26 +68,26 @@ class TossSymbolMapperTest extends TestCase
     // toTossSymbol — 국내 종목 (.KS/.KQ 접미사 제거)
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testDomestic_005930KS_RemovesSuffix(): void
+    #[Test]
+    public function test_domestic_005930_k_s_removes_suffix(): void
     {
         $this->assertSame('005930', $this->mapper->toTossSymbol('005930.KS'));
     }
 
-    /** @test */
-    public function testDomestic_PreferredStock_005935KS_RemovesSuffix(): void
+    #[Test]
+    public function test_domestic_preferred_stock_005935_k_s_removes_suffix(): void
     {
         $this->assertSame('005935', $this->mapper->toTossSymbol('005935.KS'));
     }
 
-    /** @test */
-    public function testDomestic_KQSuffix_RemovesSuffix(): void
+    #[Test]
+    public function test_domestic_kq_suffix_removes_suffix(): void
     {
         $this->assertSame('000660', $this->mapper->toTossSymbol('000660.KQ'));
     }
 
-    /** @test */
-    public function testDomestic_LowercaseSuffix_RemovesSuffix(): void
+    #[Test]
+    public function test_domestic_lowercase_suffix_removes_suffix(): void
     {
         $this->assertSame('005930', $this->mapper->toTossSymbol('005930.ks'));
     }
@@ -95,27 +96,27 @@ class TossSymbolMapperTest extends TestCase
     // toTossSymbol — 신형 영숫자 코드
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testAlphanumericCode_0167A0_PassesThrough(): void
+    #[Test]
+    public function test_alphanumeric_code_0167_a0_passes_through(): void
     {
         $this->assertSame('0167A0', $this->mapper->toTossSymbol('0167A0'));
     }
 
-    /** @test */
-    public function testAlphanumericCode_0167A0_WithKQSuffix_RemovesSuffix(): void
+    #[Test]
+    public function test_alphanumeric_code_0167_a0_with_kq_suffix_removes_suffix(): void
     {
         $this->assertSame('0167A0', $this->mapper->toTossSymbol('0167A0.KQ'));
     }
 
-    /** @test */
-    public function testTypoCorrection_0167AO_ConvertsOToZero(): void
+    #[Test]
+    public function test_typo_correction_0167_a_o_converts_o_to_zero(): void
     {
         // 0167AO (영문 O) → 0167A0 (숫자 0) 오타교정
         $this->assertSame('0167A0', $this->mapper->toTossSymbol('0167AO'));
     }
 
-    /** @test */
-    public function testTypoCorrection_0167AO_WithKSSuffix(): void
+    #[Test]
+    public function test_typo_correction_0167_a_o_with_ks_suffix(): void
     {
         $this->assertSame('0167A0', $this->mapper->toTossSymbol('0167AO.KS'));
     }
@@ -124,32 +125,32 @@ class TossSymbolMapperTest extends TestCase
     // toTossSymbol — 지수 skip (null 반환)
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testIndex_NQF_ReturnsNull(): void
+    #[Test]
+    public function test_index_nq_f_returns_null(): void
     {
         $this->assertNull($this->mapper->toTossSymbol('NQ=F'));
     }
 
-    /** @test */
-    public function testIndex_KS200_ReturnsNull(): void
+    #[Test]
+    public function test_index_k_s200_returns_null(): void
     {
         $this->assertNull($this->mapper->toTossSymbol('^KS200'));
     }
 
-    /** @test */
-    public function testIndex_USDKRW_ReturnsNull(): void
+    #[Test]
+    public function test_index_usdkr_w_returns_null(): void
     {
         $this->assertNull($this->mapper->toTossSymbol('USDKRW=X'));
     }
 
-    /** @test */
-    public function testIndex_KOSPI_NIGHT_ReturnsNull(): void
+    #[Test]
+    public function test_index_kosp_i_nigh_t_returns_null(): void
     {
         $this->assertNull($this->mapper->toTossSymbol('KOSPI_NIGHT'));
     }
 
-    /** @test */
-    public function testIndex_KOSPI200_ReturnsNull(): void
+    #[Test]
+    public function test_index_kosp_i200_returns_null(): void
     {
         $this->assertNull($this->mapper->toTossSymbol('KOSPI200'));
     }
@@ -158,36 +159,36 @@ class TossSymbolMapperTest extends TestCase
     // market() — 시장 분류
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testMarket_USTicker_ReturnsUS(): void
+    #[Test]
+    public function test_market_us_ticker_returns_us(): void
     {
         $this->assertSame('US', $this->mapper->market('TSLA'));
         $this->assertSame('US', $this->mapper->market('MU'));
         $this->assertSame('US', $this->mapper->market('SOXL'));
     }
 
-    /** @test */
-    public function testMarket_DomesticKS_ReturnsKR(): void
+    #[Test]
+    public function test_market_domestic_k_s_returns_kr(): void
     {
         $this->assertSame('KR', $this->mapper->market('005930.KS'));
         $this->assertSame('KR', $this->mapper->market('005935.KS'));
     }
 
-    /** @test */
-    public function testMarket_AlphanumericCode_ReturnsKR(): void
+    #[Test]
+    public function test_market_alphanumeric_code_returns_kr(): void
     {
         $this->assertSame('KR', $this->mapper->market('0167A0'));
     }
 
-    /** @test */
-    public function testMarket_PureNumericCode_ReturnsKR(): void
+    #[Test]
+    public function test_market_pure_numeric_code_returns_kr(): void
     {
         $this->assertSame('KR', $this->mapper->market('005930'));
         $this->assertSame('KR', $this->mapper->market('000660'));
     }
 
-    /** @test */
-    public function testMarket_IndexSymbols_ReturnsINDEX(): void
+    #[Test]
+    public function test_market_index_symbols_returns_index(): void
     {
         $this->assertSame('INDEX', $this->mapper->market('NQ=F'));
         $this->assertSame('INDEX', $this->mapper->market('KOSPI200'));
@@ -198,8 +199,8 @@ class TossSymbolMapperTest extends TestCase
     // isIndex() / shouldSkip()
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testIsIndex_IndexSymbols_ReturnsTrue(): void
+    #[Test]
+    public function test_is_index_index_symbols_returns_true(): void
     {
         $this->assertTrue($this->mapper->isIndex('NQ=F'));
         $this->assertTrue($this->mapper->isIndex('^KS200'));
@@ -208,16 +209,16 @@ class TossSymbolMapperTest extends TestCase
         $this->assertTrue($this->mapper->isIndex('KOSPI200'));
     }
 
-    /** @test */
-    public function testIsIndex_NormalSymbols_ReturnsFalse(): void
+    #[Test]
+    public function test_is_index_normal_symbols_returns_false(): void
     {
         $this->assertFalse($this->mapper->isIndex('TSLA'));
         $this->assertFalse($this->mapper->isIndex('005930.KS'));
         $this->assertFalse($this->mapper->isIndex('0167A0'));
     }
 
-    /** @test */
-    public function testShouldSkip_AliasOfIsIndex(): void
+    #[Test]
+    public function test_should_skip_alias_of_is_index(): void
     {
         $this->assertTrue($this->mapper->shouldSkip('KOSPI200'));
         $this->assertFalse($this->mapper->shouldSkip('TSLA'));
@@ -227,8 +228,8 @@ class TossSymbolMapperTest extends TestCase
     // toTossSymbols() — 복수 변환 + 지수 필터
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testToTossSymbols_FiltersIndexAndNormalizesRest(): void
+    #[Test]
+    public function test_to_toss_symbols_filters_index_and_normalizes_rest(): void
     {
         $input = [
             'TSLA',        // US → TSLA
@@ -243,14 +244,14 @@ class TossSymbolMapperTest extends TestCase
         $this->assertSame(['TSLA', '005930', '0167A0'], $result);
     }
 
-    /** @test */
-    public function testToTossSymbols_EmptyInput_ReturnsEmpty(): void
+    #[Test]
+    public function test_to_toss_symbols_empty_input_returns_empty(): void
     {
         $this->assertSame([], $this->mapper->toTossSymbols([]));
     }
 
-    /** @test */
-    public function testToTossSymbols_AllIndexSkipped_ReturnsEmpty(): void
+    #[Test]
+    public function test_to_toss_symbols_all_index_skipped_returns_empty(): void
     {
         $result = $this->mapper->toTossSymbols(['NQ=F', 'KOSPI200', '^KS200']);
         $this->assertSame([], $result);
@@ -260,15 +261,15 @@ class TossSymbolMapperTest extends TestCase
     // 엣지 케이스
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testWhitespace_Trimmed(): void
+    #[Test]
+    public function test_whitespace_trimmed(): void
     {
         $this->assertSame('TSLA', $this->mapper->toTossSymbol('  TSLA  '));
         $this->assertSame('005930', $this->mapper->toTossSymbol('  005930.KS  '));
     }
 
-    /** @test */
-    public function testLowercaseUsTicker_UppercasedToUS(): void
+    #[Test]
+    public function test_lowercase_us_ticker_uppercased_to_us(): void
     {
         // 소문자 미국 티커 → 대문자화 (US 분류 유지)
         $this->assertSame('TSLA', $this->mapper->toTossSymbol('tsla'));

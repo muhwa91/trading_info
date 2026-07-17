@@ -1,11 +1,10 @@
 <?php
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PortfolioController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\WatchlistController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -34,7 +33,3 @@ Route::delete('/portfolio/{id}', [PortfolioController::class, 'destroy']);
 
 Route::post('/watchlist', [WatchlistController::class, 'store']);
 Route::delete('/watchlist/{id}', [WatchlistController::class, 'destroy']);
-
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
-});

@@ -52,8 +52,6 @@ class Stock extends Model
      *
      * N+1 주의: 개별 호출 시 캐시 미스면 토스 단건 호출 발생.
      *           컨트롤러에서 getInfoBatch() 로 사전 워밍 권장.
-     *
-     * @return string
      */
     public function getNameAttribute(): string
     {
@@ -83,13 +81,13 @@ class Stock extends Model
      *   2) DB 컬럼 type (마이그레이션 실행 전)
      *   3) 'stock'
      *
-     * @return string  'stock' | 'etf'
+     * @return string 'stock' | 'etf'
      */
     public function getTypeAttribute(): string
     {
         /** @var TossStockMaster $master */
-        $master   = app(TossStockMaster::class);
-        $info     = $master->getInfo($this->symbol);
+        $master = app(TossStockMaster::class);
+        $info = $master->getInfo($this->symbol);
 
         if ($info !== null) {
             return $info['type'];
@@ -110,7 +108,7 @@ class Stock extends Model
      * KR → KRW, US → USD.
      * 그 외 market 이면 토스 캐시 currency 확인 후 'USD' 기본값.
      *
-     * @return string  'KRW' | 'USD'
+     * @return string 'KRW' | 'USD'
      */
     public function getCurrencyAttribute(): string
     {
@@ -127,7 +125,7 @@ class Stock extends Model
         // 알 수 없는 market — 토스 캐시 확인
         /** @var TossStockMaster $master */
         $master = app(TossStockMaster::class);
-        $info   = $master->getInfo($this->symbol);
+        $info = $master->getInfo($this->symbol);
 
         return $info['currency'] ?? 'USD';
     }

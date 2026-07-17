@@ -31,7 +31,8 @@ class FxService
     private const FX_STALE_SECONDS = 300;
 
     private const FROM = 'USD';
-    private const TO   = 'KRW';
+
+    private const TO = 'KRW';
 
     /** USD/KRW 전일 종가 캐시 키 — 하루 1회 갱신(서울 외환시장 종가 경계). */
     private const FX_PREV_CLOSE_CACHE_KEY = 'yahoo_fx_prev_close_usdkrw';
@@ -48,7 +49,8 @@ class FxService
     private const YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/USDKRW=X?interval=30m&range=1mo';
 
     /** 서울 외환시장 종가 시각(KST) — 개발자 결정: '전일' = 서울 외환시장 전 영업일 종가. */
-    private const SEOUL_FX_CLOSE_HOUR   = 15;
+    private const SEOUL_FX_CLOSE_HOUR = 15;
+
     private const SEOUL_FX_CLOSE_MINUTE = 30;
 
     /**
@@ -87,8 +89,8 @@ class FxService
         ?MarketSessionService $session = null
     ) {
         $this->tossFxProvider = $tossFxProvider;
-        $this->http           = $http ?? new Client();
-        $this->session        = $session ?? app(MarketSessionService::class);
+        $this->http = $http ?? new Client;
+        $this->session = $session ?? app(MarketSessionService::class);
     }
 
     /**
@@ -118,10 +120,10 @@ class FxService
         // DB 값이 신선하면 외부 호출 생략
         if ($row !== null && $row->recorded_at !== null && $row->recorded_at->gt($staleThreshold)) {
             return [
-                'rate'        => (float) $row->rate,
+                'rate' => (float) $row->rate,
                 'recorded_at' => $row->recorded_at->toDateTimeString(),
-                'source'      => (string) ($row->source ?? 'cached'),
-                'prev_close'  => $prevClose,
+                'source' => (string) ($row->source ?? 'cached'),
+                'prev_close' => $prevClose,
             ];
         }
 
@@ -133,15 +135,16 @@ class FxService
             Log::warning('[FxService] 토스 환율 취득 실패 — DB 직전값 사용');
             if ($row !== null) {
                 return [
-                    'rate'        => (float) $row->rate,
+                    'rate' => (float) $row->rate,
                     'recorded_at' => $row->recorded_at ? $row->recorded_at->toDateTimeString() : null,
-                    'source'      => 'db_fallback',
-                    'prev_close'  => $prevClose,
+                    'source' => 'db_fallback',
+                    'prev_close' => $prevClose,
                 ];
             }
 
             // ── 3순위: DB 완전 폴백 (값은 있지만 신선도 만료) ────────────────
             Log::warning('[FxService] DB값 없음 — 환율 취득 불가');
+
             return null;
         }
 
@@ -165,7 +168,7 @@ class FxService
      * 값이 바뀌는 경계는 **영업일 15:30 KST 하나뿐**이다 — prev 는 '이미 지나간 마지막 영업일 15:30'의 함수라
      *   두 15:30 사이에선 상수다(런던 자정·ET 자정·KST 자정 전부 경계가 아니다). TTL 은 그 경계 하나에 맞춘다.
      *
-     * @return float|null  실패·해당 봉 없음 시 null (예외 전파 금지 — 기존 폴백 스타일 유지)
+     * @return float|null 실패·해당 봉 없음 시 null (예외 전파 금지 — 기존 폴백 스타일 유지)
      */
     private function fetchPrevClose(): ?float
     {
@@ -175,7 +178,7 @@ class FxService
         }
 
         $refDate = $this->lastSeoulFxCloseDate();
-        $prev    = $refDate !== null ? $this->fetchYahooCloseAt($refDate) : null;
+        $prev = $refDate !== null ? $this->fetchYahooCloseAt($refDate) : null;
 
         // 성공 = 다음 영업일 15:30(값이 바뀌는 유일한 경계)까지 · 실패 = sentinel 0.0 을 120초만(장TTL 고착 금지).
         Cache::put(
@@ -226,7 +229,7 @@ class FxService
      */
     private function secondsUntilNextSeoulFxClose(): int
     {
-        $now   = Carbon::now('Asia/Seoul');
+        $now = Carbon::now('Asia/Seoul');
         $close = $this->seoulFxCloseOn($now);
 
         if ($close->lte($now)) {
@@ -263,20 +266,21 @@ class FxService
     {
         try {
             $res = $this->http->get(self::YAHOO_CHART_URL, [
-                'headers'     => [
+                'headers' => [
                     'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 ],
                 'http_errors' => false,
-                'timeout'     => self::YAHOO_TIMEOUT,
+                'timeout' => self::YAHOO_TIMEOUT,
             ]);
 
-            $data       = json_decode((string) $res->getBody(), true);
-            $result     = $data['chart']['result'][0] ?? null;
+            $data = json_decode((string) $res->getBody(), true);
+            $result = $data['chart']['result'][0] ?? null;
             $timestamps = is_array($result) ? ($result['timestamp'] ?? null) : null;
-            $closes     = is_array($result) ? ($result['indicators']['quote'][0]['close'] ?? null) : null;
+            $closes = is_array($result) ? ($result['indicators']['quote'][0]['close'] ?? null) : null;
 
-            if (!is_array($timestamps) || !is_array($closes)) {
+            if (! is_array($timestamps) || ! is_array($closes)) {
                 Log::debug('[FxService] Yahoo USDKRW=X 30분봉 시계열 없음');
+
                 return null;
             }
 
@@ -296,6 +300,7 @@ class FxService
             return null;
         } catch (\Throwable $e) {
             Log::warning('[FxService] USD/KRW 전 영업일 종가 취득 실패: ' . $e->getMessage());
+
             return null;
         }
     }
@@ -308,10 +313,10 @@ class FxService
         DB::table('exchange_rates')->upsert(
             [
                 'from_currency' => self::FROM,
-                'to_currency'   => self::TO,
-                'rate'          => $rate,
-                'recorded_at'   => $recordedAt,
-                'source'        => $source,
+                'to_currency' => self::TO,
+                'rate' => $rate,
+                'recorded_at' => $recordedAt,
+                'source' => $source,
             ],
             ['from_currency', 'to_currency'],
             ['rate', 'recorded_at', 'source']

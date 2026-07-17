@@ -29,16 +29,18 @@ use Tests\TestCase;
 class TossChangeCalculatorTest extends TestCase
 {
     private $clientMock;
+
     private $sessionMock;
+
     private TossChangeCalculator $calculator;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->clientMock  = $this->createMock(TossApiClient::class);
+        $this->clientMock = $this->createMock(TossApiClient::class);
         $this->sessionMock = $this->createMock(MarketSessionService::class);
-        $this->calculator  = new TossChangeCalculator($this->clientMock, new TossSymbolMapper(), $this->sessionMock);
+        $this->calculator = new TossChangeCalculator($this->clientMock, new TossSymbolMapper, $this->sessionMock);
 
         Cache::flush();
     }
@@ -65,21 +67,21 @@ class TossChangeCalculatorTest extends TestCase
      *
      * 빈 맵([])을 주면 '해당일 봉 없음' → 프로덕션의 Yahoo 실패 폴백 경로가 열린다.
      *
-     * @param array<string,float> $closesByDate  ['Y-m-d'(KST) => 정규장 종가]
+     * @param  array<string,float>  $closesByDate  ['Y-m-d'(KST) => 정규장 종가]
      */
     private function krYahooClient(array $closesByDate): Client
     {
         $handler = function () use ($closesByDate): FulfilledPromise {
             $timestamps = [];
-            $closes     = [];
+            $closes = [];
             foreach ($closesByDate as $date => $close) {
                 // 프로덕션은 timestamp 를 KST 날짜로 환산해 매칭한다 → 그 날 장중 시각이면 무엇이든 무방.
                 $timestamps[] = Carbon::parse("{$date} 15:30", 'Asia/Seoul')->getTimestamp();
-                $closes[]     = $close;
+                $closes[] = $close;
             }
 
             $body = json_encode(['chart' => ['result' => [[
-                'timestamp'  => $timestamps,
+                'timestamp' => $timestamps,
                 'indicators' => ['quote' => [['close' => $closes]]],
             ]]]]);
 
@@ -92,13 +94,13 @@ class TossChangeCalculatorTest extends TestCase
     /**
      * $this->calculator 를 Yahoo 대역이 주입된 인스턴스로 교체한다(KR 경로 테스트용 1줄 준비).
      *
-     * @param array<string,float> $closesByDate  ['Y-m-d'(KST) => 정규장 종가] · [] = Yahoo 실패 재현
+     * @param  array<string,float>  $closesByDate  ['Y-m-d'(KST) => 정규장 종가] · [] = Yahoo 실패 재현
      */
     private function useKrYahoo(array $closesByDate): void
     {
         $this->calculator = new TossChangeCalculator(
             $this->clientMock,
-            new TossSymbolMapper(),
+            new TossSymbolMapper,
             $this->sessionMock,
             $this->krYahooClient($closesByDate)
         );
@@ -109,11 +111,11 @@ class TossChangeCalculatorTest extends TestCase
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * @test
      * KR 상승: 기준가 = Yahoo 정규장 종가(6/23) — 토스 1d 봉 종가(70,500)가 아니다.
      * 토스 종가를 일부러 다른 값으로 둬 '어느 소스가 이겼는지'가 결과에 드러나게 한다.
      */
-    public function testCalculate_PositiveChange(): void
+    #[Test]
+    public function test_calculate_positive_change(): void
     {
         // 최신 봉(06-24)이 "오늘 진행중 봉"인 시나리오 → 시간 고정 (분기 1: candles[1]=6/23 이 기준 거래일)
         Carbon::setTestNow(Carbon::parse('2026-06-24 10:00:00', 'Asia/Seoul'));
@@ -143,11 +145,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * KR 하락: 기준가 = Yahoo 정규장 종가(6/23) → 부호가 토스 종가 기준과 갈린다.
      * 토스 1d(71,000) 기준이면 −1,000, Yahoo(71,500) 기준이면 −1,500 — 오염 소스 복귀 시 여기서 잡힌다.
      */
-    public function testCalculate_NegativeChange(): void
+    #[Test]
+    public function test_calculate_negative_change(): void
     {
         // 최신 봉(06-24)이 "오늘 진행중 봉"인 시나리오 → 시간 고정
         Carbon::setTestNow(Carbon::parse('2026-06-24 10:00:00', 'Asia/Seoul'));
@@ -173,8 +175,8 @@ class TossChangeCalculatorTest extends TestCase
         $this->assertLessThan(0, $result['change_percent']);
     }
 
-    /** @test */
-    public function testCalculate_NoPrevClose_ReturnsZero(): void
+    #[Test]
+    public function test_calculate_no_prev_close_returns_zero(): void
     {
         $this->clientMock
             ->method('get')
@@ -191,8 +193,8 @@ class TossChangeCalculatorTest extends TestCase
     // getPrevClose() — 캐시 hit/miss
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testGetPrevClose_CacheHit_NoApiCall(): void
+    #[Test]
+    public function test_get_prev_close_cache_hit_no_api_call(): void
     {
         Cache::put('toss_prev_close_005930', 70500.0, 3600);
 
@@ -204,11 +206,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 캐시 miss → /candles + Yahoo 호출 → 캐시 저장. 두 번째 호출은 캐시 히트라 두 경로 모두 미호출.
      * (호출 횟수를 세어 '캐시가 실제로 먹었는지'를 못박는다 — 같은 값 반환만으론 증명되지 않는다.)
      */
-    public function testGetPrevClose_CacheMiss_CallsApiAndCaches(): void
+    #[Test]
+    public function test_get_prev_close_cache_miss_calls_api_and_caches(): void
     {
         // 최신 봉(06-24)이 "오늘 진행중 봉"인 시나리오 → 시간 고정 (KR 오늘봉 존재 = 분기 1)
         Carbon::setTestNow(Carbon::parse('2026-06-24 10:00:00', 'Asia/Seoul'));
@@ -217,12 +219,12 @@ class TossChangeCalculatorTest extends TestCase
         $yahooCalls = 0;
         $this->calculator = new TossChangeCalculator(
             $this->clientMock,
-            new TossSymbolMapper(),
+            new TossSymbolMapper,
             $this->sessionMock,
             new Client(['handler' => function () use (&$yahooCalls): FulfilledPromise {
                 $yahooCalls++;
                 $body = json_encode(['chart' => ['result' => [[
-                    'timestamp'  => [Carbon::parse('2026-06-23 15:30', 'Asia/Seoul')->getTimestamp()],
+                    'timestamp' => [Carbon::parse('2026-06-23 15:30', 'Asia/Seoul')->getTimestamp()],
                     'indicators' => ['quote' => [['close' => [71000.0]]]],
                 ]]]]);
 
@@ -269,11 +271,11 @@ class TossChangeCalculatorTest extends TestCase
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * @test
      * Yahoo 실패(해당일 봉 없음) → 토스 candles 기반 기준가로 graceful 폴백(캐시 기아·NULL 방지).
      * 옛 'price-limits 빈 응답 → candles 폴백' 테스트의 자산을 새 계약의 실패 소스로 옮긴 것.
      */
-    public function testGetPrevClose_KrYahooFails_FallsBackToCandleClose(): void
+    #[Test]
+    public function test_get_prev_close_kr_yahoo_fails_falls_back_to_candle_close(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 10:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('정규장');
@@ -291,11 +293,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * Yahoo 실패분 TTL 은 짧게(120초) — 드리프트 오염된 폴백값을 장TTL 로 박으면 하루 종일 고착된다.
      * 정상 경로(자정·개장 TTL)와 갈라지는 값이라 리터럴로 못박는다.
      */
-    public function testFetchAndCache_KrYahooFailed_UsesShortTtl(): void
+    #[Test]
+    public function test_fetch_and_cache_kr_yahoo_failed_uses_short_ttl(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 10:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('정규장');
@@ -321,8 +323,8 @@ class TossChangeCalculatorTest extends TestCase
         $this->assertSame(120, $capturedTtl, 'Yahoo 실패 폴백값은 짧은 TTL(120s)로만 캐싱해야 한다');
     }
 
-    /** @test */
-    public function testGetPrevClose_OnlyOneCandle_ReturnsNull(): void
+    #[Test]
+    public function test_get_prev_close_only_one_candle_returns_null(): void
     {
         $this->clientMock
             ->method('get')
@@ -340,7 +342,6 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 봉이 역순(오래된 것 먼저)으로 와도 정렬 후 '기준 거래일'을 바로 고른다.
      *
      * 새 계약에선 정렬 결과가 close 가 아니라 '어느 날짜로 Yahoo 를 조회할지'를 정한다 →
@@ -349,7 +350,8 @@ class TossChangeCalculatorTest extends TestCase
      *
      * (옛 픽스처는 이름과 달리 최신 먼저로 정렬돼 있어 정렬 로직을 실제로 태우지 못했다 → 진짜 역순으로 교정.)
      */
-    public function testGetPrevClose_ReverseOrderCandles_CorrectlyPicksOldest(): void
+    #[Test]
+    public function test_get_prev_close_reverse_order_candles_correctly_picks_oldest(): void
     {
         // 최신 봉(06-24)이 "오늘 진행중 봉"인 시나리오 → 시간 고정
         Carbon::setTestNow(Carbon::parse('2026-06-24 10:00:00', 'Asia/Seoul'));
@@ -375,8 +377,8 @@ class TossChangeCalculatorTest extends TestCase
         $this->assertSame(70000.0, $prevClose);
     }
 
-    /** @test */
-    public function testGetPrevClose_EmptyApiResponse_ReturnsNull(): void
+    #[Test]
+    public function test_get_prev_close_empty_api_response_returns_null(): void
     {
         $this->clientMock
             ->method('get')
@@ -391,8 +393,8 @@ class TossChangeCalculatorTest extends TestCase
     // 등락률 계산 정확도
     // ──────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testCalculate_ChangePercentPrecision(): void
+    #[Test]
+    public function test_calculate_change_percent_precision(): void
     {
         Cache::put('toss_prev_close_005930', 71000.0, 3600);
 
@@ -403,8 +405,8 @@ class TossChangeCalculatorTest extends TestCase
         $this->assertSame($expected, $result['change_percent']);
     }
 
-    /** @test */
-    public function testCalculate_ZeroChange_WhenCurrentEqualsClose(): void
+    #[Test]
+    public function test_calculate_zero_change_when_current_equals_close(): void
     {
         Cache::put('toss_prev_close_005930', 71000.0, 3600);
 
@@ -419,14 +421,14 @@ class TossChangeCalculatorTest extends TestCase
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * @test
      * 미국 프리마켓~개장 직후: 토스에 오늘 일봉이 아직 없어 [전일, 전전일] 이 온다.
      * 최신 봉(index 0 = 전일)이 "오늘 봉"이 아니므로 prevClose = index 0(전일).
      *
      * 실제 버그(MU 7/10): 991.64(7/9)/948.80(7/8) 인데 무조건 index 1(948.80)을
      * 기준가로 잡아 등락 부호가 반전됐다. 이 케이스가 핵심 재발 방지.
      */
-    public function testGetPrevClose_UsNoTodayBar_UsesLatestBar(): void
+    #[Test]
+    public function test_get_prev_close_us_no_today_bar_uses_latest_bar(): void
     {
         // NY 기준 오늘 = 2026-07-10 프리마켓(08:00 ET). 최신 봉은 7/9 (오늘 봉 없음).
         Carbon::setTestNow(Carbon::parse('2026-07-10 08:00:00', 'America/New_York'));
@@ -451,11 +453,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 위 케이스의 계산 결과까지 — 현재가 < 991.64 이면 반드시 하락(음수) 이어야 한다.
      * 옛 로직(948.80 기준)이면 상승으로 반전됐을 값.
      */
-    public function testCalculate_UsNoTodayBar_SignNotFlipped(): void
+    #[Test]
+    public function test_calculate_us_no_today_bar_sign_not_flipped(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-10 08:00:00', 'America/New_York'));
         $this->sessionMock->method('getUsSession')->willReturn('프리마켓');
@@ -480,11 +482,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 미국 장중/마감 후: 오늘 봉이 존재해 [당일, 전일] 이 온다.
      * 최신 봉(index 0)이 "오늘 봉"이므로 prevClose = index 1(전일).
      */
-    public function testGetPrevClose_UsTodayBarPresent_UsesPrevBar(): void
+    #[Test]
+    public function test_get_prev_close_us_today_bar_present_uses_prev_bar(): void
     {
         // NY 기준 오늘 = 2026-07-10 장중(11:00 ET). 최신 봉이 7/10 = 오늘 봉.
         Carbon::setTestNow(Carbon::parse('2026-07-10 11:00:00', 'America/New_York'));
@@ -507,12 +509,12 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 국내 개장 전(장마감): 오늘 봉이 아직 없어 [전일, 전전일] 이 온다.
      * lastPrice 가 어제 종가에 고정된 구간이므로 candles[0](어제 종가)을 기준가로 쓰면 0.00% 로 초기화된다.
      * → 장마감이면 candles[1](전전일 종가) 기준 = "어제 하루 등락"이 유지되어야 한다(토스 앱 동일).
      */
-    public function testGetPrevClose_KrPreOpen_UsesPrevPrevBar_KeepsYesterdayChange(): void
+    #[Test]
+    public function test_get_prev_close_kr_pre_open_uses_prev_prev_bar_keeps_yesterday_change(): void
     {
         // KST 기준 오늘 = 2026-07-10 장전(08:00 KST, 정규장 아님). 최신 봉은 7/9.
         Carbon::setTestNow(Carbon::parse('2026-07-10 08:00:00', 'Asia/Seoul'));
@@ -543,10 +545,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 국내 정규장 중인데 오늘 봉이 아직 안 생긴 순간(개장 직후) → candles[0](어제 종가) 기준 = 오늘 등락.
      */
-    public function testGetPrevClose_KrRegularSessionNoTodayBar_UsesLatestBar(): void
+    #[Test]
+    public function test_get_prev_close_kr_regular_session_no_today_bar_uses_latest_bar(): void
     {
         // KST 09:05 정규장, 최신 봉은 아직 7/9(오늘 봉 미생성).
         Carbon::setTestNow(Carbon::parse('2026-07-10 09:05:00', 'Asia/Seoul'));
@@ -571,11 +573,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 미국 주말/휴장(장마감): 오늘 봉 없음 → candles[1](전전일) 기준 = 직전 거래일 하루 등락 유지.
      * 옛 로직(candles[0])이면 현재가=금요일 종가와 같아 0.00% 로 초기화됐다.
      */
-    public function testGetPrevClose_UsMarketClosed_UsesPrevPrevBar(): void
+    #[Test]
+    public function test_get_prev_close_us_market_closed_uses_prev_prev_bar(): void
     {
         // NY 기준 토요일(2026-07-11) — 장마감. 최신 봉은 금(7/10).
         Carbon::setTestNow(Carbon::parse('2026-07-11 12:00:00', 'America/New_York'));
@@ -599,11 +601,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 엣지: currency 누락 → KRW 기본값(Asia/Seoul) 으로 '오늘' 판별해야 한다.
      * 오늘 봉이 존재하면 전일 봉을 prevClose 로 선택.
      */
-    public function testGetPrevClose_CurrencyMissing_DefaultsToKrwTimezone(): void
+    #[Test]
+    public function test_get_prev_close_currency_missing_defaults_to_krw_timezone(): void
     {
         // KST 기준 오늘 = 2026-07-10 장중(10:00 KST). 최신 봉이 7/10 = 오늘 봉.
         Carbon::setTestNow(Carbon::parse('2026-07-10 10:00:00', 'Asia/Seoul'));
@@ -629,12 +631,12 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 엣지: US 종목 + currency 누락 + 프리마켓 → 심볼로 시장 판별 폴백(NY TZ) → prevClose=전일.
      * currency 결측 시 서울TZ 로 폴백하면 오늘봉 판별이 어긋나 부호반전을 재발시킬 수 있어,
      * TossSymbolMapper::market() 로 US 를 판별해 America/New_York 로 날짜 비교해야 한다.
      */
-    public function testGetPrevClose_UsCurrencyMissing_FallsBackToSymbolMarket(): void
+    #[Test]
+    public function test_get_prev_close_us_currency_missing_falls_back_to_symbol_market(): void
     {
         // NY 기준 오늘 = 2026-07-10 프리마켓(08:00 ET). 최신 봉은 7/9 (오늘 봉 없음).
         Carbon::setTestNow(Carbon::parse('2026-07-10 08:00:00', 'America/New_York'));
@@ -663,11 +665,11 @@ class TossChangeCalculatorTest extends TestCase
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * @test
      * KR 종목 TTL 은 여전히 KST 자정 만료인지 (US 분기가 국내로 새지 않았는지 회귀 가드).
      * secondsUntilKstMidnight() 는 Carbon::now('Asia/Seoul') 기반 → setTestNow 로 고정 가능.
      */
-    public function testFetchAndCache_KrTtl_StillExpiresAtKstMidnight(): void
+    #[Test]
+    public function test_fetch_and_cache_kr_ttl_still_expires_at_kst_midnight(): void
     {
         // KST 10:00 고정 → 다음 자정(11일 00:00)까지 14시간 = 50400초
         Carbon::setTestNow(Carbon::parse('2026-07-10 10:00:00', 'Asia/Seoul'));
@@ -679,6 +681,7 @@ class TossChangeCalculatorTest extends TestCase
         Cache::shouldReceive('get')->andReturnNull();
         Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
             $capturedTtl = $ttl;
+
             return true;
         });
 
@@ -706,10 +709,10 @@ class TossChangeCalculatorTest extends TestCase
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * @test
      * KR 개장 전(장마감) 기준가 TTL 은 다음 09:00 KST 만료여야 한다(자정 아님).
      */
-    public function testFetchAndCache_KrClosedTtl_ExpiresAtNextKrOpen(): void
+    #[Test]
+    public function test_fetch_and_cache_kr_closed_ttl_expires_at_next_kr_open(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
@@ -721,6 +724,7 @@ class TossChangeCalculatorTest extends TestCase
         Cache::shouldReceive('get')->andReturnNull();
         Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
             $capturedTtl = $ttl;
+
             return true;
         });
 
@@ -743,11 +747,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * US 휴장(장마감) 기준가 TTL 도 '다음 경계'까지 — 토(7/11) 12:00 ET → 다음 경계 16:00 ET = 4h.
      * 장마감이라고 개장(09:30)까지 통으로 캐싱하면 그 사이 경계를 넘겨 stale 이 된다.
      */
-    public function testFetchAndCache_UsClosedTtl_StopsAtNextBoundary(): void
+    #[Test]
+    public function test_fetch_and_cache_us_closed_ttl_stops_at_next_boundary(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-11 12:00:00', 'America/New_York'));  // 토요일 장마감
         $this->sessionMock->method('getUsSession')->willReturn('장마감');
@@ -756,6 +760,7 @@ class TossChangeCalculatorTest extends TestCase
         Cache::shouldReceive('get')->andReturnNull();
         Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
             $capturedTtl = $ttl;
+
             return true;
         });
 
@@ -788,7 +793,7 @@ class TossChangeCalculatorTest extends TestCase
     /**
      * 국내 1m 분봉 응답 헬퍼: [HHMM(KST) => closePrice] 를 오늘(givenDate) 봉으로 만든다.
      *
-     * @param array<int,array{0:string,1:string}> $bars  ['1531','2082000'] 형태 목록
+     * @param  array<int,array{0:string,1:string}>  $bars  ['1531','2082000'] 형태 목록
      */
     private function krMinuteCandles(string $date, array $bars): array
     {
@@ -797,13 +802,13 @@ class TossChangeCalculatorTest extends TestCase
             $h = substr($hhmm, 0, 2);
             $m = substr($hhmm, 2, 2);
             $candles[] = [
-                'timestamp'  => "{$date}T{$h}:{$m}:00.000+09:00",
-                'openPrice'  => $close,
-                'highPrice'  => $close,
-                'lowPrice'   => $close,
+                'timestamp' => "{$date}T{$h}:{$m}:00.000+09:00",
+                'openPrice' => $close,
+                'highPrice' => $close,
+                'lowPrice' => $close,
                 'closePrice' => $close,
-                'volume'     => '10',
-                'currency'   => 'KRW',
+                'volume' => '10',
+                'currency' => 'KRW',
             ];
         }
 
@@ -811,12 +816,12 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * KR 장마감(오늘 거래일) + 15:31~15:40 plateau → 정규장 종가 반환.
      * 실측(000660): 15:31~15:40 close = 2,082,000(마감 동시호가 체결가). 15:30 연속(2,093,000)·
      * 15:41~ 시간외단일가 드리프트(2,078,000→…)는 제외되어 시간외 lastPrice 대신 2,082,000 고정.
      */
-    public function testGetKrRegularClose_MinutePlateau_Returns000660Close(): void
+    #[Test]
+    public function test_get_kr_regular_close_minute_plateau_returns000660_close(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));  // 15:30 이후
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
@@ -836,10 +841,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 삼성전자(005930) 동일 패턴: 15:31~15:40 close = 279,500 → 종가 정확 추출.
      */
-    public function testGetKrRegularClose_MinutePlateau_Returns005930Close(): void
+    #[Test]
+    public function test_get_kr_regular_close_minute_plateau_returns005930_close(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 16:10:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
@@ -857,11 +862,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 평탄 구간에 이상 봉이 섞이고 시간외 드리프트 봉이 함께 와도 최빈값으로 종가 정확 추출.
      * (15:33 에 튄 2,085,000 한 봉이 있어도 mode = 2,082,000, 15:41~ 드리프트는 창 밖 제외.)
      */
-    public function testGetKrRegularClose_DriftAndOutlierMixed_StillPicksClose(): void
+    #[Test]
+    public function test_get_kr_regular_close_drift_and_outlier_mixed_still_picks_close(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 18:00:00', 'Asia/Seoul'));  // 저녁 콜드스타트 상황
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
@@ -882,10 +887,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 폴백: 1m plateau 판정 불가(분봉 취득 실패) → 1d 오늘봉 close 로 graceful 폴백(NULL 방지).
      */
-    public function testGetKrRegularClose_MinuteFails_FallsBackToDailyClose(): void
+    #[Test]
+    public function test_get_kr_regular_close_minute_fails_falls_back_to_daily_close(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
@@ -895,6 +900,7 @@ class TossChangeCalculatorTest extends TestCase
             if (($query['interval'] ?? null) === '1m') {
                 return [];  // 분봉 취득 실패 → 폴백 유도
             }
+
             // 1d 폴백: 오늘봉(7/15) close 존재
             return ['result' => ['candles' => [
                 ['timestamp' => '2026-07-15T00:00:00.000+09:00', 'closePrice' => '2081000', 'currency' => 'KRW'],
@@ -906,10 +912,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * KR 정규장 중 → null(라이브 lastPrice 유지). /candles 호출도 없어야 한다.
      */
-    public function testGetKrRegularClose_RegularSession_ReturnsNull(): void
+    #[Test]
+    public function test_get_kr_regular_close_regular_session_returns_null(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 10:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('정규장');
@@ -919,10 +925,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * KR 장마감 + 휴장일(거래일 아님) → null(현행 전일 마감 표시 유지). /candles 미호출.
      */
-    public function testGetKrRegularClose_NonTradingDay_ReturnsNull(): void
+    #[Test]
+    public function test_get_kr_regular_close_non_trading_day_returns_null(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-18 16:00:00', 'Asia/Seoul'));  // 토요일 가정
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
@@ -933,11 +939,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * KR 장마감 + 개장 전(오늘 15:31+ 봉 미생성, 최신 봉 = 어제) → null(현행 유지, 종가 고정 미적용).
      * 1m plateau 공집합 + 1d 폴백도 오늘봉 아님 → 최종 null.
      */
-    public function testGetKrRegularClose_PreOpenNoTodayBar_ReturnsNull(): void
+    #[Test]
+    public function test_get_kr_regular_close_pre_open_no_today_bar_returns_null(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 08:00:00', 'Asia/Seoul'));  // 개장 전
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
@@ -955,10 +961,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * US 종목 → null(미국은 프리/애프터 시간외를 그대로 표시 — 종가 고정 미적용).
      */
-    public function testGetKrRegularClose_UsSymbol_ReturnsNull(): void
+    #[Test]
+    public function test_get_kr_regular_close_us_symbol_returns_null(): void
     {
         $this->clientMock->expects($this->never())->method('get');
 
@@ -966,12 +972,12 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 장마감·거래일에 종가 취득이 null(1m plateau + 1d 폴백 둘 다 빈응답=일시 실패)이면
      * sentinel(0) 을 장TTL 이 아니라 짧은 TTL(120초)로 저장해야 한다.
      * 장TTL 로 0 을 고착시키면 API 회복 후에도 다음 개장까지 종가 고정을 못 하는 자가치유 실패가 난다.
      */
-    public function testGetKrRegularClose_FetchFails_CachesSentinelWithShortTtl(): void
+    #[Test]
+    public function test_get_kr_regular_close_fetch_fails_caches_sentinel_with_short_ttl(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
@@ -982,6 +988,7 @@ class TossChangeCalculatorTest extends TestCase
         Cache::shouldReceive('get')->andReturnNull();
         Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
             $capturedTtl = $ttl;
+
             return true;
         });
 
@@ -992,10 +999,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 실값(분봉 plateau 성공)일 때는 다음 09:00 KST 장TTL 로 저장(드리프트 없는 확정 종가 → 저녁 내내 유지).
      */
-    public function testGetKrRegularClose_FetchSucceeds_CachesWithLongTtl(): void
+    #[Test]
+    public function test_get_kr_regular_close_fetch_succeeds_caches_with_long_ttl(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
@@ -1010,6 +1017,7 @@ class TossChangeCalculatorTest extends TestCase
         Cache::shouldReceive('get')->andReturnNull();
         Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
             $capturedTtl = $ttl;
+
             return true;
         });
 
@@ -1021,10 +1029,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 캐시 hit → /candles 미호출(장마감·거래일 게이트 통과 후 캐시 우선). 재시작 시 동일값 재사용 근거.
      */
-    public function testGetKrRegularClose_CacheHit_NoApiCall(): void
+    #[Test]
+    public function test_get_kr_regular_close_cache_hit_no_api_call(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 16:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('장마감');
@@ -1049,10 +1057,10 @@ class TossChangeCalculatorTest extends TestCase
     /**
      * US 오늘봉(정규장 완결) + 어제봉 2봉 응답 헬퍼. currency=USD 로 isUsMarket 유도.
      *
-     * @param string $today       오늘(정규장 완결) 종가
-     * @param string $prev         직전 candle(candles[1]) 종가 = stale 후보
-     * @param string $todayDate    오늘 NY 날짜
-     * @param string $prevDate     직전 candle NY 날짜
+     * @param  string  $today  오늘(정규장 완결) 종가
+     * @param  string  $prev  직전 candle(candles[1]) 종가 = stale 후보
+     * @param  string  $todayDate  오늘 NY 날짜
+     * @param  string  $prevDate  직전 candle NY 날짜
      */
     private function usTodayBarCandles(string $today, string $prev, string $todayDate = '2026-07-14', string $prevDate = '2026-07-13'): array
     {
@@ -1063,12 +1071,12 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * MU 애프터마켓: isTodayBar=true(오늘 정규장봉 완결) + yahoo_regular_close 존재
      * → 기준가 = yahoo_regular_close(983.12), candles[1](937, 7/13 stale) 아님.
      * 실측: 기준가 937 이면 현재가 976.5 가 +4.22% 로 오표기 → 정답 983.12 대비 -0.67%.
      */
-    public function testGetPrevClose_UsAfterMarket_UsesYahooRegularClose(): void
+    #[Test]
+    public function test_get_prev_close_us_after_market_uses_yahoo_regular_close(): void
     {
         // NY 2026-07-14 17:00 ET = 애프터마켓(16:00~20:00). 오늘봉(7/14) 완결.
         Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
@@ -1090,12 +1098,12 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 애프터 종료~KST 자정 사이(getUsSession='장마감')에도 오늘봉(isTodayBar=true)이면 롤포워드 발동.
      * #1(애프터마켓)과 동일 로직 — 세션만 '장마감'으로 바꾼 회귀 가드. 롤포워드 게이트는
      * "정규장 아님"이라 '장마감'도 포함 → 기준가 = yahoo_regular_close(오늘 종가), candles[1](어제) 아님.
      */
-    public function testGetPrevClose_UsMarketClosedSameDay_UsesYahooRegularClose(): void
+    #[Test]
+    public function test_get_prev_close_us_market_closed_same_day_uses_yahoo_regular_close(): void
     {
         // NY 2026-07-14 20:30 ET = 애프터 종료(20:00) 직후 '장마감'. 오늘봉(7/14) 여전히 완결.
         Carbon::setTestNow(Carbon::parse('2026-07-14 20:30:00', 'America/New_York'));
@@ -1110,11 +1118,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * SKHY(저유동 ADR) 애프터마켓: candles[1] 이 수일 전 종가(152.35)인데 yahoo_regular_close 는
      * 오늘 종가(193.92) → 기준가 = 193.92 로 큰 stale gap(+27%) 방지.
      */
-    public function testGetPrevClose_UsAfterMarket_LowLiquidityAdrGap_UsesYahoo(): void
+    #[Test]
+    public function test_get_prev_close_us_after_market_low_liquidity_adr_gap_uses_yahoo(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
         $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
@@ -1135,11 +1143,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * yahoo_regular_close cold + kis_...regular_close 폴백 존재 → kis 폴백값으로 롤포워드.
      * readUsRegularClose 2순위(kis_last_successful_overseas_price_{ticker}.regular_close) 검증.
      */
-    public function testGetPrevClose_UsAfterMarket_YahooCold_UsesKisFallbackRegularClose(): void
+    #[Test]
+    public function test_get_prev_close_us_after_market_yahoo_cold_uses_kis_fallback_regular_close(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
         $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
@@ -1152,10 +1160,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 캐시 cold 폴백: yahoo·kis 둘 다 없으면 롤포워드 미적용 → 기존 candles[1](어제 종가) 유지(graceful).
      */
-    public function testGetPrevClose_UsAfterMarket_CacheCold_KeepsCandlePrevClose(): void
+    #[Test]
+    public function test_get_prev_close_us_after_market_cache_cold_keeps_candle_prev_close(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
         $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
@@ -1168,11 +1176,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 불변: US 정규장 중(getUsSession='정규장')엔 롤포워드 미발동 → 기준가 = candles[1](어제 종가).
      * yahoo_regular_close 캐시가 있어도 무시해야 장중 등락(어제 종가 대비)이 보존된다.
      */
-    public function testGetPrevClose_UsRegularSession_NoRollForward_UsesCandlePrev(): void
+    #[Test]
+    public function test_get_prev_close_us_regular_session_no_roll_forward_uses_candle_prev(): void
     {
         // NY 2026-07-14 11:00 ET = 정규장. 오늘봉(7/14) 진행중 → isTodayBar=true.
         Carbon::setTestNow(Carbon::parse('2026-07-14 11:00:00', 'America/New_York'));
@@ -1187,11 +1195,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 불변: US 프리마켓(isTodayBar=false, 오늘봉 미생성)엔 candles[0](어제 종가) 경로 그대로.
      * 롤포워드는 isTodayBar 조건이라 미발동 — yahoo_regular_close 캐시가 있어도 candles[0] 유지.
      */
-    public function testGetPrevClose_UsPreMarket_NoRollForward_UsesCandleZero(): void
+    #[Test]
+    public function test_get_prev_close_us_pre_market_no_roll_forward_uses_candle_zero(): void
     {
         // NY 2026-07-14 08:00 ET = 프리마켓. 오늘봉(7/14) 아직 없음 → 최신 봉 7/11(금).
         Carbon::setTestNow(Carbon::parse('2026-07-14 08:00:00', 'America/New_York'));
@@ -1211,11 +1219,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 불변: KR 종목은 US 전용 롤포워드(yahoo_regular_close_{ticker} 캐시)에 무영향.
      * KR 기준가는 Yahoo '일봉 시계열'에서만 오고, US 롤포워드용 캐시는 쳐다보지 않아야 한다.
      */
-    public function testGetPrevClose_KrSymbol_UnaffectedByUsRollForward(): void
+    #[Test]
+    public function test_get_prev_close_kr_symbol_unaffected_by_us_roll_forward(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 10:00:00', 'Asia/Seoul'));
         $this->sessionMock->method('getKrSession')->willReturn('정규장');
@@ -1252,14 +1260,14 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 애프터마켓: 오늘(7/14) 정규장 봉 존재 → 직전거래일 종가 = candles[1](7/13=937).
      * 현재가 995(시간외), 당일 정규장 종가 983.12.
      *   통합    = (995 − 937)/937 = +6.19%
      *   정규장  = (983.12 − 937)/937 = +4.92%
      * (기존 calculate() 의 '시간외분' 롤포워드가 아니라 '통합'으로 바뀌는 것이 요구사항.)
      */
-    public function testCalculateUsSplit_AfterMarket_SplitsUnifiedAndRegular(): void
+    #[Test]
+    public function test_calculate_us_split_after_market_splits_unified_and_regular(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));  // 애프터
         $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
@@ -1275,7 +1283,6 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 프리마켓: 오늘 정규장 봉 없음 + 라이브 → 직전거래일 종가 = candles[0](어제=991.64).
      * 통합 = (969.03 − 991.64)/991.64 = −2.28%.
      *
@@ -1284,7 +1291,8 @@ class TossChangeCalculatorTest extends TestCase
      * → regularClose 를 prevRegular 와 '다른 값'(991.50)으로 주입해, 이 노이즈(≈−0.014%)가
      *   regular_* 로 새지 않고 null 로 차단됨을 검증한다(동일값 주입이던 기존 테스트는 이 결함을 못 잡음).
      */
-    public function testCalculateUsSplit_PreMarket_UsesLatestBarBase(): void
+    #[Test]
+    public function test_calculate_us_split_pre_market_uses_latest_bar_base(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-10 08:00:00', 'America/New_York'));  // 프리
         $this->sessionMock->method('getUsSession')->willReturn('프리마켓');
@@ -1301,13 +1309,13 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 주간거래 자정후(NY 이른 새벽): 당일(7/15) 정규장 봉 없음 → candles[0](7/14=983.12) 기준.
      * 애프터·주간거래 자정전(오늘봉 존재)과 달리 정규장 줄 = null(프론트 1줄) — 자정후엔 regularClose 와
      * prevRegular 가 같은 날(7/14) 종가라 잔차·ET 자정 불연속만 남는다. 통합만 살린다.
      * regularClose(983.00)≠prevRegular(983.12) 주입으로 노이즈가 안 새는지 검증.
      */
-    public function testCalculateUsSplit_OvernightAfterMidnight_NoTodayBar_RegularNull(): void
+    #[Test]
+    public function test_calculate_us_split_overnight_after_midnight_no_today_bar_regular_null(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-15 02:00:00', 'America/New_York'));  // 주간거래 자정후
         $this->sessionMock->method('getUsSession')->willReturn('주간거래');
@@ -1323,11 +1331,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 정규장: 연장세션 아님 → 기존 calculate() 값 사용(통합=정규장), regular_* 는 null(프론트 1줄).
      * 오늘(7/10) 봉 존재 → candles[1](7/9=991.64) 기준. 현재가 985 → 약 −0.67%.
      */
-    public function testCalculateUsSplit_RegularSession_FallsBackToCalculate_NullRegular(): void
+    #[Test]
+    public function test_calculate_us_split_regular_session_falls_back_to_calculate_null_regular(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-10 11:00:00', 'America/New_York'));  // 정규장
         $this->sessionMock->method('getUsSession')->willReturn('정규장');
@@ -1342,10 +1350,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 장마감: 연장세션 아님 → 기존 calculate() 값(직전거래일 하루 등락 유지), regular_* null.
      */
-    public function testCalculateUsSplit_Closed_FallsBackToCalculate_NullRegular(): void
+    #[Test]
+    public function test_calculate_us_split_closed_falls_back_to_calculate_null_regular(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-11 12:00:00', 'America/New_York'));  // 토요일 장마감
         $this->sessionMock->method('getUsSession')->willReturn('장마감');
@@ -1359,12 +1367,12 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 폴백 경로(calculate() 경유)도 change_percent 를 소수 2자리로 정규화해 계약(02-계약)과 통일한다.
      * calculate() 자체는 round(4) 를 반환하지만, calculateUsSplit 폴백 반환 지점에서 round(2) 로 정규화되어야 한다.
      * (985−991.64)/991.64×100 = −0.6696(round4) → 계약 −0.67(round2).
      */
-    public function testCalculateUsSplit_Fallback_NormalizesChangePercentToTwoDecimals(): void
+    #[Test]
+    public function test_calculate_us_split_fallback_normalizes_change_percent_to_two_decimals(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-11 12:00:00', 'America/New_York'));  // 토요일 장마감
         $this->sessionMock->method('getUsSession')->willReturn('장마감');
@@ -1377,10 +1385,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * regularClose cold(null) + 연장세션: 통합은 계산하되 정규장 줄은 null(프론트 1줄 degrade).
      */
-    public function testCalculateUsSplit_ExtendedButRegularCloseCold_RegularNull(): void
+    #[Test]
+    public function test_calculate_us_split_extended_but_regular_close_cold_regular_null(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
         $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
@@ -1394,10 +1402,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * getUsPrevRegularClose: KR·지수는 null (US 전용).
      */
-    public function testGetUsPrevRegularClose_NonUs_ReturnsNull(): void
+    #[Test]
+    public function test_get_us_prev_regular_close_non_us_returns_null(): void
     {
         $this->clientMock->expects($this->never())->method('get');
 
@@ -1405,10 +1413,10 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * getUsPrevRegularClose: 캐시 히트 시 API 미호출. 캐시 포맷 = ['close'=>float,'today_bar'=>bool].
      */
-    public function testGetUsPrevRegularClose_CacheHit_NoApiCall(): void
+    #[Test]
+    public function test_get_us_prev_regular_close_cache_hit_no_api_call(): void
     {
         Cache::put('toss_prev_regular_close_MU', ['close' => 937.0, 'today_bar' => true], 3600);
         $this->clientMock->expects($this->never())->method('get');
@@ -1419,11 +1427,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * getUsPrevRegularClose: 봉 부족(<2)이면 null 을 반환하고 짧은 TTL 로 sentinel 을 캐싱해,
      * 다음 사이클에 /candles 를 재호출하지 않는다(연장세션 핫패스 재유입 방지). get 은 정확히 1회.
      */
-    public function testGetUsPrevRegularClose_InsufficientCandles_CachesSentinel(): void
+    #[Test]
+    public function test_get_us_prev_regular_close_insufficient_candles_caches_sentinel(): void
     {
         $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
 
@@ -1439,12 +1447,12 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 주간거래(EXT_NIGHT, 미국 야간=KR 저녁 세션)도 연장세션 → 통합/정규장 2줄로 분리해야 한다.
      * 애프터마켓과 동일 candle 선택(오늘 정규장봉 완결 → candles[1]=직전거래일 937).
      * 이 기능이 겨냥한 핵심 세션인데 기존 스위트엔 프리·애프터만 있어 회귀 사각지대였다.
      */
-    public function testCalculateUsSplit_OvernightSession_SplitsUnifiedAndRegular(): void
+    #[Test]
+    public function test_calculate_us_split_overnight_session_splits_unified_and_regular(): void
     {
         // NY 2026-07-14 22:00 ET = 주간거래(20:00~04:00). 오늘봉(7/14) 완결 → candles[1]=7/13.
         Carbon::setTestNow(Carbon::parse('2026-07-14 22:00:00', 'America/New_York'));
@@ -1460,12 +1468,12 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * getUsPrevRegularClose 캐시도 calculate() 와 같은 '다음 경계'까지만 산다(D3 회귀 가드).
      * 17:00 ET(애프터) → 다음 경계 19:50 ET = 2h50m. ET 자정만 보면 19:50·20:00 을 넘겨 stale 이 된다
      * — 이 캐시의 선택 규칙도 자정 말고 세션 경계에 함께 걸려 있기 때문.
      */
-    public function testGetUsPrevRegularClose_Ttl_StopsAtNextUsBoundary(): void
+    #[Test]
+    public function test_get_us_prev_regular_close_ttl_stops_at_next_us_boundary(): void
     {
         // 라이브(애프터) + 과거 날짜 봉 → isTodayBar=false → candles[0](991.64) 취득·캐시.
         Carbon::setTestNow(Carbon::parse('2026-07-10 17:00:00', 'America/New_York'));
@@ -1475,6 +1483,7 @@ class TossChangeCalculatorTest extends TestCase
         Cache::shouldReceive('get')->andReturnNull();
         Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
             $capturedTtl = $ttl;
+
             return true;
         });
 
@@ -1487,12 +1496,12 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 연장세션이지만 직전거래일 종가 취득 실패(<2봉 → getUsPrevRegularClose null)면
      * 기존 calculate() 로 graceful 폴백 → regular_* null(프론트 1줄), 통합도 calculate() 경유.
      * getUsPrevRegularClose 의 '봉 부족 → null' 경로와 calculateUsSplit 의 cold 폴백을 함께 가드한다.
      */
-    public function testCalculateUsSplit_ExtendedButPrevRegularCold_FallsBackToCalculate(): void
+    #[Test]
+    public function test_calculate_us_split_extended_but_prev_regular_cold_falls_back_to_calculate(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));
         $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
@@ -1545,9 +1554,9 @@ class TossChangeCalculatorTest extends TestCase
      */
     private function usScenarioCandles(): array
     {
-        $now   = Carbon::now('America/New_York');
+        $now = Carbon::now('America/New_York');
         $today = $now->toDateString();
-        $bars  = [];
+        $bars = [];
 
         foreach (self::US_SCENARIO_CLOSES as $date => $close) {
             if ($date > $today || ($date === $today && (int) $now->format('Hi') < 930)) {
@@ -1576,7 +1585,7 @@ class TossChangeCalculatorTest extends TestCase
 
         $this->calculator = new TossChangeCalculator(
             $this->clientMock,
-            new TossSymbolMapper(),
+            new TossSymbolMapper,
             new MarketSessionService($calendarClient)
         );
     }
@@ -1589,7 +1598,7 @@ class TossChangeCalculatorTest extends TestCase
      *   값은 '그 날이 거래일인가'라는 사실 표일 뿐 세션 경계와 무관하다 — 표본 기간(7/13~7/21)엔 공휴일이 없다.
      *
      * @param  array<int,string>  $times  ET 시각 목록
-     * @return callable():void            매 Cache::flush() 뒤에 부르는 시더(날짜 파싱은 1회만)
+     * @return callable():void 매 Cache::flush() 뒤에 부르는 시더(날짜 파싱은 1회만)
      */
     private function usTradingDaySeeder(array $times): callable
     {
@@ -1612,11 +1621,11 @@ class TossChangeCalculatorTest extends TestCase
      *   observed : 캐시를 한 번만 비우고 시간만 흘려보냄 = 실제 운영 동작
      * 둘이 갈라지면 = TTL 이 기준가 의미가 바뀌는 경계를 넘겼다.
      *
-     * @param array<int,string> $times   ET 시각 목록(오름차순)
-     * @param bool              $warmer  regular_close 워머 가동 여부 — 두 상태가 서로 다른 경계를 노출한다:
-     *   cold(false) = 롤포워드가 candles[1] 로 폴백 → 기준가가 ET 자정에 전진 → 00:00 경계가 살아있다.
-     *   warm(true)  = 16:05 에 오늘 종가로 롤포워드 → 16:05 경계가 살아나고 자정은 연속이 된다.
-     *   한쪽만 돌리면 반대쪽 경계가 표본에서 사라진다(실측: warm 만 돌리면 00:00 을 지워도 통과).
+     * @param  array<int,string>  $times  ET 시각 목록(오름차순)
+     * @param  bool  $warmer  regular_close 워머 가동 여부 — 두 상태가 서로 다른 경계를 노출한다:
+     *                        cold(false) = 롤포워드가 candles[1] 로 폴백 → 기준가가 ET 자정에 전진 → 00:00 경계가 살아있다.
+     *                        warm(true)  = 16:05 에 오늘 종가로 롤포워드 → 16:05 경계가 살아나고 자정은 연속이 된다.
+     *                        한쪽만 돌리면 반대쪽 경계가 표본에서 사라진다(실측: warm 만 돌리면 00:00 을 지워도 통과).
      */
     private function assertPrevCloseNeverStale(array $times, bool $warmer = false): void
     {
@@ -1632,11 +1641,11 @@ class TossChangeCalculatorTest extends TestCase
         // ponytail: 16:05 전엔 forget — 실제론 어제 종가가 남아있지만, 그 구간은 candles[1](=어제 종가)과
         //   값이 같아 관측 동작이 동일하다. 날짜 넘김 잔존을 없애 모형을 시각의 순수 함수로 유지한다.
         $warm = function () use ($warmer): void {
-            if (!$warmer) {
+            if (! $warmer) {
                 return;  // 워머 cold — 롤포워드가 candles[1] 유지(실측 MU 시나리오의 절반)
             }
 
-            $now   = Carbon::now('America/New_York');
+            $now = Carbon::now('America/New_York');
             $close = (int) $now->format('Hi') >= 1605
                 ? (self::US_SCENARIO_CLOSES[$now->toDateString()] ?? null)
                 : null;
@@ -1699,7 +1708,6 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 24시간 스윕(5분 격자 288포인트): 어느 시각에 읽어도 캐시값 == 신규조회값.
      *
      * 검출 범위(2026-07-17 뮤테이션 재실측 — 옛 주석의 "경계를 줄이면 즉시 FAIL"은 더 이상 참이 아니다):
@@ -1709,27 +1717,27 @@ class TossChangeCalculatorTest extends TestCase
      *     → [0,0] 은 주말 warm 스윕이, [16,5] 는 sentinel 케이스 1a~1c 가 각각 맡는다.
      *   ★ 경계 목록을 손대면 이 스윕만 믿지 말고 뮤테이션으로 어느 테스트가 잡는지 다시 확인할 것.
      */
-    public function testGetPrevClose_UsTtl_CachedValueNeverDivergesFromFreshLookup(): void
+    #[Test]
+    public function test_get_prev_close_us_ttl_cached_value_never_diverges_from_fresh_lookup(): void
     {
         // ET 7/15 12:07(정규장) 출발 → 7/16 12:07 까지. 경계 7개가 창 안에 한 번씩 들어온다.
         $this->assertPrevCloseNeverStale($this->etSweepTimes('2026-07-15 12:07:00'));
     }
 
     /**
-     * @test
      * 같은 24시간 스윕을 regular_close 워머 warm 상태로 한 번 더 — 실측 MU 버그의 나머지 절반.
      *
      * 워머가 warm 이면 16:05 에 기준가가 '오늘 정규장 종가'로 롤포워드된다(:632-640). cold 스윕은
      * 이 분기를 아예 실행하지 않아 16:05 경계를 지워도 통과한다(뮤테이션 실측). 반대로 warm 스윕만
      * 두면 자정 전진이 사라져 00:00 을 놓친다 — 두 상태가 각각 다른 경계를 잡으므로 둘 다 돌린다.
      */
-    public function testGetPrevClose_UsTtl_WarmRegularClose_CachedValueNeverDiverges(): void
+    #[Test]
+    public function test_get_prev_close_us_ttl_warm_regular_close_cached_value_never_diverges(): void
     {
         $this->assertPrevCloseNeverStale($this->etSweepTimes('2026-07-15 12:07:00'), true);
     }
 
     /**
-     * @test
      * 주말 갭: 금 애프터 → 토·일 장마감 → 일 20:00 주간거래 개시 → 월 프리마켓 → 월 개장.
      * 거래일이 3일 건너뛰어도 캐시가 기준가 전진(865.43 → 812.00)을 놓치지 않아야 한다.
      *
@@ -1741,13 +1749,13 @@ class TossChangeCalculatorTest extends TestCase
      *   교정 후 19:47 에 쓴 캐시는 19:50 에 만료돼 20:00 을 넘길 수 없게 되면서 [20,0] 가드가 조용히 무장해제됐다
      *   (뮤테이션 실측: [20,0] 을 지워도 통과). 애프터 종료를 또 옮기면 이 표본도 (새 종료, 20:00) 안으로 옮길 것.
      */
-    public function testGetPrevClose_UsTtl_WeekendGap_CachedValueNeverDiverges(): void
+    #[Test]
+    public function test_get_prev_close_us_ttl_weekend_gap_cached_value_never_diverges(): void
     {
         $this->assertPrevCloseNeverStale($this->weekendGapTimes());
     }
 
     /**
-     * @test
      * 같은 주말 갭을 워머 warm 으로 한 번 더 — **[0,0](ET 자정) 경계의 유일한 가드**.
      *
      * 금 23:53 warm 은 기준가가 '금 정규장 종가'(812.00)로 롤포워드된 상태다. ET 자정에 isTodayBar 가
@@ -1758,7 +1766,8 @@ class TossChangeCalculatorTest extends TestCase
      *   기존 확증은 그 수정으로 무효가 됐다(뮤테이션 실측: [0,0] 을 지워도 cold 는 전부 통과).
      *   → 자정 가드는 이제 **이 warm 표본 하나뿐**이다. 지우지 말 것.
      */
-    public function testGetPrevClose_UsTtl_WeekendGap_WarmRegularClose_CachedValueNeverDiverges(): void
+    #[Test]
+    public function test_get_prev_close_us_ttl_weekend_gap_warm_regular_close_cached_value_never_diverges(): void
     {
         $this->assertPrevCloseNeverStale($this->weekendGapTimes(), true);
     }
@@ -1794,14 +1803,14 @@ class TossChangeCalculatorTest extends TestCase
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * @test
      * ★ 케이스 1 — 주간거래 종료는 04:00 ET: 03:29 · 03:30 · 04:00 기준가가 **전부 904.28**.
      *
      * 실측: ET 03:30~04:00 은 91/91분 전부 체결(무거래봉 0)이고 04:01 에 거래량이 169 → 44,397 로
      * 폭증한다(= 진짜 프리마켓 개시). 즉 03:30 은 허구였고 그 30분은 살아있는 주간거래다.
      * 경계를 03:30 으로 되돌리면 03:30 이 '장마감'으로 뒤집혀 전전일 983.12 를 답하며 FAIL 한다.
      */
-    public function testGetPrevClose_UsOvernightSessionEndsAtFourAmEt(): void
+    #[Test]
+    public function test_get_prev_close_us_overnight_session_ends_at_four_am_et(): void
     {
         $this->useRealUsSession();
         $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'));
@@ -1817,7 +1826,6 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * ★ 케이스 2 — 애프터 종료는 19:50 ET: 19:29·19:31·19:49 는 2줄, 19:51 은 1줄, 20:01 은 다시 2줄.
      *
      * 실측: 19:30~20:00 도 전 분 체결(NVDA 19:51 15,249주). 캘린더 afterMarket.endTime = KST 08:50
@@ -1826,7 +1834,8 @@ class TossChangeCalculatorTest extends TestCase
      *
      * 19:51(1줄)·20:01(2줄)은 과교정 가드다 — "전부 연장세션"으로 뭉개면 이 둘이 깨진다.
      */
-    public function testCalculateUsSplit_AfterMarketSessionEndsAtSeventeenFiftyEt(): void
+    #[Test]
+    public function test_calculate_us_split_after_market_session_ends_at_seventeen_fifty_et(): void
     {
         $this->useRealUsSession();
         $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'));
@@ -1861,9 +1870,9 @@ class TossChangeCalculatorTest extends TestCase
     /**
      * US 라이브 분기(1·2번)로 진입시켜 Cache::put 에 넘어간 TTL 을 잡아낸다.
      *
-     * @param string     $frozenEt          ET 고정 시각(분기 판별 + TTL 계산 기준)
-     * @param array      $candles           /candles 응답
-     * @param float|null $warmRegularClose  yahoo_regular_close_MU 캐시값. null = 워머 cold(롤포워드 실패 경로).
+     * @param  string  $frozenEt  ET 고정 시각(분기 판별 + TTL 계산 기준)
+     * @param  array  $candles  /candles 응답
+     * @param  float|null  $warmRegularClose  yahoo_regular_close_MU 캐시값. null = 워머 cold(롤포워드 실패 경로).
      */
     private function captureUsLiveTtl(string $frozenEt, string $session, array $candles, ?float $warmRegularClose = null): ?int
     {
@@ -1877,6 +1886,7 @@ class TossChangeCalculatorTest extends TestCase
         });
         Cache::shouldReceive('put')->andReturnUsing(function ($key, $value, $ttl) use (&$capturedTtl) {
             $capturedTtl = $ttl;
+
             return true;
         });
 
@@ -1887,7 +1897,6 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 케이스 1a(핵심 재현) — 애프터마켓 + 워머 cold = 롤포워드 실패 → sentinel TTL(120s)로만 캐싱.
      *
      * WS 사이클은 step4(기준가 계산)가 step6a(워머)보다 먼저 돈다 → 워머가 아직 안 채운 순간엔
@@ -1895,7 +1904,8 @@ class TossChangeCalculatorTest extends TestCase
      * TTL(19:50 까지 = 9060s)로 박으면 워머가 3초 뒤 정답을 채워도 자가치유가 안 된다
      * (실측 MU 기준가 6.6% 오차가 최대 3h45m 고착 — 옛 테스트는 경계 TTL 을 정답으로 박아 이 결함을 계약화했다).
      */
-    public function testFetchAndCache_UsAfterHoursTtl_RollforwardCold_UsesSentinelTtl(): void
+    #[Test]
+    public function test_fetch_and_cache_us_after_hours_ttl_rollforward_cold_uses_sentinel_ttl(): void
     {
         // ET 7/15 17:19 애프터 — 오늘봉(7/15) 완결, yahoo cold → candles[1](7/14) 유지 = 실측 stale 값
         $ttl = $this->captureUsLiveTtl('2026-07-15 17:19:00', '애프터마켓',
@@ -1906,13 +1916,13 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 케이스 1b(과교정 가드) — 같은 애프터마켓이라도 워머 warm 이면 정상 경계 TTL(19:50 = 2h31m).
      *
      * 1a 의 sentinel 이 정상 경로까지 먹어치우면(항상 120s) 심볼당 /candles 가 하루 720회로 폭증한다.
      * cold/warm 한 쌍이 함께 있어야 "실패 경로에만 닿았다"가 고정된다.
      */
-    public function testFetchAndCache_UsAfterHoursTtl_RollforwardWarm_StopsAtNextBoundary(): void
+    #[Test]
+    public function test_fetch_and_cache_us_after_hours_ttl_rollforward_warm_stops_at_next_boundary(): void
     {
         // 워머 정본 848.43 — candles[0](904.28)·candles[1](983.12) 어느 쪽과도 달라 소스가 결과에 드러난다
         $ttl = $this->captureUsLiveTtl('2026-07-15 17:19:00', '애프터마켓',
@@ -1923,13 +1933,13 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 케이스 1c(실측 최악 시나리오) — ET 16:05:00 정각 + 워머 미실행.
      *
      * 16:05 엔 yahoo_regular_close 와 toss_prev_close 가 동시 만료돼 100% 이 경로를 탄다.
      * sentinel 이 없으면 다음 경계 19:50 까지 13500s(3h45m) 동안 어제 종가 기준이 고착된다.
      */
-    public function testFetchAndCache_UsCloseBoundary_RollforwardCold_UsesSentinelTtl(): void
+    #[Test]
+    public function test_fetch_and_cache_us_close_boundary_rollforward_cold_uses_sentinel_ttl(): void
     {
         $ttl = $this->captureUsLiveTtl('2026-07-15 16:05:00', '애프터마켓',
             $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'));
@@ -1938,7 +1948,6 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 케이스 1d — 애프터 진입 직후(16:02 ET) + 워머 warm 작성분은 **16:05 경계**에서 끊긴다 = 3분.
      *
      * [16,5] 를 지켜주는 유일한 테스트다. 스윕은 이 경계를 못 잡는다 — 스윕의 워머 모형이 16:05 전엔
@@ -1946,7 +1955,8 @@ class TossChangeCalculatorTest extends TestCase
      * (뮤테이션 실측: [16,5] 를 지워도 스윕 전부 통과). 실제 워머는 ET 자정 TTL + skip-if-warm 이라
      * 이 구간에 '오늘 종가가 아닌 값'이 이미 앉아있을 수 있고, 그게 16:05 에 오늘 종가로 교체된다.
      */
-    public function testFetchAndCache_UsAfterHoursTtl_JustAfterClose_StopsAtRegularCloseConfirmBoundary(): void
+    #[Test]
+    public function test_fetch_and_cache_us_after_hours_ttl_just_after_close_stops_at_regular_close_confirm_boundary(): void
     {
         $ttl = $this->captureUsLiveTtl('2026-07-15 16:02:00', '애프터마켓',
             $this->usDaily('2026-07-15', '904.28', '2026-07-14', '983.12'), 848.43);
@@ -1955,14 +1965,14 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 케이스 1e — 프리마켓(05:00 ET) 작성분은 **09:30(정규장 개시)** 경계에서 끊긴다 = 4h30m.
      *
      * [9,30] 를 지켜주는 유일한 테스트다. 스윕은 09:30 을 못 잡는다 — 프리마켓도 라이브 세션이라
      * 개장 전후로 기준가 '값'이 안 바뀌기 때문(프리 candles[0] == 개장후 candles[1], 뮤테이션 실측).
      * 값이 같아도 경계를 지우면 TTL 이 16:00 까지 늘어나므로 리터럴로 못박는다.
      */
-    public function testFetchAndCache_UsPreMarketTtl_StopsAtOpenBoundary(): void
+    #[Test]
+    public function test_fetch_and_cache_us_pre_market_ttl_stops_at_open_boundary(): void
     {
         // ET 7/16 05:00 프리마켓 — 오늘봉(7/16) 미생성 → 라이브 분기 candles[0](7/15) 기준
         $ttl = $this->captureUsLiveTtl('2026-07-16 05:00:00', '프리마켓',
@@ -1972,11 +1982,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 케이스 2 — 정규장(10:42 ET) 작성분은 16:00(정규장 마감) 경계에서 끊긴다 = 5h18m.
      * 개장 경계를 무조건 우선하는 식으로 잘못 고치면 이 케이스가 깨진다(과교정 가드).
      */
-    public function testFetchAndCache_UsRegularTtl_KeepsCloseBoundary(): void
+    #[Test]
+    public function test_fetch_and_cache_us_regular_ttl_keeps_close_boundary(): void
     {
         // ET 7/16 10:42 정규장 — 오늘봉(7/16) 진행중 → candles[1](7/15=904.28) 기준
         $ttl = $this->captureUsLiveTtl('2026-07-16 10:42:00', '정규장',
@@ -1988,11 +1998,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 케이스 3 — 주간거래(02:00 ET) 작성분은 04:00(주간거래 종료·프리마켓 개시) 경계에서 끊긴다 = 2h.
      * 09:30 개장까지 통으로 잡으면 04:00 을 넘겨 stale(D1)이 된다.
      */
-    public function testFetchAndCache_UsOvernightTtl_StopsAtNextBoundary(): void
+    #[Test]
+    public function test_fetch_and_cache_us_overnight_ttl_stops_at_next_boundary(): void
     {
         // ET 7/16 02:00 주간거래 — 오늘봉(7/16) 미생성 → 라이브 분기 candles[0](7/15) 기준
         $ttl = $this->captureUsLiveTtl('2026-07-16 02:00:00', '주간거래',
@@ -2002,7 +2012,6 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 케이스 4(핵심 E2E) — 애프터마켓에 롤포워드 cold 로 굳은 기준가가 다음 정규장까지 살아남지 않는다.
      *
      * 시나리오(실측 MU 재현):
@@ -2012,7 +2021,8 @@ class TossChangeCalculatorTest extends TestCase
      *
      * 캐시 만료(array store)·TTL 계산 모두 Carbon::now(=setTestNow) 기준이라 실행 시각과 무관하다.
      */
-    public function testGetPrevClose_UsAfterHoursBase_ExpiresBeforeNextRegularSession(): void
+    #[Test]
+    public function test_get_prev_close_us_after_hours_base_expires_before_next_regular_session(): void
     {
         // 세션·캔들은 '지금이 언제인지'(setTestNow)에 따라 응답 — 시간이동을 한 테스트 안에서 재현
         $this->sessionMock->method('getUsSession')->willReturnCallback(function (): string {
@@ -2089,9 +2099,9 @@ class TossChangeCalculatorTest extends TestCase
      */
     private function krScenarioCandles(): array
     {
-        $now   = Carbon::now('Asia/Seoul');
+        $now = Carbon::now('Asia/Seoul');
         $today = $now->toDateString();
-        $bars  = [];
+        $bars = [];
 
         foreach (self::KR_SCENARIO_TOSS_1D as $date => $close) {
             if ($date > $today || ($date === $today && (int) $now->format('Hi') < 900)) {
@@ -2118,7 +2128,7 @@ class TossChangeCalculatorTest extends TestCase
 
         return new TossChangeCalculator(
             $this->clientMock,
-            new TossSymbolMapper(),
+            new TossSymbolMapper,
             new MarketSessionService($this->clientMock),   // 실제 세션 판정(모형 아님)
             $this->krYahooClient(self::KR_SCENARIO_REGULAR)
         );
@@ -2129,7 +2139,7 @@ class TossChangeCalculatorTest extends TestCase
      *   fresh    : 매 시각 캐시를 비우고 조회 = 그 시각의 정답
      *   observed : 캐시를 한 번만 비우고 시간만 흘려보냄 = 실제 운영 동작
      *
-     * @param array<int,string> $times  KST 시각 목록(오름차순)
+     * @param  array<int,string>  $times  KST 시각 목록(오름차순)
      */
     private function assertKrPrevCloseNeverStale(array $times): void
     {
@@ -2182,23 +2192,23 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 24시간 스윕(5분 격자 288포인트): 어느 시각에 읽어도 캐시값 == 신규조회값 == Yahoo 정규장 종가.
      * 09:00 개장(유일한 진짜 경계)과 00:00 KST 자정(값 동일해야 함)이 창 안에 들어온다.
      */
-    public function testGetPrevClose_KrTtl_CachedValueNeverDivergesFromFreshLookup(): void
+    #[Test]
+    public function test_get_prev_close_kr_ttl_cached_value_never_diverges_from_fresh_lookup(): void
     {
         // KST 7/16 12:07(정규장) 출발 → 7/17 12:07. 09:00 개장·00:00 자정이 한 번씩 들어온다.
         $this->assertKrPrevCloseNeverStale($this->kstSweepTimes('2026-07-16 12:07:00'));
     }
 
     /**
-     * @test
      * 주말 갭: 금 장마감 → 토·일 휴장 → 월 개장. 거래일이 3일 건너뛰어도 캐시가 기준가 전진
      * (7/16 종가 1,850,000 → 7/17 종가 1,790,000)을 놓치지 않아야 한다.
      * 휴장일 판정은 실제 MarketSessionService 의 주말 폴백이 담당한다.
      */
-    public function testGetPrevClose_KrTtl_WeekendGap_CachedValueNeverDiverges(): void
+    #[Test]
+    public function test_get_prev_close_kr_ttl_weekend_gap_cached_value_never_diverges(): void
     {
         $this->assertKrPrevCloseNeverStale([
             '2026-07-17 16:30:00',  // 금 장마감(오늘봉 존재) — 기준가 = 7/16 종가
@@ -2212,7 +2222,6 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * 09:00 개장 직전 콜드 캐시가 개장을 넘겨 살아남지 않는다 — secondsUntilNextKrOpen() 하한의 유일한 가드.
      *
      * 격자 스윕만으론 이 결함을 못 잡는다: 개장 전 구간의 캐시는 00:0x 에 '09:00 까지'로 한 번 쓰이고
@@ -2220,7 +2229,8 @@ class TossChangeCalculatorTest extends TestCase
      * 여기서만 그 창에서 콜드 조회를 강제한다(US 의 일 19:47 가드와 동형).
      * 하한을 300 초로 되돌리면 08:57 작성분이 09:02 까지 살아 stale → 이 테스트가 FAIL 한다.
      */
-    public function testGetPrevClose_KrTtl_ColdBeforeOpen_DoesNotSurviveOpen(): void
+    #[Test]
+    public function test_get_prev_close_kr_ttl_cold_before_open_does_not_survive_open(): void
     {
         $this->assertKrPrevCloseNeverStale([
             '2026-07-16 08:57:00',  // 개장 3분 전 콜드 — TTL 하한이 있으면 여기 작성분이 09:00 을 넘긴다
@@ -2229,13 +2239,13 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * @test
      * KR 기준가 경계 전수 — 09:00 개장 '하나만' 살아있고 옛 오염 경계(15:31·19:01·20:00·자정)는 전부 소멸했다.
      *
      * 기준가가 '시계의 함수'(시간외 드리프트를 따라감)에서 '거래일의 함수'(Yahoo 정규장 종가)로 바뀐 결과다.
      * 고정 시각이라 리터럴 상수로 못박는다 — 프로덕션 공식을 재현하지 않는다.
      */
-    public function testGetPrevClose_KrOpen_IsTheOnlyReferenceBoundary(): void
+    #[Test]
+    public function test_get_prev_close_kr_open_is_the_only_reference_boundary(): void
     {
         $calc = $this->krSweepCalculator();
 

@@ -49,7 +49,9 @@ class TossPriceFetcher
     private const YAHOO_TIMEOUT = 5;
 
     private TossApiClient $client;
+
     private TossSymbolMapper $mapper;
+
     private TossChangeCalculator $changeCalculator;
 
     /** Yahoo 폴백 조회용 HTTP 클라이언트. 선택 주입 — 테스트에서 MockHandler 로 갈아끼워 네트워크 없이 검증한다(TossChangeCalculator 와 동일 패턴). */
@@ -61,10 +63,10 @@ class TossPriceFetcher
         TossChangeCalculator $changeCalculator,
         ?Client $http = null
     ) {
-        $this->client           = $client;
-        $this->mapper           = $mapper;
+        $this->client = $client;
+        $this->mapper = $mapper;
         $this->changeCalculator = $changeCalculator;
-        $this->http             = $http ?? new Client();
+        $this->http = $http ?? new Client;
     }
 
     /**
@@ -84,8 +86,8 @@ class TossPriceFetcher
 
         // 조회 대상 필터: 지수 제외, 캐시 유효 제외
         // appSymbol => ['toss' => tossSymbol, 'market' => market]
-        $toFetch      = [];
-        $cachedCount  = 0;
+        $toFetch = [];
+        $cachedCount = 0;
         $skippedCount = 0;
 
         foreach ($tickers as $appSymbol) {
@@ -94,6 +96,7 @@ class TossPriceFetcher
             // 지수 skip
             if ($this->mapper->shouldSkip($appSymbol)) {
                 $skippedCount++;
+
                 continue;
             }
 
@@ -107,18 +110,21 @@ class TossPriceFetcher
             } else {
                 // KR/US 외(INDEX 등) — shouldSkip()으로 이미 걸러지지 않은 경우 방어
                 $skippedCount++;
+
                 continue;
             }
 
             // 캐시 히트: 네트워크 불필요
             if (Cache::has($cacheKey)) {
                 $cachedCount++;
+
                 continue;
             }
 
             $tossSymbol = $this->mapper->toTossSymbol($appSymbol);
             if ($tossSymbol === null) {
                 $skippedCount++;
+
                 continue;
             }
 
@@ -132,17 +138,17 @@ class TossPriceFetcher
         // tossSymbol → ['appSymbol' => ..., 'market' => ...] 역매핑 (응답 파싱 시 캐시 키 복원용)
         $reverseMap = [];
         foreach ($toFetch as $appSym => $info) {
-            $upperToss              = strtoupper($info['toss']);
+            $upperToss = strtoupper($info['toss']);
             $reverseMap[$upperToss] = ['appSymbol' => $appSym, 'market' => $info['market']];
         }
 
         // 청크는 tossSymbol 값만 추출해 구성
-        $chunks  = array_chunk($toFetch, self::CHUNK_SIZE, true);
+        $chunks = array_chunk($toFetch, self::CHUNK_SIZE, true);
         $fetched = 0;
-        $failed  = 0;
+        $failed = 0;
 
         foreach ($chunks as $chunk) {
-            $tossSymbols = implode(',', array_map(fn($v) => $v['toss'], $chunk));
+            $tossSymbols = implode(',', array_map(fn ($v) => $v['toss'], $chunk));
 
             $response = $this->client->get(self::PRICES_ENDPOINT, [
                 'symbols' => $tossSymbols,
@@ -151,13 +157,15 @@ class TossPriceFetcher
             if (empty($response)) {
                 Log::warning('[TossPriceFetcher] /prices 응답 빈값', ['symbols' => $tossSymbols]);
                 $failed += count($chunk);
+
                 continue;
             }
 
             $results = $response['result'] ?? $response;
-            if (!is_array($results)) {
+            if (! is_array($results)) {
                 Log::warning('[TossPriceFetcher] /prices result 형식 이상', ['keys' => array_keys($response)]);
                 $failed += count($chunk);
+
                 continue;
             }
 
@@ -170,6 +178,7 @@ class TossPriceFetcher
                 $tossSymbol = (string) ($item['symbol'] ?? '');
                 if ($tossSymbol === '') {
                     $failed++;
+
                     continue;
                 }
 
@@ -177,22 +186,24 @@ class TossPriceFetcher
                 if ($lastPrice === null || $lastPrice <= 0) {
                     Log::debug("[TossPriceFetcher] {$tossSymbol} lastPrice 없음 또는 0");
                     $failed++;
+
                     continue;
                 }
 
                 // 앱 심볼 복원: reverseMap 에서 찾기
                 // toTossSymbol() 은 대문자화하므로 대소문자 무관하게 검색
                 $upperToss = strtoupper($tossSymbol);
-                $mapped    = $reverseMap[$upperToss] ?? $reverseMap[$tossSymbol] ?? null;
+                $mapped = $reverseMap[$upperToss] ?? $reverseMap[$tossSymbol] ?? null;
 
                 if ($mapped === null) {
                     // 청크 내 다른 심볼로 요청했는데 응답에 없는 경우는 정상 skip
                     Log::debug("[TossPriceFetcher] 역매핑 없음: {$tossSymbol}");
+
                     continue;
                 }
 
                 $appSymbol = $mapped['appSymbol'];
-                $market    = $mapped['market'];
+                $market = $mapped['market'];
 
                 if ($market === 'US') {
                     // US regular_close(당일 정규장 종가) — 핫패스는 캐시만 읽는다(HTTP 없음, H-2).
@@ -203,16 +214,16 @@ class TossPriceFetcher
                     $split = $this->changeCalculator->calculateUsSplit($tossSymbol, $lastPrice, $regularClose);
 
                     $result = [
-                        'price'                  => $lastPrice,
-                        'change_amount'          => $split['change_amount'],
-                        'change_percent'         => $split['change_percent'],
-                        'regular_change_amount'  => $split['regular_change_amount'],
+                        'price' => $lastPrice,
+                        'change_amount' => $split['change_amount'],
+                        'change_percent' => $split['change_percent'],
+                        'regular_change_amount' => $split['regular_change_amount'],
                         'regular_change_percent' => $split['regular_change_percent'],
-                        'regular_close'          => $regularClose,
-                        'provider'               => 'toss',  // 현재가 실제 출처 — 토스 배치 성공
+                        'regular_close' => $regularClose,
+                        'provider' => 'toss',  // 현재가 실제 출처 — 토스 배치 성공
                     ];
 
-                    $cacheKey    = "kis_realtime_price_us_{$appSymbol}";
+                    $cacheKey = "kis_realtime_price_us_{$appSymbol}";
                     $fallbackKey = "kis_last_successful_overseas_price_{$appSymbol}";
                 } else {
                     // KR 정규장 마감 후 현재가 = 오늘 정규장 종가로 고정(시간외 lastPrice 무시).
@@ -227,14 +238,14 @@ class TossPriceFetcher
                     $change = $this->changeCalculator->calculate($tossSymbol, $lastPrice);
 
                     $result = [
-                        'price'          => $lastPrice,
-                        'change_amount'  => $change['change_amount'],
+                        'price' => $lastPrice,
+                        'change_amount' => $change['change_amount'],
                         'change_percent' => $change['change_percent'],
-                        'regular_close'  => null,
-                        'provider'       => 'toss',  // 현재가 실제 출처 — 토스 배치 성공
+                        'regular_close' => null,
+                        'provider' => 'toss',  // 현재가 실제 출처 — 토스 배치 성공
                     ];
 
-                    $cacheKey    = "kis_realtime_price_{$appSymbol}";
+                    $cacheKey = "kis_realtime_price_{$appSymbol}";
                     $fallbackKey = "kis_last_successful_price_{$appSymbol}";
                 }
 
@@ -246,17 +257,17 @@ class TossPriceFetcher
         }
 
         Log::debug('[TossPriceFetcher] 배치 완료', [
-            'fetched'  => $fetched,
-            'cached'   => $cachedCount,
-            'skipped'  => $skippedCount,
-            'failed'   => $failed,
+            'fetched' => $fetched,
+            'cached' => $cachedCount,
+            'skipped' => $skippedCount,
+            'failed' => $failed,
         ]);
 
         return [
             'fetched' => $fetched,
-            'cached'  => $cachedCount,
+            'cached' => $cachedCount,
             'skipped' => $skippedCount,
-            'failed'  => $failed,
+            'failed' => $failed,
         ];
     }
 
@@ -275,7 +286,7 @@ class TossPriceFetcher
             return null;
         }
 
-        $cacheKey    = "kis_realtime_price_us_{$appSymbol}";
+        $cacheKey = "kis_realtime_price_us_{$appSymbol}";
         $fallbackKey = "kis_last_successful_overseas_price_{$appSymbol}";
 
         // 캐시 히트 시 즉시 반환
@@ -293,14 +304,14 @@ class TossPriceFetcher
             'symbols' => $tossSymbol,
         ]);
 
-        if (!empty($response)) {
+        if (! empty($response)) {
             $results = $response['result'] ?? $response;
             if (isset($results['symbol'])) {
                 $results = [$results];
             }
 
-            if (is_array($results) && !empty($results)) {
-                $item      = $results[0];
+            if (is_array($results) && ! empty($results)) {
+                $item = $results[0];
                 $lastPrice = isset($item['lastPrice']) ? (float) $item['lastPrice'] : null;
 
                 if ($lastPrice !== null && $lastPrice > 0) {
@@ -311,13 +322,13 @@ class TossPriceFetcher
                     $split = $this->changeCalculator->calculateUsSplit($tossSymbol, $lastPrice, $regularClose);
 
                     $result = [
-                        'price'                  => $lastPrice,
-                        'change_amount'          => $split['change_amount'],
-                        'change_percent'         => $split['change_percent'],
-                        'regular_change_amount'  => $split['regular_change_amount'],
+                        'price' => $lastPrice,
+                        'change_amount' => $split['change_amount'],
+                        'change_percent' => $split['change_percent'],
+                        'regular_change_amount' => $split['regular_change_amount'],
                         'regular_change_percent' => $split['regular_change_percent'],
-                        'regular_close'          => $regularClose,
-                        'provider'               => 'toss',  // 현재가 실제 출처 — 토스 단건 성공
+                        'regular_close' => $regularClose,
+                        'provider' => 'toss',  // 현재가 실제 출처 — 토스 단건 성공
                     ];
 
                     Cache::put($cacheKey, $result, self::PRICE_CACHE_TTL);
@@ -332,6 +343,7 @@ class TossPriceFetcher
         $yahooResult = $this->fetchYahooCurrentPrice($appSymbol);
         if ($yahooResult !== null) {
             Cache::put($fallbackKey, $yahooResult, self::FALLBACK_CACHE_TTL);
+
             return $yahooResult;
         }
 
@@ -365,7 +377,7 @@ class TossPriceFetcher
             return null;
         }
 
-        $cacheKey    = "kis_realtime_price_{$appSymbol}";
+        $cacheKey = "kis_realtime_price_{$appSymbol}";
         $fallbackKey = "kis_last_successful_price_{$appSymbol}";
 
         // 캐시 히트
@@ -385,6 +397,7 @@ class TossPriceFetcher
 
         if (empty($response)) {
             Log::warning("[TossPriceFetcher] 단건 /prices 빈응답: {$appSymbol}");
+
             return Cache::get($fallbackKey);
         }
 
@@ -392,11 +405,11 @@ class TossPriceFetcher
         if (isset($results['symbol'])) {
             $results = [$results];
         }
-        if (!is_array($results) || empty($results)) {
+        if (! is_array($results) || empty($results)) {
             return Cache::get($fallbackKey);
         }
 
-        $item      = $results[0];
+        $item = $results[0];
         $lastPrice = isset($item['lastPrice']) ? (float) $item['lastPrice'] : null;
 
         if ($lastPrice === null || $lastPrice <= 0) {
@@ -409,15 +422,15 @@ class TossPriceFetcher
             $lastPrice = $krClose;
         }
 
-        $change        = $this->changeCalculator->calculate($tossSymbol, $lastPrice);
-        $changeAmount  = $change['change_amount'];
+        $change = $this->changeCalculator->calculate($tossSymbol, $lastPrice);
+        $changeAmount = $change['change_amount'];
         $changePercent = $change['change_percent'];
 
         $result = [
-            'price'          => $lastPrice,
-            'change_amount'  => $changeAmount,
+            'price' => $lastPrice,
+            'change_amount' => $changeAmount,
             'change_percent' => $changePercent,
-            'provider'       => 'toss',  // 현재가 실제 출처 — 토스 단건(국내) 성공
+            'provider' => 'toss',  // 현재가 실제 출처 — 토스 단건(국내) 성공
         ];
 
         Cache::put($cacheKey, $result, self::PRICE_CACHE_TTL);
@@ -511,8 +524,7 @@ class TossPriceFetcher
      *   - chartPreviousClose: range 시작 직전 기준(여러 봉 밀림)이라 부정확 → 사용 안 함.
      *     range=5d 요청 시 5 거래일 전 종가가 될 수 있음.
      *
-     * @param string $symbol 앱 심볼 (미국 티커, 예: TSLA)
-     * @return float|null
+     * @param  string  $symbol  앱 심볼 (미국 티커, 예: TSLA)
      */
     private function fetchYahooRegularClose(string $symbol): ?float
     {
@@ -529,11 +541,11 @@ class TossPriceFetcher
             $url = self::YAHOO_CHART_URL . urlencode($symbol) . '?interval=1d&range=5d&includePrePost=true';
 
             $res = $httpClient->get($url, [
-                'headers'     => [
+                'headers' => [
                     'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 ],
                 'http_errors' => false,
-                'timeout'     => self::YAHOO_TIMEOUT,
+                'timeout' => self::YAHOO_TIMEOUT,
             ]);
 
             $data = json_decode((string) $res->getBody(), true);
@@ -553,6 +565,7 @@ class TossPriceFetcher
 
             if ($price === null || (float) $price <= 0) {
                 Log::debug("[TossPriceFetcher] {$symbol} Yahoo regularClose: regularMarketPrice 없음, meta 키=" . implode(',', array_keys($meta)));
+
                 return null;
             }
 
@@ -583,9 +596,9 @@ class TossPriceFetcher
                 //   하한 없음(max(...,1)): 300초 하한은 그 자체가 경계를 5분 넘겨 살아남는 stale 의 원인이다
                 //   (TossChangeCalculator US·KR 경로에서 동일 근거로 제거·검증됨).
                 //   시각은 Carbon::now()(테스트 시 setTestNow 반영) 기준 — time() 은 고정시각 검증이 불가능하다.
-                $now   = Carbon::now('America/New_York');
+                $now = Carbon::now('America/New_York');
                 $nowTs = $now->getTimestamp();
-                $next  = null;
+                $next = null;
                 foreach ([[9, 30], [16, 5]] as [$h, $m]) {
                     $t = $now->copy()->setTime($h, $m);
                     if ($t->getTimestamp() <= $nowTs) {
@@ -601,6 +614,7 @@ class TossPriceFetcher
             return $price;
         } catch (\Throwable $e) {
             Log::warning("[TossPriceFetcher] {$symbol} Yahoo regularClose 실패: " . $e->getMessage());
+
             return null;
         }
     }
@@ -611,21 +625,21 @@ class TossPriceFetcher
      * includePrePost=true로 장외 시세 포함.
      * 폴백 체인 마지막 단계 — 토스 실패 시에만 호출.
      *
-     * @param string $symbol 미국 티커
+     * @param  string  $symbol  미국 티커
      * @return array{price:float,change_amount:float,change_percent:float,regular_close:float|null}|null
      */
     private function fetchYahooCurrentPrice(string $symbol): ?array
     {
         try {
             $httpClient = $this->http;
-            $url        = self::YAHOO_CHART_URL . urlencode($symbol) . '?interval=1d&range=5d&includePrePost=true';
+            $url = self::YAHOO_CHART_URL . urlencode($symbol) . '?interval=1d&range=5d&includePrePost=true';
 
-            $res  = $httpClient->get($url, [
-                'headers'     => [
+            $res = $httpClient->get($url, [
+                'headers' => [
                     'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 ],
                 'http_errors' => false,
-                'timeout'     => self::YAHOO_TIMEOUT,
+                'timeout' => self::YAHOO_TIMEOUT,
             ]);
 
             $data = json_decode((string) $res->getBody(), true);
@@ -647,24 +661,25 @@ class TossPriceFetcher
                 : (isset($meta['regularMarketPreviousClose']) ? (float) $meta['regularMarketPreviousClose'] : null);
 
             if ($prevClose !== null && $prevClose > 0) {
-                $changeAmount  = $price - $prevClose;
+                $changeAmount = $price - $prevClose;
                 $changePercent = $changeAmount / $prevClose * 100;
             } else {
-                $changeAmount  = 0.0;
+                $changeAmount = 0.0;
                 $changePercent = 0.0;
             }
 
             $regularClose = $this->fetchYahooRegularClose($symbol);
 
             return [
-                'price'          => $price,
-                'change_amount'  => $changeAmount,
+                'price' => $price,
+                'change_amount' => $changeAmount,
                 'change_percent' => $changePercent,
-                'regular_close'  => $regularClose,
-                'provider'       => 'yahoo',  // 현재가 실제 출처 — 토스 실패 후 Yahoo 폴백
+                'regular_close' => $regularClose,
+                'provider' => 'yahoo',  // 현재가 실제 출처 — 토스 실패 후 Yahoo 폴백
             ];
         } catch (\Throwable $e) {
             Log::warning("[TossPriceFetcher] {$symbol} Yahoo 현재가 폴백 실패: " . $e->getMessage());
+
             return null;
         }
     }

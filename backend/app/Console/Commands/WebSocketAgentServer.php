@@ -2,10 +2,10 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
 use App\Http\Controllers\StockController;
 use App\Services\Toss\TossPriceFetcher;
 use App\Services\Toss\TossSymbolMapper;
+use Illuminate\Console\Command;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -27,11 +27,17 @@ class WebSocketAgentServer extends Command
     protected $description = 'Start the WebSocket real-time stock agent server';
 
     private $clients = [];
+
     private $clientStates = [];
+
     private $controller;
+
     private $tossPriceFetcher;
+
     private $tossSymbolMapper;
+
     private $noClientsTime = null;
+
     private $hasConnected = false;
 
     /**
@@ -42,7 +48,7 @@ class WebSocketAgentServer extends Command
     public function __construct()
     {
         parent::__construct();
-        $this->controller      = app(StockController::class);
+        $this->controller = app(StockController::class);
         // Phase 3: 국내 현재가 갱신용 토스 페처
         $this->tossPriceFetcher = app(TossPriceFetcher::class);
         $this->tossSymbolMapper = app(TossSymbolMapper::class);
@@ -57,15 +63,16 @@ class WebSocketAgentServer extends Command
     {
         $port = $this->option('port');
         $address = "0.0.0.0:$port";
-        
+
         $server = stream_socket_server("tcp://$address", $errno, $errstr);
-        if (!$server) {
+        if (! $server) {
             $this->error("Failed to start server: $errstr ($errno)");
+
             return 1;
         }
 
         $this->info("WebSocket Agent Server running on ws://127.0.0.1:$port");
-        
+
         // Disable blocking on server socket
         stream_set_blocking($server, 0);
 
@@ -81,7 +88,7 @@ class WebSocketAgentServer extends Command
             $numChanged = @stream_select($read, $write, $except, 1, 0);
 
             if ($numChanged === false) {
-                $this->error("Select error occurred.");
+                $this->error('Select error occurred.');
                 break;
             }
 
@@ -91,12 +98,12 @@ class WebSocketAgentServer extends Command
                     $newClient = @stream_socket_accept($server);
                     if ($newClient) {
                         stream_set_blocking($newClient, 0);
-                        $id = (int)$newClient;
+                        $id = (int) $newClient;
                         $this->clients[$id] = $newClient;
                         $this->clientStates[$id] = [
                             'handshake' => false,
                             'subscriptions' => [],
-                            'timeframes' => []
+                            'timeframes' => [],
                         ];
                         $this->info("New client connected: ID $id");
                     }
@@ -107,15 +114,16 @@ class WebSocketAgentServer extends Command
 
                 // Process client sockets
                 foreach ($read as $clientSocket) {
-                    $id = (int)$clientSocket;
+                    $id = (int) $clientSocket;
                     $data = fread($clientSocket, 2048);
 
                     if ($data === false || strlen($data) === 0) {
                         $this->disconnect($clientSocket);
+
                         continue;
                     }
 
-                    if (!$this->clientStates[$id]['handshake']) {
+                    if (! $this->clientStates[$id]['handshake']) {
                         $this->performHandshake($clientSocket, $data);
                     } else {
                         $this->handleMessage($clientSocket, $data);
@@ -138,19 +146,18 @@ class WebSocketAgentServer extends Command
                 }
             }
 
-
-
             // Sleep briefly to save CPU cycles
             usleep(10000); // 10ms
         }
 
         fclose($server);
+
         return 0;
     }
 
     private function disconnect($socket)
     {
-        $id = (int)$socket;
+        $id = (int) $socket;
         if (isset($this->clients[$id])) {
             @fclose($socket);
             unset($this->clients[$id]);
@@ -161,13 +168,13 @@ class WebSocketAgentServer extends Command
 
     private function performHandshake($socket, $rawHeaders)
     {
-        $id = (int)$socket;
+        $id = (int) $socket;
         $headers = [];
         $lines = explode("\r\n", $rawHeaders);
-        
+
         foreach ($lines as $line) {
             if (strpos($line, ':') !== false) {
-                list($key, $value) = explode(':', $line, 2);
+                [$key, $value] = explode(':', $line, 2);
                 $headers[strtolower(trim($key))] = trim($value);
             }
         }
@@ -175,12 +182,12 @@ class WebSocketAgentServer extends Command
         if (isset($headers['sec-websocket-key'])) {
             $key = $headers['sec-websocket-key'];
             $accept = base64_encode(sha1($key . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
-            
+
             $response = "HTTP/1.1 101 Switching Protocols\r\n" .
                         "Upgrade: websocket\r\n" .
                         "Connection: Upgrade\r\n" .
                         "Sec-WebSocket-Accept: $accept\r\n\r\n";
-            
+
             @fwrite($socket, $response);
             $this->clientStates[$id]['handshake'] = true;
             $this->hasConnected = true;
@@ -193,12 +200,15 @@ class WebSocketAgentServer extends Command
     private function handleMessage($socket, $rawPayload)
     {
         $decodedFrame = $this->decode($rawPayload);
-        if (!$decodedFrame) return;
+        if (! $decodedFrame) {
+            return;
+        }
 
-        $id = (int)$socket;
+        $id = (int) $socket;
 
         if ($decodedFrame['type'] === 'close') {
             $this->disconnect($socket);
+
             return;
         }
 
@@ -206,12 +216,15 @@ class WebSocketAgentServer extends Command
             // Reply with Pong
             $pongFrame = pack('CC', 0x80 | 10, 0); // FIN = 1, Opcode = 10 (Pong)
             @fwrite($socket, $pongFrame);
+
             return;
         }
 
         if ($decodedFrame['type'] === 'text') {
             $message = json_decode($decodedFrame['data'], true);
-            if (!$message) return;
+            if (! $message) {
+                return;
+            }
 
             if (isset($message['type']) && $message['type'] === 'subscribe') {
                 $tickers = $message['tickers'] ?? [];
@@ -220,11 +233,11 @@ class WebSocketAgentServer extends Command
                 $this->clientStates[$id]['subscriptions'] = $tickers;
                 $this->clientStates[$id]['timeframes'] = $timeframes;
 
-                $tickerList = is_array($tickers) ? array_map(function($t) {
-                    return is_array($t) ? json_encode($t) : (string)$t;
+                $tickerList = is_array($tickers) ? array_map(function ($t) {
+                    return is_array($t) ? json_encode($t) : (string) $t;
                 }, $tickers) : [];
                 $this->info("Client $id subscribed to: " . implode(', ', $tickerList));
-                
+
                 // Immediately push data to newly subscribed client
                 $this->pushDataToClient($socket);
             }
@@ -236,32 +249,36 @@ class WebSocketAgentServer extends Command
         // 1. 활성 클라이언트 수집
         $activeClients = [];
         foreach ($this->clients as $id => $socket) {
-            if ($this->clientStates[$id]['handshake'] && !empty($this->clientStates[$id]['subscriptions'])) {
+            if ($this->clientStates[$id]['handshake'] && ! empty($this->clientStates[$id]['subscriptions'])) {
                 $activeClients[] = $socket;
             }
         }
 
-        if (empty($activeClients)) return;
+        if (empty($activeClients)) {
+            return;
+        }
 
         // 2. 모든 클라이언트의 고유 구독 종목 수집
         $uniquePairs = [];
         foreach ($this->clients as $id => $socket) {
-            if (!$this->clientStates[$id]['handshake']) continue;
+            if (! $this->clientStates[$id]['handshake']) {
+                continue;
+            }
 
             $subs = $this->clientStates[$id]['subscriptions'];
-            $tfs  = $this->clientStates[$id]['timeframes'];
+            $tfs = $this->clientStates[$id]['timeframes'];
 
             foreach ($subs as $ticker) {
-                if (!is_string($ticker) && !is_numeric($ticker)) {
+                if (! is_string($ticker) && ! is_numeric($ticker)) {
                     continue;
                 }
-                $tf  = $tfs[$ticker] ?? '1d';
+                $tf = $tfs[$ticker] ?? '1d';
                 $key = "{$ticker}:{$tf}";
                 $uniquePairs[$key] = ['ticker' => $ticker, 'timeframe' => $tf];
             }
         }
 
-        $cycleStart  = microtime(true);
+        $cycleStart = microtime(true);
         $tickerCount = count($uniquePairs);
 
         // ── stale-while-revalidate 전략 ──────────────────────────────────────
@@ -295,30 +312,33 @@ class WebSocketAgentServer extends Command
 
         foreach ($uniquePairs as $key => $pair) {
             $ticker = $pair['ticker'];
-            $tf     = $pair['timeframe'];
+            $tf = $pair['timeframe'];
 
             try {
-                $request = new Request();
+                $request = new Request;
                 $request->query->set('timeframe', $tf);
                 // WS 전송 경로: stale 캐시 허용(동기 KIS fetch 금지 → 케이던스 40~50ms 유지)
                 $request->attributes->set('ws_allow_stale', true);
 
                 $response = $this->controller->getStockData($request, $ticker);
-                $data     = json_decode($response->getContent(), true);
+                $data = json_decode($response->getContent(), true);
 
                 // 이 종목을 구독한 클라이언트에게만 즉시 전송
                 foreach ($activeClients as $socket) {
-                    $cid   = (int)$socket;
+                    $cid = (int) $socket;
                     $csubs = $this->clientStates[$cid]['subscriptions'];
-                    $ctfs  = $this->clientStates[$cid]['timeframes'];
+                    $ctfs = $this->clientStates[$cid]['timeframes'];
 
                     $subscribed = false;
                     foreach ($csubs as $s) {
-                        if ((string)$s === (string)$ticker) { $subscribed = true; break; }
+                        if ((string) $s === (string) $ticker) {
+                            $subscribed = true;
+                            break;
+                        }
                     }
                     if ($subscribed && ($ctfs[$ticker] ?? '1d') === $tf) {
                         $payload = json_encode([
-                            'type'   => 'update',
+                            'type' => 'update',
                             'stocks' => [$ticker => $data],
                         ]);
                         @fwrite($socket, $this->encode($payload));
@@ -336,14 +356,14 @@ class WebSocketAgentServer extends Command
         //    KIS 미국 병렬 조회 제거 — 토스 /prices 가 혼합 심볼 OK.
         //    전송 완료 후 갱신 → 다음 사이클(3초 후) 전송에 반영.
         $allTickers = array_unique(array_column(array_values($uniquePairs), 'ticker'));
-        $kisStats   = ['fetched' => 0, 'cached' => 0, 'failed' => 0];
+        $kisStats = ['fetched' => 0, 'cached' => 0, 'failed' => 0];
 
         // 5a. 국내+미국 종목 → 토스 배치 갱신 (지수는 TossPriceFetcher 내부 skip)
         try {
             $tossStats = $this->tossPriceFetcher->fetchDomestic($allTickers);
             Log::debug('[WS] 토스 KR+US 배치 갱신', $tossStats);
         } catch (\Exception $e) {
-            $this->error("[토스배치갱신] 오류: " . $e->getMessage());
+            $this->error('[토스배치갱신] 오류: ' . $e->getMessage());
         }
 
         // 5b. KIS 미국 갱신 제거 (Phase 4 → 토스로 통합, Phase 5 → KIS 완전 제거)
@@ -362,13 +382,13 @@ class WebSocketAgentServer extends Command
         try {
             $this->tossPriceFetcher->warmRegularCloses($allTickers);
         } catch (\Exception $e) {
-            $this->error("[regular_close워밍] 오류: " . $e->getMessage());
+            $this->error('[regular_close워밍] 오류: ' . $e->getMessage());
         }
 
         try {
             $this->refreshYahooCache($uniquePairs);
         } catch (\Exception $e) {
-            $this->error("[Yahoo갱신] 오류: " . $e->getMessage());
+            $this->error('[Yahoo갱신] 오류: ' . $e->getMessage());
         }
         $yahooRefreshElapsed = round((microtime(true) - $yahooRefreshStart) * 1000);
 
@@ -376,7 +396,7 @@ class WebSocketAgentServer extends Command
 
         $this->info(
             sprintf(
-                "[사이클] 종목 %d개 — stale복원 %dms / 전송 %dms / 현재가갱신 %dms / Yahoo갱신 %dms / 합계 %dms",
+                '[사이클] 종목 %d개 — stale복원 %dms / 전송 %dms / 현재가갱신 %dms / Yahoo갱신 %dms / 합계 %dms',
                 $tickerCount,
                 $staleRestoreElapsed,
                 $sendElapsed,
@@ -389,19 +409,23 @@ class WebSocketAgentServer extends Command
 
     private function pushDataToClient($socket)
     {
-        $id = (int)$socket;
-        if (!$this->clientStates[$id]['handshake']) return;
+        $id = (int) $socket;
+        if (! $this->clientStates[$id]['handshake']) {
+            return;
+        }
 
         $subs = $this->clientStates[$id]['subscriptions'];
-        $tfs  = $this->clientStates[$id]['timeframes'];
+        $tfs = $this->clientStates[$id]['timeframes'];
 
-        if (empty($subs)) return;
+        if (empty($subs)) {
+            return;
+        }
 
         // 유효 종목 목록 추림
         $validTickers = [];
         foreach ($subs as $ticker) {
             if (is_string($ticker) || is_numeric($ticker)) {
-                $validTickers[] = (string)$ticker;
+                $validTickers[] = (string) $ticker;
             }
         }
 
@@ -410,23 +434,23 @@ class WebSocketAgentServer extends Command
         try {
             $this->tossPriceFetcher->fetchDomestic($validTickers);
         } catch (\Exception $e) {
-            $this->error("[pushDataToClient 토스KR+US선조회] 오류: " . $e->getMessage());
+            $this->error('[pushDataToClient 토스KR+US선조회] 오류: ' . $e->getMessage());
         }
 
         foreach ($validTickers as $ticker) {
             $tf = $tfs[$ticker] ?? '1d';
             try {
-                $request = new Request();
+                $request = new Request;
                 $request->query->set('timeframe', $tf);
                 // WS 전송 경로: stale 캐시 허용(동기 KIS fetch 금지 → 케이던스 유지)
                 $request->attributes->set('ws_allow_stale', true);
 
                 $response = $this->controller->getStockData($request, $ticker);
-                $data     = json_decode($response->getContent(), true);
+                $data = json_decode($response->getContent(), true);
 
                 // 한 종목씩 받는 즉시 전송 — 전체 루프 완료를 기다리지 않아 카드가 순차로 바로 채워진다.
                 $payload = json_encode([
-                    'type'   => 'update',
+                    'type' => 'update',
                     'stocks' => [$ticker => $data],
                 ]);
                 @fwrite($socket, $this->encode($payload));
@@ -440,19 +464,21 @@ class WebSocketAgentServer extends Command
 
     private function decode($payload)
     {
-        if (strlen($payload) < 2) return null;
-        
+        if (strlen($payload) < 2) {
+            return null;
+        }
+
         $firstByte = ord($payload[0]);
         $opcode = $firstByte & 0x0F;
-        
+
         if ($opcode === 8) {
             return ['type' => 'close'];
         }
-        
+
         if ($opcode === 9) {
             return ['type' => 'ping'];
         }
-        
+
         if ($opcode !== 1) {
             return null;
         }
@@ -463,28 +489,36 @@ class WebSocketAgentServer extends Command
 
         $offset = 2;
         if ($length === 126) {
-            if (strlen($payload) < 4) return null;
+            if (strlen($payload) < 4) {
+                return null;
+            }
             $length = unpack('n', substr($payload, 2, 2))[1];
             $offset = 4;
         } elseif ($length === 127) {
-            if (strlen($payload) < 10) return null;
+            if (strlen($payload) < 10) {
+                return null;
+            }
             $length = unpack('J', substr($payload, 2, 8))[1];
             $offset = 10;
         }
 
         if ($masked) {
-            if (strlen($payload) < $offset + 4) return null;
+            if (strlen($payload) < $offset + 4) {
+                return null;
+            }
             $mask = substr($payload, $offset, 4);
             $offset += 4;
             $data = substr($payload, $offset, $length);
-            
+
             $decoded = '';
             for ($i = 0; $i < strlen($data); $i++) {
                 $decoded .= $data[$i] ^ $mask[$i % 4];
             }
+
             return ['type' => 'text', 'data' => $decoded];
         } else {
             $data = substr($payload, $offset, $length);
+
             return ['type' => 'text', 'data' => $data];
         }
     }
@@ -510,7 +544,7 @@ class WebSocketAgentServer extends Command
      *             restoreStaleYahooCache() + refreshYahooCache() 를 사용하라.
      *             이 메서드는 전송 전 Yahoo HTTP 를 블로킹 호출해 사이클을 stall 시킨다.
      *
-     * @param array<string, array{ticker:string, timeframe:string}> $uniquePairs
+     * @param  array<string, array{ticker:string, timeframe:string}>  $uniquePairs
      */
     private function warmupYahooCandles(array $uniquePairs): void
     {
@@ -518,7 +552,7 @@ class WebSocketAgentServer extends Command
         // 아래 로직은 참조용으로 보존하며 삭제하지 않는다.
         foreach ($uniquePairs as $pair) {
             $ticker = $pair['ticker'];
-            $tf     = $pair['timeframe'];
+            $tf = $pair['timeframe'];
 
             if ($ticker === 'KOSPI200') {
                 $cacheKey = "kis_kospi_index_{$tf}";
@@ -535,7 +569,7 @@ class WebSocketAgentServer extends Command
             }
 
             try {
-                $request = new Request();
+                $request = new Request;
                 $request->query->set('timeframe', $tf);
                 $this->controller->getStockData($request, $ticker);
             } catch (\Exception $e) {
@@ -556,13 +590,13 @@ class WebSocketAgentServer extends Command
      *   → refreshYahooCache() 가 전송 후 Yahoo HTTP 로 채운다.
      * - 네트워크 호출 없음, 수 ms 이내 완료.
      *
-     * @param array<string, array{ticker:string, timeframe:string}> $uniquePairs
+     * @param  array<string, array{ticker:string, timeframe:string}>  $uniquePairs
      */
     private function restoreStaleYahooCache(array $uniquePairs): void
     {
         foreach ($uniquePairs as $pair) {
             $ticker = $pair['ticker'];
-            $tf     = $pair['timeframe'];
+            $tf = $pair['timeframe'];
 
             if ($ticker === 'KOSPI200') {
                 $cacheKey = "kis_kospi_index_{$tf}";
@@ -605,7 +639,7 @@ class WebSocketAgentServer extends Command
      * _freshness 가 살아있는 종목은 스킵 → 중복 호출 방지.
      * 5초 재주입으로 원본 캐시가 살아있어도, _freshness 없으면 갱신 대상으로 처리.
      *
-     * @param array<string, array{ticker:string, timeframe:string}> $uniquePairs
+     * @param  array<string, array{ticker:string, timeframe:string}>  $uniquePairs
      */
     private function refreshYahooCache(array $uniquePairs): void
     {
@@ -614,7 +648,7 @@ class WebSocketAgentServer extends Command
 
         foreach ($uniquePairs as $pair) {
             $ticker = $pair['ticker'];
-            $tf     = $pair['timeframe'];
+            $tf = $pair['timeframe'];
 
             if ($ticker === 'KOSPI200') {
                 $cacheKey = "kis_kospi_index_{$tf}";
@@ -643,7 +677,7 @@ class WebSocketAgentServer extends Command
             Cache::forget($cacheKey);
 
             try {
-                $request = new Request();
+                $request = new Request;
                 $request->query->set('timeframe', $tf);
                 // Cache::forget 으로 재주입 캐시를 제거했으므로
                 // getStockData() 내부의 Cache::remember($cacheKey, TTL, ...) 가
@@ -659,9 +693,9 @@ class WebSocketAgentServer extends Command
                 if ($cachedVal !== null) {
                     $decodedForCheck = json_decode($cachedVal->getContent(), true);
                     $isMock = isset($decodedForCheck['source'])
-                        && str_starts_with((string)$decodedForCheck['source'], 'Mock');
-                    $hasCandles = !empty($decodedForCheck['candles']);
-                    if (!$isMock && $hasCandles) {
+                        && str_starts_with((string) $decodedForCheck['source'], 'Mock');
+                    $hasCandles = ! empty($decodedForCheck['candles']);
+                    if (! $isMock && $hasCandles) {
                         Cache::forever("{$cacheKey}_last", $cachedVal);
                         Cache::put($freshnessKey, 1, $freshnessTtl);
                     }
@@ -674,13 +708,13 @@ class WebSocketAgentServer extends Command
 
     private function shutdownAllServers()
     {
-        $this->info("Shutting down API server (Port 8000)...");
+        $this->info('Shutting down API server (Port 8000)...');
         $this->killProcessByPort(8000);
 
-        $this->info("Shutting down Vite Frontend (Port 5173)...");
+        $this->info('Shutting down Vite Frontend (Port 5173)...');
         $this->killProcessByPort(5173);
 
-        $this->info("Shutting down WebSocket Agent itself...");
+        $this->info('Shutting down WebSocket Agent itself...');
         exit(0);
     }
 
@@ -690,7 +724,9 @@ class WebSocketAgentServer extends Command
         exec("netstat -aon | findstr :$port", $output);
         foreach ($output as $line) {
             $line = trim($line);
-            if (empty($line)) continue;
+            if (empty($line)) {
+                continue;
+            }
             $parts = preg_split('/\s+/', $line);
             if (count($parts) >= 5) {
                 $pid = $parts[4];

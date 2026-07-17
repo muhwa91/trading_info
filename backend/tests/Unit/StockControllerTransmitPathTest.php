@@ -37,14 +37,14 @@ class StockControllerTransmitPathTest extends TestCase
     // 1. US 전송 경로 — Cache::remember(kis_realtime_price_us_, 3, ...) 패턴 제거 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testUsTransmitPathDoesNotUseCacheRememberWithThreeSecTtl(): void
+    #[Test]
+    public function test_us_transmit_path_does_not_use_cache_remember_with_three_sec_ttl(): void
     {
         $src = $this->getUsTransmitSection();
 
         // Cache::remember($cacheKeyKis, 3, ...) 혹은 cache()->remember('...', 3, ...) 형태가
         // 전송 경로 US 블록에 없어야 한다 — 3초 TTL이면 매 사이클 동기 KIS 호출 발생
-        $hasRemember3 = (bool)preg_match(
+        $hasRemember3 = (bool) preg_match(
             '/Cache::remember\s*\(\s*\$cacheKeyKis[^,]*,\s*3\s*,/',
             $src
         );
@@ -61,17 +61,17 @@ class StockControllerTransmitPathTest extends TestCase
     // 2. US 전송 경로 — 병렬선조회 8초 TTL 키를 직접 Cache::get 으로 읽는지 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testUsTransmitPathReadsPrimaryKisCacheKey(): void
+    #[Test]
+    public function test_us_transmit_path_reads_primary_kis_cache_key(): void
     {
         $src = $this->getUsTransmitSection();
 
         // "kis_realtime_price_us_{ticker}" 캐시 키를 Cache::get 으로 참조해야 한다.
         // 변수명 $cacheKeyKis 또는 리터럴 문자열 포함 패턴 허용
-        $hasPrimaryGet = (bool)preg_match(
+        $hasPrimaryGet = (bool) preg_match(
             '/Cache::get\s*\(\s*\$cacheKeyKis\s*\)/',
             $src
-        ) || (bool)preg_match(
+        ) || (bool) preg_match(
             '/Cache::get\s*\(\s*"kis_realtime_price_us_/',
             $src
         );
@@ -87,12 +87,12 @@ class StockControllerTransmitPathTest extends TestCase
     // 3. US 전송 경로 — 폴백 키(24h) 존재 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testUsTransmitPathReferencesFallbackKey(): void
+    #[Test]
+    public function test_us_transmit_path_references_fallback_key(): void
     {
         $src = $this->getUsTransmitSection();
 
-        $hasFallbackKey = (bool)preg_match(
+        $hasFallbackKey = (bool) preg_match(
             '/kis_last_successful_overseas_price_/',
             $src
         );
@@ -108,12 +108,12 @@ class StockControllerTransmitPathTest extends TestCase
     // 4. 국내 전송 경로 — Cache::remember(cacheKeyKis, 3, ...) 패턴 제거 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testDomesticTransmitPathDoesNotUseCacheRememberWithThreeSecTtl(): void
+    #[Test]
+    public function test_domestic_transmit_path_does_not_use_cache_remember_with_three_sec_ttl(): void
     {
         $src = $this->getDomesticTransmitSection();
 
-        $hasRemember3 = (bool)preg_match(
+        $hasRemember3 = (bool) preg_match(
             '/Cache::remember\s*\(\s*\$cacheKeyKis[^,]*,\s*3\s*,/',
             $src
         );
@@ -129,12 +129,12 @@ class StockControllerTransmitPathTest extends TestCase
     // 5. 국내 전송 경로 — 병렬선조회 8초 TTL 키를 직접 Cache::get 으로 읽는지 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testDomesticTransmitPathReadsPrimaryKisCacheKey(): void
+    #[Test]
+    public function test_domestic_transmit_path_reads_primary_kis_cache_key(): void
     {
         $src = $this->getDomesticTransmitSection();
 
-        $hasPrimaryGet = (bool)preg_match(
+        $hasPrimaryGet = (bool) preg_match(
             '/Cache::get\s*\(\s*\$cacheKeyKis\s*\)/',
             $src
         );
@@ -150,12 +150,12 @@ class StockControllerTransmitPathTest extends TestCase
     // 6. 국내 전송 경로 — 폴백 키(24h) 존재 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testDomesticTransmitPathReferencesFallbackKey(): void
+    #[Test]
+    public function test_domestic_transmit_path_references_fallback_key(): void
     {
         $src = $this->getDomesticTransmitSection();
 
-        $hasFallbackKey = (bool)preg_match(
+        $hasFallbackKey = (bool) preg_match(
             '/kis_last_successful_price_/',
             $src
         );
@@ -171,8 +171,8 @@ class StockControllerTransmitPathTest extends TestCase
     // 7. KisParallelPriceFetcher 삭제 확인 — KIS 완전 제거 후 파일 없음
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testUsCacheKeyConsistencyBetweenParallelFetcherAndTransmitPath(): void
+    #[Test]
+    public function test_us_cache_key_consistency_between_parallel_fetcher_and_transmit_path(): void
     {
         // KisParallelPriceFetcher 는 KIS 완전 제거(Phase 5)로 삭제됐어야 한다.
         // 삭제 확인으로 테스트 목적 대체 (구 테스트: 캐시 키 일관성 → 신 테스트: 파일 부재 확인).
@@ -187,14 +187,14 @@ class StockControllerTransmitPathTest extends TestCase
     //    (TossPriceFetcher 가 채운 캐시를 StockController 가 읽는 구조 유지)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testDomesticCacheKeyConsistencyBetweenParallelFetcherAndTransmitPath(): void
+    #[Test]
+    public function test_domestic_cache_key_consistency_between_parallel_fetcher_and_transmit_path(): void
     {
         // KisParallelPriceFetcher 는 삭제됐지만, 전송 경로(StockController)가 여전히
         // "kis_realtime_price_{$ticker}" 캐시 키를 읽는지 확인해 하위 호환성을 검증한다.
         $controllerSrc = $this->getDomesticTransmitSection();
 
-        $hasKrCacheKeyInController = (bool)preg_match(
+        $hasKrCacheKeyInController = (bool) preg_match(
             '/\$cacheKeyKis\s*=\s*"kis_realtime_price_\{/',
             $controllerSrc
         );
@@ -210,8 +210,6 @@ class StockControllerTransmitPathTest extends TestCase
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * @test
-     *
      * 배경: source 라벨이 현재가 실제 출처와 무관하게 항상 'Toss'/'Yahoo + Toss (현재가)'
      *       로 표기돼, Yahoo 폴백 중이거나 stale 캐시여도 'Toss' 로 가려졌다.
      *
@@ -219,7 +217,8 @@ class StockControllerTransmitPathTest extends TestCase
      *   - provider=yahoo → 'Yahoo 폴백 (현재가)'
      *   - !isFresh(24h stale) → '캐시(지연)' 표기
      */
-    public function testUsSourceLabelReflectsProviderAndFreshness(): void
+    #[Test]
+    public function test_us_source_label_reflects_provider_and_freshness(): void
     {
         $usSrc = $this->getUsSourceLabelSection();
 
@@ -244,7 +243,7 @@ class StockControllerTransmitPathTest extends TestCase
         // 신선도 플래그를 라벨 분기에 사용하는지
         $this->assertTrue(
             (bool) preg_match('/\$isFreshKisPrice/', $usSrc),
-            "US source 라벨이 \$isFreshKisPrice 를 사용하지 않음 — stale 여부가 라벨에 반영되지 않는다."
+            'US source 라벨이 $isFreshKisPrice 를 사용하지 않음 — stale 여부가 라벨에 반영되지 않는다.'
         );
     }
 
@@ -255,9 +254,10 @@ class StockControllerTransmitPathTest extends TestCase
     private function getControllerSource(): string
     {
         $path = __DIR__ . '/../../app/Http/Controllers/StockController.php';
-        $src  = file_get_contents($path);
+        $src = file_get_contents($path);
         $this->assertNotFalse($src, 'StockController.php 읽기 실패');
-        return (string)$src;
+
+        return (string) $src;
     }
 
     // getParallelFetcherSource() 는 KIS 완전 제거(Phase 5)로 삭제됨 — 파일 없음.
@@ -270,10 +270,11 @@ class StockControllerTransmitPathTest extends TestCase
     {
         $src = $this->getControllerSource();
         $marker = '// US Stock flow (non-index, non-domestic)';
-        $pos    = strpos($src, $marker);
+        $pos = strpos($src, $marker);
         if ($pos === false) {
             return $src;
         }
+
         // 4000바이트 — 한글 주석으로 멀티바이트가 많으므로 넉넉히
         return substr($src, $pos, 4000);
     }
@@ -284,17 +285,18 @@ class StockControllerTransmitPathTest extends TestCase
      */
     private function getUsSourceLabelSection(): string
     {
-        $src    = $this->getControllerSource();
+        $src = $this->getControllerSource();
         $marker = '$baseSource     = $content[\'source\']';
-        $pos    = strpos($src, $marker);
+        $pos = strpos($src, $marker);
         if ($pos === false) {
             // 구조 변경 대비 폴백 — 라벨 분기 시작 근처 주석
             $marker = '차트 베이스(Toss/Yahoo)를 source 에 반영';
-            $pos    = strpos($src, $marker);
+            $pos = strpos($src, $marker);
         }
         if ($pos === false) {
             return $src;
         }
+
         return substr($src, $pos, 2000);
     }
 
@@ -306,19 +308,20 @@ class StockControllerTransmitPathTest extends TestCase
         $src = $this->getControllerSource();
         // 국내 블록의 KIS 현재가 할당 마커 — WS/REST 분기 이후 주석
         $marker = 'KIS 현재가(국내) — WS/REST 경로 분기:';
-        $pos    = strpos($src, $marker);
+        $pos = strpos($src, $marker);
         if ($pos === false) {
             // 구 마커(stale-while-revalidate) 또는 폴백 키로 대체 탐색
             $marker = 'KIS 현재가 — 전송 경로 stale-while-revalidate:';
-            $pos    = strpos($src, $marker);
+            $pos = strpos($src, $marker);
         }
         if ($pos === false) {
             $marker = 'kis_last_successful_price_';
-            $pos    = strpos($src, $marker);
+            $pos = strpos($src, $marker);
         }
         if ($pos === false) {
             return $src;
         }
+
         return substr($src, $pos, 2000);
     }
 
@@ -327,8 +330,6 @@ class StockControllerTransmitPathTest extends TestCase
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * @test
-     *
      * 회귀 내용 (2026-06-22):
      *   라운드3에서 Cache::remember → Cache::get + ?? 폴백 체인으로 바뀌면서
      *   REST 직접조회 경로도 동기 fetch 를 하지 않게 됐다.
@@ -337,7 +338,8 @@ class StockControllerTransmitPathTest extends TestCase
      * 수정 후:
      *   $allowStale=false(REST) 분기에 동기 fetch + Cache::put(primary, 8) 가 있어야 한다.
      */
-    public function testRestPathCallsFreshFetchWhenPrimaryExpired(): void
+    #[Test]
+    public function test_rest_path_calls_fresh_fetch_when_primary_expired(): void
     {
         // US 블록에서 $allowStale=false 분기: fetchOverseasPriceFromKis 호출 + Cache::put(cacheKeyKis 8초) 가 존재해야 함
         $usSrc = $this->getUsTransmitSection();
@@ -386,15 +388,14 @@ class StockControllerTransmitPathTest extends TestCase
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * @test
-     *
      * WS 전송 경로는 동기 fetch 를 하면 안 된다.
      * $allowStale=true 분기에는 fetch 호출 없이 폴백 키만 읽어야 케이던스가 유지된다.
      *
      * 검증: allowStale 분기 구조 내에서 WS(true) 쪽에 fetchXxx 호출이 직접 오지 않는 패턴.
      * 소스 분석: "if ($allowStale) { ... } else { $fresh = $this->fetchXxx... }" 구조가 있어야 함.
      */
-    public function testWsPathDoesNotCallFetchWhenPrimaryExpired(): void
+    #[Test]
+    public function test_ws_path_does_not_call_fetch_when_primary_expired(): void
     {
         // US 블록: "if ($allowStale)" 분기가 fetch 보다 먼저 나타나야 한다
         $usSrc = $this->getUsTransmitSection();
@@ -433,11 +434,11 @@ class StockControllerTransmitPathTest extends TestCase
     // 11. WS 서버가 ws_allow_stale=true 를 Request attribute 에 주입하는지 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testWebSocketServerInjectsAllowStaleAttribute(): void
+    #[Test]
+    public function test_web_socket_server_injects_allow_stale_attribute(): void
     {
         $path = __DIR__ . '/../../app/Console/Commands/WebSocketAgentServer.php';
-        $src  = file_get_contents($path);
+        $src = file_get_contents($path);
         $this->assertNotFalse($src, 'WebSocketAgentServer.php 읽기 실패');
 
         $hasAttribute = (bool) preg_match(

@@ -26,7 +26,8 @@ use Illuminate\Console\Command;
  */
 class ClassifyEtfStocks extends Command
 {
-    protected $signature   = 'stocks:classify-etf {--dry-run : 실제 업데이트 없이 대상 목록만 출력}';
+    protected $signature = 'stocks:classify-etf {--dry-run : 실제 업데이트 없이 대상 목록만 출력}';
+
     protected $description = 'ETF 종목 type 보정 — 종목명 패턴 기반 best-effort (KR 종목 한정)';
 
     /**

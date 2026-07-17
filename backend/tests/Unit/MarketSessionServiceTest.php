@@ -8,6 +8,7 @@ use App\Services\MarketSessionService;
 use App\Services\Toss\TossApiClient;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
@@ -72,11 +73,11 @@ class MarketSessionServiceTest extends TestCase
         $next = Carbon::parse($date, 'Asia/Seoul')->addDay()->toDateString();
 
         return [
-            'date'          => $date,
-            'dayMarket'     => $this->kstWindow("{$date} 09:00", "{$date} 17:00"),
-            'preMarket'     => $this->kstWindow("{$date} 17:00", "{$date} 22:30"),
+            'date' => $date,
+            'dayMarket' => $this->kstWindow("{$date} 09:00", "{$date} 17:00"),
+            'preMarket' => $this->kstWindow("{$date} 17:00", "{$date} 22:30"),
             'regularMarket' => $this->kstWindow("{$date} 22:30", "{$next} 05:00"),
-            'afterMarket'   => $this->kstWindow("{$next} 05:00", "{$next} 08:50"),
+            'afterMarket' => $this->kstWindow("{$next} 05:00", "{$next} 08:50"),
         ];
     }
 
@@ -90,11 +91,11 @@ class MarketSessionServiceTest extends TestCase
     private function usHolidayNode(string $date): array
     {
         return [
-            'date'          => $date,
-            'dayMarket'     => null,
-            'preMarket'     => null,
+            'date' => $date,
+            'dayMarket' => null,
+            'preMarket' => null,
             'regularMarket' => null,
-            'afterMarket'   => null,
+            'afterMarket' => null,
         ];
     }
 
@@ -103,7 +104,7 @@ class MarketSessionServiceTest extends TestCase
     {
         return [
             'startTime' => Carbon::parse($start, 'Asia/Seoul')->format('Y-m-d\TH:i:s.vP'),
-            'endTime'   => Carbon::parse($end, 'Asia/Seoul')->format('Y-m-d\TH:i:s.vP'),
+            'endTime' => Carbon::parse($end, 'Asia/Seoul')->format('Y-m-d\TH:i:s.vP'),
         ];
     }
 
@@ -131,7 +132,6 @@ class MarketSessionServiceTest extends TestCase
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * @test
      * 평시 거래일: 하드코딩 폴백이 토스 캘린더와 **한 시각도 갈리지 않는다**.
      *
      * 폴백은 캘린더의 거울이다(토스 IP 미등록 시 유일한 생명선). 거울이 원본과 다르면 그건 폴백 결함이다 —
@@ -141,7 +141,8 @@ class MarketSessionServiceTest extends TestCase
      *   ET 03:30~03:59(주간거래 30분) · 19:30~19:49(애프터 20분) 이 '장마감'으로 뒤집혀 FAIL 한다.
      *   (라이브 피해 실측: KST 16:30~16:59 매 평일 30분, 기준가 7.9pp 오차.)
      */
-    public function testGetUsSession_HardcodedFallbackMatchesCalendar_OnNormalTradingDay(): void
+    #[Test]
+    public function test_get_us_session_hardcoded_fallback_matches_calendar_on_normal_trading_day(): void
     {
         $dates = ['2026-07-15', '2026-07-16', '2026-07-17'];   // 수·목·금
         $nodes = array_map(fn (string $d): array => $this->usDayNode($d), $dates);
@@ -164,7 +165,7 @@ class MarketSessionServiceTest extends TestCase
         $this->seedTradingDays($dates);
 
         $fallback = $this->sessionService([]);
-        $actual   = [];
+        $actual = [];
         foreach ($times as $ts) {
             $actual[$this->etKey($ts)] = $fallback->getUsSession($ts);
         }
@@ -183,7 +184,6 @@ class MarketSessionServiceTest extends TestCase
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * @test
      * 케이스 3 — 노동절 2026-09-07: **주간거래 창 전체가 '장마감'**.
      *
      * 옛 코드는 주간거래 분기가 거래일 게이트보다 먼저 return 해 미 공휴일에 450분을 '주간거래'로
@@ -193,7 +193,8 @@ class MarketSessionServiceTest extends TestCase
      *   휴장 **전야**는 미개장(9/07 dayMarket=null) · 휴장일 **당일 저녁**은 개장(9/08 dayMarket 존재).
      * 이 비대칭은 캘린더만 안다.
      */
-    public function testGetUsSession_LaborDay_DayMarketWindowIsClosed(): void
+    #[Test]
+    public function test_get_us_session_labor_day_day_market_window_is_closed(): void
     {
         $service = $this->sessionService([
             $this->usDayNode('2026-09-04'),      // 금 (직전 영업일)
@@ -214,7 +215,6 @@ class MarketSessionServiceTest extends TestCase
     }
 
     /**
-     * @test
      * 케이스 4 — 블랙프라이데이 2026-11-27 조기폐장: 정규장이 **ET 13:00** 에 끝난다.
      *
      * ★ 상수로는 표현 자체가 불가능한 날이다. 이 케이스의 통과가 곧 '캘린더 경로가 살아있다'는
@@ -222,14 +222,15 @@ class MarketSessionServiceTest extends TestCase
      *
      * 창 리터럴 출처 = 실측(regularMarket.endTime = KST 03:00 · afterMarket = KST 03:00~07:00).
      */
-    public function testGetUsSession_BlackFridayEarlyClose_RegularEndsAt1300Et(): void
+    #[Test]
+    public function test_get_us_session_black_friday_early_close_regular_ends_at1300_et(): void
     {
         $blackFriday = [
-            'date'          => '2026-11-27',
-            'dayMarket'     => $this->kstWindow('2026-11-27 09:00', '2026-11-27 17:00'),
-            'preMarket'     => $this->kstWindow('2026-11-27 17:00', '2026-11-27 22:30'),
+            'date' => '2026-11-27',
+            'dayMarket' => $this->kstWindow('2026-11-27 09:00', '2026-11-27 17:00'),
+            'preMarket' => $this->kstWindow('2026-11-27 17:00', '2026-11-27 22:30'),
             'regularMarket' => $this->kstWindow('2026-11-27 22:30', '2026-11-28 03:00'),  // 조기폐장 = ET 13:00
-            'afterMarket'   => $this->kstWindow('2026-11-28 03:00', '2026-11-28 07:00'),  // ET 13:00~17:00
+            'afterMarket' => $this->kstWindow('2026-11-28 03:00', '2026-11-28 07:00'),  // ET 13:00~17:00
         ];
 
         // 11/26 은 추수감사절 → 직전 영업일은 11/25. 사이(11/26)·주말(11/28·29)은 프로덕션이 빈 창으로 채운다.
@@ -252,11 +253,11 @@ class MarketSessionServiceTest extends TestCase
     }
 
     /**
-     * @test
      * 케이스 5 — 캘린더 `[]`(토스 허용 IP 미등록 시 전 호출이 이렇게 된다) → 하드코딩 폴백으로 graceful.
      * 폴백이 유일한 생명선이라 예외·null 없이 세션명을 계속 답해야 한다.
      */
-    public function testGetUsSession_CalendarUnavailable_FallsBackGracefully(): void
+    #[Test]
+    public function test_get_us_session_calendar_unavailable_falls_back_gracefully(): void
     {
         $service = $this->sessionService([]);
         $this->seedTradingDays(['2026-07-16']);

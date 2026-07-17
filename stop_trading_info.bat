@@ -16,6 +16,7 @@ echo ====================================================
 ::   구 코드가 공유 캐시를 계속 되쓰는 사고가 있었음. 그래서 커맨드라인으로 전수 kill.
 ::   필터: artisan serve / agent:serve(이 프로젝트 고유 커맨드) 또는 이 프로젝트 backend 경로(server.php 워커)를
 ::         포함한 php.exe 만 종료 → 타 PHP 프로젝트 오폭 방지.
+::   ※ php.exe 는 "이름" 기준 매칭이라 PHP 경로가 바뀌어도(7.4→8.4) 그대로 동작 — PHP 경로 정의 불필요.
 echo [..] 백엔드 PHP 프로세스 종료 중 (artisan serve / agent:serve / server.php)...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$b=[regex]::Escape('%BACKEND%'); Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'php.exe' -and $_.CommandLine -and ($_.CommandLine -match 'artisan (serve|agent:serve)' -or $_.CommandLine -match $b) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
 

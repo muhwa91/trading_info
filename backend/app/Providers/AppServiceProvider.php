@@ -9,9 +9,9 @@ use App\Services\MarketSessionService;
 use App\Services\PriceService;
 use App\Services\Quote\TossQuoteProvider;
 use App\Services\Toss\TossApiClient;
+use App\Services\Toss\TossCandleProvider;
 use App\Services\Toss\TossChangeCalculator;
 use App\Services\Toss\TossFxProvider;
-use App\Services\Toss\TossCandleProvider;
 use App\Services\Toss\TossPriceFetcher;
 use App\Services\Toss\TossStockMaster;
 use App\Services\Toss\TossSymbolMapper;
@@ -21,8 +21,6 @@ class AppServiceProvider extends ServiceProvider
 {
     /**
      * Register any application services.
-     *
-     * @return void
      */
     public function register(): void
     {
@@ -98,8 +96,6 @@ class AppServiceProvider extends ServiceProvider
 
     /**
      * Bootstrap any application services.
-     *
-     * @return void
      */
     public function boot(): void
     {

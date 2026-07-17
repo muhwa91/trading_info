@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
-use ReflectionMethod;
 
 /**
  * 회귀 테스트 — 버그 #2 (MU 평평봉 — KIS 폴백으로 분봉 누적)
@@ -34,12 +34,11 @@ class AccumulateOverseasFallbackSkipTest extends TestCase
 
     /**
      * accumulateOverseasRealTimePrice() 시그니처에 $isFreshKisPrice 파라미터가 있다.
-     *
-     * @test
      */
-    public function testAccumulateMethodHasFreshKisPriceParameter(): void
+    #[Test]
+    public function test_accumulate_method_has_fresh_kis_price_parameter(): void
     {
-        $src    = $this->getControllerSource();
+        $src = $this->getControllerSource();
         $method = $this->extractMethodSource($src, 'accumulateOverseasRealTimePrice');
 
         $this->assertNotEmpty($method, 'accumulateOverseasRealTimePrice 메서드를 찾을 수 없음');
@@ -53,12 +52,11 @@ class AccumulateOverseasFallbackSkipTest extends TestCase
 
     /**
      * $isFreshKisPrice = false 일 때 즉시 return 하는 로직이 존재한다.
-     *
-     * @test
      */
-    public function testAccumulateMethodHasFallbackSkipLogic(): void
+    #[Test]
+    public function test_accumulate_method_has_fallback_skip_logic(): void
     {
-        $src    = $this->getControllerSource();
+        $src = $this->getControllerSource();
         $method = $this->extractMethodSource($src, 'accumulateOverseasRealTimePrice');
 
         $this->assertNotEmpty($method, 'accumulateOverseasRealTimePrice 메서드를 찾을 수 없음');
@@ -71,8 +69,8 @@ class AccumulateOverseasFallbackSkipTest extends TestCase
         );
 
         // 그 분기 안에 return 이 있어야 함
-        $skipPos   = (int)strpos($method, '!$isFreshKisPrice');
-        $returnPos = (int)strpos($method, 'return', $skipPos);
+        $skipPos = $this->skipBranchPos($method);
+        $returnPos = (int) strpos($method, 'return', $skipPos);
 
         $this->assertGreaterThan(
             $skipPos,
@@ -83,12 +81,11 @@ class AccumulateOverseasFallbackSkipTest extends TestCase
 
     /**
      * getStockData() 가 $isFreshKisPrice 를 accumulateOverseasRealTimePrice() 에 전달한다.
-     *
-     * @test
      */
-    public function testGetStockDataPassesFreshKisPriceFlag(): void
+    #[Test]
+    public function test_get_stock_data_passes_fresh_kis_price_flag(): void
     {
-        $src    = $this->getControllerSource();
+        $src = $this->getControllerSource();
 
         // accumulateOverseasRealTimePrice 호출 라인에 $isFreshKisPrice 가 인자로 있어야 한다
         $this->assertMatchesRegularExpression(
@@ -100,10 +97,9 @@ class AccumulateOverseasFallbackSkipTest extends TestCase
 
     /**
      * getStockData() 내부에 KIS 8초 캐시 히트 여부를 판별하는 $isFreshKisPrice 변수 초기화가 있다.
-     *
-     * @test
      */
-    public function testGetStockDataInitializesFreshKisPriceFlag(): void
+    #[Test]
+    public function test_get_stock_data_initializes_fresh_kis_price_flag(): void
     {
         $src = $this->getControllerSource();
 
@@ -125,10 +121,9 @@ class AccumulateOverseasFallbackSkipTest extends TestCase
      * 리플렉션 호출은 isUsMarketOpen() 의 시간 의존성과 Cache 파사드 부트스트랩 요구로
      * 순수 PHPUnit TestCase 에서 실행이 불가하다.
      * 소스 기반 테스트(testAccumulateMethodHasFallbackSkipLogic 등)로 동일 불변성을 검증한다.
-     *
-     * @test
      */
-    public function testAccumulateFallbackReturnsPreviousAccumulatedUnchanged(): void
+    #[Test]
+    public function test_accumulate_fallback_returns_previous_accumulated_unchanged(): void
     {
         $this->markTestSkipped(
             '리플렉션 호출은 isUsMarketOpen() 시간 의존성 + Cache 파사드 미부트스트랩으로 ' .
@@ -140,18 +135,17 @@ class AccumulateOverseasFallbackSkipTest extends TestCase
      * $isFreshKisPrice = false 스킵 로직이 isUsMarketOpen 체크보다 뒤에 위치한다.
      *
      * 시장이 닫혀있으면 이미 return 하므로, 폴백 스킵은 시장 오픈 확인 이후에 와야 한다.
-     *
-     * @test
      */
-    public function testFallbackSkipIsAfterMarketOpenCheck(): void
+    #[Test]
+    public function test_fallback_skip_is_after_market_open_check(): void
     {
-        $src    = $this->getControllerSource();
+        $src = $this->getControllerSource();
         $method = $this->extractMethodSource($src, 'accumulateOverseasRealTimePrice');
 
         $this->assertNotEmpty($method, 'accumulateOverseasRealTimePrice 메서드를 찾을 수 없음');
 
-        $marketOpenPos = (int)strpos($method, 'isUsMarketOpen');
-        $skipPos       = (int)strpos($method, '!$isFreshKisPrice');
+        $marketOpenPos = (int) strpos($method, 'isUsMarketOpen');
+        $skipPos = $this->skipBranchPos($method);
 
         $this->assertGreaterThan(
             0,
@@ -169,12 +163,11 @@ class AccumulateOverseasFallbackSkipTest extends TestCase
 
     /**
      * $isFreshKisPrice 기본값이 true 이므로 파라미터 생략 시 기존 동작이 유지된다.
-     *
-     * @test
      */
-    public function testAccumulateDefaultParameterIsTrue(): void
+    #[Test]
+    public function test_accumulate_default_parameter_is_true(): void
     {
-        $src    = $this->getControllerSource();
+        $src = $this->getControllerSource();
         $method = $this->extractMethodSource($src, 'accumulateOverseasRealTimePrice');
 
         $this->assertNotEmpty($method, 'accumulateOverseasRealTimePrice 메서드를 찾을 수 없음');
@@ -192,12 +185,28 @@ class AccumulateOverseasFallbackSkipTest extends TestCase
     // 헬퍼
     // ──────────────────────────────────────────────────────────────────────
 
+    /**
+     * `!$isFreshKisPrice` 스킵 분기의 위치를 반환한다(없으면 -1).
+     *
+     * 리터럴 strpos 가 아니라 정규식(`!\s*\$`)을 쓰는 이유: Pint 의
+     * not_operator_with_successor_space 규칙이 `!$x` 를 `! $x` 로 포맷하므로
+     * 리터럴 검색은 포맷만 바뀌어도 false 를 반환해 깨진다(동작은 동일).
+     * 미발견 시 -1 — 0 을 반환하면 "분기가 아예 없음"이 위치 비교를 통과해버린다.
+     */
+    private function skipBranchPos(string $method): int
+    {
+        return preg_match('/!\s*\$isFreshKisPrice/', $method, $m, PREG_OFFSET_CAPTURE) === 1
+            ? (int) $m[0][1]
+            : -1;
+    }
+
     private function getControllerSource(): string
     {
         $path = __DIR__ . '/../../app/Http/Controllers/StockController.php';
-        $src  = file_get_contents($path);
+        $src = file_get_contents($path);
         $this->assertNotFalse($src, 'StockController.php 읽기 실패');
-        return (string)$src;
+
+        return (string) $src;
     }
 
     /**
@@ -214,8 +223,8 @@ class AccumulateOverseasFallbackSkipTest extends TestCase
             return '';
         }
 
-        $depth  = 0;
-        $end    = $openPos;
+        $depth = 0;
+        $end = $openPos;
         $length = strlen($source);
 
         for ($i = $openPos; $i < $length; $i++) {
@@ -240,12 +249,13 @@ class AccumulateOverseasFallbackSkipTest extends TestCase
     private function makeControllerPartialMock(): object
     {
         $controllerClass = \App\Http\Controllers\StockController::class;
-        if (!class_exists($controllerClass)) {
+        if (! class_exists($controllerClass)) {
             $this->markTestSkipped('StockController 클래스를 로드할 수 없는 환경');
         }
 
         try {
             $rc = new ReflectionClass($controllerClass);
+
             return $rc->newInstanceWithoutConstructor();
         } catch (\Throwable $e) {
             $this->markTestSkipped("StockController 인스턴스 생성 실패: {$e->getMessage()}");

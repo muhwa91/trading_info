@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -33,12 +34,11 @@ class RefreshYahooCacheStaleLoopTest extends TestCase
      *
      * freshness 만료 후 재주입된 값을 제거해야 fresh fetch 가 보장되므로
      * Cache::forget 이 반드시 있어야 한다.
-     *
-     * @test
      */
-    public function testRefreshYahooCacheHasCacheForget(): void
+    #[Test]
+    public function test_refresh_yahoo_cache_has_cache_forget(): void
     {
-        $source    = $this->getServerSource();
+        $source = $this->getServerSource();
         $methodSrc = $this->extractMethodSource($source, 'refreshYahooCache');
 
         $this->assertNotEmpty($methodSrc, 'refreshYahooCache 메서드를 찾을 수 없음');
@@ -55,25 +55,24 @@ class RefreshYahooCacheStaleLoopTest extends TestCase
      * Cache::forget($cacheKey) 가 getStockData() 호출(= Cache::remember) 보다 앞에 위치한다.
      *
      * 순서가 뒤바뀌면 forget 이 무의미해진다.
-     *
-     * @test
      */
-    public function testCacheForgetPrecedesGetStockDataCall(): void
+    #[Test]
+    public function test_cache_forget_precedes_get_stock_data_call(): void
     {
-        $source    = $this->getServerSource();
+        $source = $this->getServerSource();
         $methodSrc = $this->extractMethodSource($source, 'refreshYahooCache');
 
         $this->assertNotEmpty($methodSrc, 'refreshYahooCache 메서드를 찾을 수 없음');
 
-        $forgetPos      = strpos($methodSrc, 'Cache::forget');
-        $getStockPos    = strpos($methodSrc, 'getStockData(');
+        $forgetPos = strpos($methodSrc, 'Cache::forget');
+        $getStockPos = strpos($methodSrc, 'getStockData(');
 
         $this->assertNotFalse($forgetPos, 'refreshYahooCache 에 Cache::forget 가 없음');
         $this->assertNotFalse($getStockPos, 'refreshYahooCache 에 getStockData() 호출이 없음');
 
         $this->assertLessThan(
-            (int)$getStockPos,
-            (int)$forgetPos,
+            (int) $getStockPos,
+            (int) $forgetPos,
             'Cache::forget 이 getStockData() 호출보다 뒤에 위치함 — ' .
             '재주입된 캐시 제거가 Cache::remember 이후 발생하면 악순환 방지 효과가 없음'
         );
@@ -84,12 +83,11 @@ class RefreshYahooCacheStaleLoopTest extends TestCase
      *
      * freshness 가 살아있을 때는 Cache::forget 이 호출되면 안 되므로
      * _freshness 검사(`Cache::has($freshnessKey)`)가 Cache::forget 보다 앞에 있어야 한다.
-     *
-     * @test
      */
-    public function testCacheForgetIsInsideFreshnessExpiredBranch(): void
+    #[Test]
+    public function test_cache_forget_is_inside_freshness_expired_branch(): void
     {
-        $source    = $this->getServerSource();
+        $source = $this->getServerSource();
         $methodSrc = $this->extractMethodSource($source, 'refreshYahooCache');
 
         $this->assertNotEmpty($methodSrc, 'refreshYahooCache 메서드를 찾을 수 없음');
@@ -101,8 +99,8 @@ class RefreshYahooCacheStaleLoopTest extends TestCase
             'refreshYahooCache 에 Cache::has($freshnessKey) 패턴이 없음'
         );
 
-        $hasPos    = (int)strpos($methodSrc, 'Cache::has($freshnessKey)');
-        $forgetPos = (int)strpos($methodSrc, 'Cache::forget');
+        $hasPos = (int) strpos($methodSrc, 'Cache::has($freshnessKey)');
+        $forgetPos = (int) strpos($methodSrc, 'Cache::forget');
 
         // freshness 검사 이후에 Cache::forget 이 나와야 한다
         $this->assertGreaterThan(
@@ -116,18 +114,17 @@ class RefreshYahooCacheStaleLoopTest extends TestCase
     /**
      * Cache::forget 이 freshnessTtl 할당(= 메서드 진입 후 초반) 이후,
      * 그리고 getStockData() 직전에 위치하는 전체 순서를 검증한다.
-     *
-     * @test
      */
-    public function testRefreshYahooCacheOrderIsForgetThenFetch(): void
+    #[Test]
+    public function test_refresh_yahoo_cache_order_is_forget_then_fetch(): void
     {
-        $source    = $this->getServerSource();
+        $source = $this->getServerSource();
         $methodSrc = $this->extractMethodSource($source, 'refreshYahooCache');
 
         $this->assertNotEmpty($methodSrc, 'refreshYahooCache 메서드를 찾을 수 없음');
 
-        $forgetPos   = strpos($methodSrc, 'Cache::forget');
-        $foreverPos  = strpos($methodSrc, 'Cache::forever');
+        $forgetPos = strpos($methodSrc, 'Cache::forget');
+        $foreverPos = strpos($methodSrc, 'Cache::forever');
         $putFreshPos = strpos($methodSrc, '$freshnessKey');
 
         $this->assertNotFalse($forgetPos, 'Cache::forget 없음');
@@ -136,8 +133,8 @@ class RefreshYahooCacheStaleLoopTest extends TestCase
 
         // forget → (getStockData fetch) → forever(_last) 순서
         $this->assertLessThan(
-            (int)$foreverPos,
-            (int)$forgetPos,
+            (int) $foreverPos,
+            (int) $forgetPos,
             'Cache::forget 이 Cache::forever(_last 저장)보다 뒤에 있음 — 순서 이상'
         );
     }
@@ -149,9 +146,10 @@ class RefreshYahooCacheStaleLoopTest extends TestCase
     private function getServerSource(): string
     {
         $path = __DIR__ . '/../../app/Console/Commands/WebSocketAgentServer.php';
-        $src  = file_get_contents($path);
+        $src = file_get_contents($path);
         $this->assertNotFalse($src, 'WebSocketAgentServer.php 읽기 실패');
-        return (string)$src;
+
+        return (string) $src;
     }
 
     /**
@@ -168,8 +166,8 @@ class RefreshYahooCacheStaleLoopTest extends TestCase
             return '';
         }
 
-        $depth  = 0;
-        $end    = $openPos;
+        $depth = 0;
+        $end = $openPos;
         $length = strlen($source);
 
         for ($i = $openPos; $i < $length; $i++) {

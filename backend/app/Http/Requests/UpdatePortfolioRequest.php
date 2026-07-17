@@ -22,10 +22,10 @@ class UpdatePortfolioRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'quantity'      => 'sometimes|numeric|min:0.000001',
+            'quantity' => 'sometimes|numeric|min:0.000001',
             'average_price' => 'sometimes|numeric|min:0.000001',
-            'avg_fx_rate'   => 'sometimes|numeric|min:0.0001',
-            'source'        => 'sometimes|string|in:manual,synced',
+            'avg_fx_rate' => 'sometimes|numeric|min:0.0001',
+            'source' => 'sometimes|string|in:manual,synced',
         ];
     }
 
@@ -35,9 +35,9 @@ class UpdatePortfolioRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'quantity.min'      => '수량은 0보다 커야 합니다.',
+            'quantity.min' => '수량은 0보다 커야 합니다.',
             'average_price.min' => '평균 매입가는 0보다 커야 합니다.',
-            'avg_fx_rate.min'   => '환율은 0보다 커야 합니다.',
+            'avg_fx_rate.min' => '환율은 0보다 커야 합니다.',
         ];
     }
 }

@@ -70,8 +70,8 @@ class MarketSessionService
         $dt = new \DateTime("@{$timestamp}");
         $dt->setTimezone(new \DateTimeZone('America/New_York'));
 
-        $dayOfWeek = (int)$dt->format('N'); // 1=Mon … 7=Sun
-        $timeVal   = (int)$dt->format('H') * 100 + (int)$dt->format('i');
+        $dayOfWeek = (int) $dt->format('N'); // 1=Mon … 7=Sun
+        $timeVal = (int) $dt->format('H') * 100 + (int) $dt->format('i');
 
         // 주말 휴장 경계(NY): 금 20:00 ~ 일 20:00 은 어떤 세션도 없음
         if ($dayOfWeek === 6) {
@@ -90,7 +90,7 @@ class MarketSessionService
         }
 
         // 데이 세션(프리/정규/애프터)은 'NY 오늘'이 거래일일 때만 — 공휴일이면 장마감
-        if (!$this->isUsMarketTradingToday($timestamp)) {
+        if (! $this->isUsMarketTradingToday($timestamp)) {
             return '장마감';
         }
 
@@ -103,6 +103,7 @@ class MarketSessionService
         if ($timeVal >= 1600 && $timeVal < 1950) {
             return '애프터마켓';
         }
+
         // ET 19:50~20:00 공백 (애프터 종료 ~ 주간거래 개시)
         return '장마감';
     }
@@ -157,7 +158,7 @@ class MarketSessionService
         $merged = [];
         foreach ($dates as $date) {
             $cached = Cache::get(self::US_WINDOWS_PREFIX . $date);
-            if (!is_array($cached)) {
+            if (! is_array($cached)) {
                 return null; // 휴장일도 빈 배열([])로 캐싱되므로, 미캐시와 구분된다
             }
             $merged = array_merge($merged, $cached);
@@ -199,15 +200,16 @@ class MarketSessionService
      */
     private function cacheUsWindows($result): void
     {
-        if (!is_array($result)) {
+        if (! is_array($result)) {
             Log::warning('MarketSessionService: 토스 US 캘린더 응답 형식 미인식 — 하드코딩 폴백');
+
             return;
         }
 
         $days = [];
         foreach (['previousBusinessDay', 'today', 'nextBusinessDay'] as $key) {
             $node = $result[$key] ?? null;
-            if (!is_array($node)) {
+            if (! is_array($node)) {
                 continue;
             }
             $date = $this->toYmd($node['date'] ?? null);
@@ -218,6 +220,7 @@ class MarketSessionService
 
         if ($days === []) {
             Log::warning('MarketSessionService: 토스 US 캘린더에 유효 날짜 없음 — 하드코딩 폴백');
+
             return;
         }
 
@@ -246,25 +249,25 @@ class MarketSessionService
      *   값을 `is_array()` 로 봐야 한다(KR 경로의 `integrated !== null` 과 동형).
      *
      * @param  array<string,mixed>  $node
-     * @return list<array{0:string,1:int,2:int}>  [세션명, 시작ts, 종료ts]
+     * @return list<array{0:string,1:int,2:int}> [세션명, 시작ts, 종료ts]
      */
     private function parseUsDayWindows(array $node): array
     {
         $labels = [
-            'dayMarket'     => '주간거래',
-            'preMarket'     => '프리마켓',
+            'dayMarket' => '주간거래',
+            'preMarket' => '프리마켓',
             'regularMarket' => '정규장',
-            'afterMarket'   => '애프터마켓',
+            'afterMarket' => '애프터마켓',
         ];
 
         $windows = [];
         foreach ($labels as $key => $label) {
             $window = $node[$key] ?? null;
-            if (!is_array($window)) {
+            if (! is_array($window)) {
                 continue;
             }
-            $start = strtotime((string)($window['startTime'] ?? ''));
-            $end   = strtotime((string)($window['endTime'] ?? ''));
+            $start = strtotime((string) ($window['startTime'] ?? ''));
+            $end = strtotime((string) ($window['endTime'] ?? ''));
             if ($start === false || $end === false || $end <= $start) {
                 continue;
             }
@@ -281,14 +284,14 @@ class MarketSessionService
      */
     public function getKrSession(int $timestamp): string
     {
-        if (!$this->isKrTradingDay($timestamp)) {
+        if (! $this->isKrTradingDay($timestamp)) {
             return '장마감';
         }
 
         $dt = new \DateTime("@{$timestamp}");
         $dt->setTimezone(new \DateTimeZone('Asia/Seoul'));
 
-        $timeVal = (int)$dt->format('Hi'); // e.g. 0900
+        $timeVal = (int) $dt->format('Hi'); // e.g. 0900
         if ($timeVal >= 900 && $timeVal <= 1530) {
             return '정규장';
         }
@@ -309,23 +312,23 @@ class MarketSessionService
      */
     public function isUsMarketTradingToday(?int $timestamp = null): bool
     {
-        $nyTz    = new \DateTimeZone('America/New_York');
-        $refDt   = new \DateTime($timestamp !== null ? "@{$timestamp}" : 'now');
+        $nyTz = new \DateTimeZone('America/New_York');
+        $refDt = new \DateTime($timestamp !== null ? "@{$timestamp}" : 'now');
         $refDt->setTimezone($nyTz);
-        $refNy   = $refDt->format('Y-m-d');
+        $refNy = $refDt->format('Y-m-d');
         $todayNy = (new \DateTime('now', $nyTz))->format('Y-m-d');
 
         $cacheKey = "us_trading_day_{$refNy}";
 
         $cached = Cache::get($cacheKey);
         if ($cached !== null) {
-            return (bool)$cached;
+            return (bool) $cached;
         }
 
         // Yahoo SPY meta 는 '지금'의 거래 세션만 알려준다 — NY 오늘일 때만 조회, 그 외는 폴백.
         if ($refNy === $todayNy) {
             try {
-                $client = new Client();
+                $client = new Client;
                 // SPY 는 NYSE Arca 상장 ETF — 가벼운 1d/1d 요청으로 meta 만 취득
                 $url = 'https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1d';
                 $response = $client->get($url, [
@@ -355,8 +358,9 @@ class MarketSessionService
         }
 
         // 폴백: 요청 날짜의 주말 여부로만 판정 — 짧게 캐싱해 API 회복 시 갱신
-        $isWeekday = ((int)$refDt->format('N')) <= 5;
+        $isWeekday = ((int) $refDt->format('N')) <= 5;
         Cache::put($cacheKey, $isWeekday, 300);
+
         return $isWeekday;
     }
 
@@ -374,17 +378,17 @@ class MarketSessionService
     {
         $dt = new \DateTime("@{$timestamp}");
         $dt->setTimezone(new \DateTimeZone('Asia/Seoul'));
-        $dateStr  = $dt->format('Ymd');
+        $dateStr = $dt->format('Ymd');
         $cacheKey = "kis_trading_day_{$dateStr}"; // 캐시 키 하위 호환 유지
 
         $cached = Cache::get($cacheKey);
         if ($cached !== null) {
-            return (bool)$cached;
+            return (bool) $cached;
         }
 
         // 토스 캘린더로 확정 가능한 날짜 조회 (전 영업일 ~ 다음 영업일)
         $opened = $this->fetchTossOpenedDays();
-        if (!empty($opened)) {
+        if (! empty($opened)) {
             // 확정값만 담기므로 7일 캐싱 안전 (폴백 추정치는 아래에서 30분만 캐싱)
             foreach ($opened as $d => $isOpen) {
                 Cache::put("kis_trading_day_{$d}", $isOpen, 60 * 60 * 24 * 7);
@@ -395,16 +399,18 @@ class MarketSessionService
         }
 
         // 폴백: 주말 + 고정공휴일
-        $isWeekday = ((int)$dt->format('N')) <= 5;
-        if (!$isWeekday) {
+        $isWeekday = ((int) $dt->format('N')) <= 5;
+        if (! $isWeekday) {
             Cache::put($cacheKey, false, 60 * 30);
+
             return false;
         }
-        $mmdd           = $dt->format('md');
-        $fixedHolidays  = ['0101', '0301', '0505', '0815', '1003', '1009', '1225'];
-        $isHoliday      = in_array($mmdd, $fixedHolidays, true);
-        $result         = !$isHoliday;
+        $mmdd = $dt->format('md');
+        $fixedHolidays = ['0101', '0301', '0505', '0815', '1003', '1009', '1225'];
+        $isHoliday = in_array($mmdd, $fixedHolidays, true);
+        $result = ! $isHoliday;
         Cache::put($cacheKey, $result, 60 * 30);
+
         return $result;
     }
 
@@ -439,10 +445,11 @@ class MarketSessionService
                 return [];
             }
 
-            $result    = $data['result'] ?? null;
+            $result = $data['result'] ?? null;
             $todayDate = $this->toYmd($result['today']['date'] ?? null);
-            if (!is_array($result) || $todayDate === null) {
+            if (! is_array($result) || $todayDate === null) {
                 Log::warning('MarketSessionService: 토스 캘린더 응답 형식 미인식', ['keys' => array_keys($data)]);
+
                 return [];
             }
 
@@ -463,6 +470,7 @@ class MarketSessionService
             return $map;
         } catch (\Exception $e) {
             Log::error('MarketSessionService: 토스 캘린더 조회 실패: ' . $e->getMessage());
+
             return [];
         }
     }
@@ -472,7 +480,7 @@ class MarketSessionService
      */
     private function toYmd($date): ?string
     {
-        if (!is_string($date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        if (! is_string($date) || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
             return null;
         }
 

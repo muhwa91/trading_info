@@ -33,8 +33,8 @@ class KospiIndexBugFixTest extends TestCase
     // 1. kospiYahooSymbol: '0001' → '^KS11'
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKospiYahooSymbolReturnsKs11ForIscd0001(): void
+    #[Test]
+    public function test_kospi_yahoo_symbol_returns_ks11_for_iscd0001(): void
     {
         $src = $this->getKospiYahooSymbolSource();
         $this->assertNotEmpty($src, 'kospiYahooSymbol 메서드를 찾을 수 없음');
@@ -50,8 +50,8 @@ class KospiIndexBugFixTest extends TestCase
     // 2. kospiYahooSymbol: '2001' → '^KS200'
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKospiYahooSymbolReturnsKs200ForIscd2001(): void
+    #[Test]
+    public function test_kospi_yahoo_symbol_returns_ks200_for_iscd2001(): void
     {
         $src = $this->getKospiYahooSymbolSource();
         $this->assertNotEmpty($src, 'kospiYahooSymbol 메서드를 찾을 수 없음');
@@ -73,8 +73,8 @@ class KospiIndexBugFixTest extends TestCase
     // 3. kospiYahooSymbol: 미지의 iscd → '^KS11' 폴백
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKospiYahooSymbolDefaultFallbackIsKs11(): void
+    #[Test]
+    public function test_kospi_yahoo_symbol_default_fallback_is_ks11(): void
     {
         $src = $this->getKospiYahooSymbolSource();
         $this->assertNotEmpty($src, 'kospiYahooSymbol 메서드를 찾을 수 없음');
@@ -93,8 +93,8 @@ class KospiIndexBugFixTest extends TestCase
     // 4. getKospiIndexData: Yahoo 직행 위임 확인 (2026-06-24 Yahoo 전환)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKospiIndexDataDelegatesToYahooChartData(): void
+    #[Test]
+    public function test_kospi_index_data_delegates_to_yahoo_chart_data(): void
     {
         $src = $this->getKospiIndexDataSource();
         $this->assertNotEmpty($src, 'getKospiIndexData 메서드를 찾을 수 없음');
@@ -112,8 +112,8 @@ class KospiIndexBugFixTest extends TestCase
     // 5. getKospiIndexData: KIS kisIndexRequest 호출 없음 (코스피 KIS 제거 확인)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKospiIndexDataDoesNotCallKisIndexRequest(): void
+    #[Test]
+    public function test_kospi_index_data_does_not_call_kis_index_request(): void
     {
         $src = $this->getKospiIndexDataSource();
         $this->assertNotEmpty($src, 'getKospiIndexData 메서드를 찾을 수 없음');
@@ -131,8 +131,8 @@ class KospiIndexBugFixTest extends TestCase
     // 6. getKospiIndexData: iscd 매핑을 통해 올바른 Yahoo 심볼 사용 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKospiIndexDataUsesKospiYahooSymbolMapping(): void
+    #[Test]
+    public function test_kospi_index_data_uses_kospi_yahoo_symbol_mapping(): void
     {
         $src = $this->getKospiIndexDataSource();
         $this->assertNotEmpty($src, 'getKospiIndexData 메서드를 찾을 수 없음');
@@ -150,8 +150,8 @@ class KospiIndexBugFixTest extends TestCase
     // 7. getKospiIndexData: 고정 KOSPI200 문자열 폴백 없음 (iscd 매핑 사용)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKospiIndexDataDoesNotUseHardcodedKospi200Fallback(): void
+    #[Test]
+    public function test_kospi_index_data_does_not_use_hardcoded_kospi200_fallback(): void
     {
         $src = $this->getKospiIndexDataSource();
         $this->assertNotEmpty($src, 'getKospiIndexData 메서드를 찾을 수 없음');
@@ -169,8 +169,8 @@ class KospiIndexBugFixTest extends TestCase
     // 8. getYahooChartData displayName: '^KS11' → '코스피 지수'
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testYahooChartDataDisplayNameIncludesKs11(): void
+    #[Test]
+    public function test_yahoo_chart_data_display_name_includes_ks11(): void
     {
         $src = $this->getYahooChartDataSource();
         $this->assertNotEmpty($src, 'getYahooChartData 메서드를 찾을 수 없음');
@@ -188,8 +188,8 @@ class KospiIndexBugFixTest extends TestCase
     // 9. getYahooChartData 1d prevClose: '^KS11' 도 mini 요청 지수 목록에 포함
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testYahooChartDataPrevCloseMiniRequestIncludesKs11(): void
+    #[Test]
+    public function test_yahoo_chart_data_prev_close_mini_request_includes_ks11(): void
     {
         $src = $this->getYahooChartDataSource();
         $this->assertNotEmpty($src, 'getYahooChartData 메서드를 찾을 수 없음');
@@ -207,8 +207,8 @@ class KospiIndexBugFixTest extends TestCase
     // 10. getYahooChartData 분봉: getPreviousClose 호출 자체가 없음 (KIS 제거)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testYahooChartDataIntradaySkipsPreviousCloseForKs11(): void
+    #[Test]
+    public function test_yahoo_chart_data_intraday_skips_previous_close_for_ks11(): void
     {
         $src = $this->getYahooChartDataSource();
         $this->assertNotEmpty($src, 'getYahooChartData 메서드를 찾을 수 없음');
@@ -218,8 +218,8 @@ class KospiIndexBugFixTest extends TestCase
         $this->assertStringNotContainsString(
             'getPreviousClose',
             $src,
-            "getYahooChartData 분봉 경로에 getPreviousClose 호출이 남아있음 — " .
-            "KIS getPreviousClose 제거 후 Yahoo meta prevClose 만 사용해야 한다"
+            'getYahooChartData 분봉 경로에 getPreviousClose 호출이 남아있음 — ' .
+            'KIS getPreviousClose 제거 후 Yahoo meta prevClose 만 사용해야 한다'
         );
     }
 
@@ -227,8 +227,8 @@ class KospiIndexBugFixTest extends TestCase
     // 11. getKospiIndexData: KIS stale 판정 코드 없음 (Yahoo 직행으로 단순화)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKospiIndexDataHasNoKisStalenessDetection(): void
+    #[Test]
+    public function test_kospi_index_data_has_no_kis_staleness_detection(): void
     {
         $src = $this->getKospiIndexDataSource();
         $this->assertNotEmpty($src, 'getKospiIndexData 메서드를 찾을 수 없음');
@@ -246,8 +246,8 @@ class KospiIndexBugFixTest extends TestCase
     // 12. getKospiIndexData: $liveCurrent 캡처 없음 (KIS 라이브값 불필요)
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKospiIndexDataHasNoLiveCurrentCapture(): void
+    #[Test]
+    public function test_kospi_index_data_has_no_live_current_capture(): void
     {
         $src = $this->getKospiIndexDataSource();
         $this->assertNotEmpty($src, 'getKospiIndexData 메서드를 찾을 수 없음');
@@ -265,8 +265,8 @@ class KospiIndexBugFixTest extends TestCase
     // 13. getKospiIndexData: 함수 본체가 단순 Yahoo 위임으로 축소됐는지 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testKospiIndexDataIsSimplifiedToYahooDelegate(): void
+    #[Test]
+    public function test_kospi_index_data_is_simplified_to_yahoo_delegate(): void
     {
         $src = $this->getKospiIndexDataSource();
         $this->assertNotEmpty($src, 'getKospiIndexData 메서드를 찾을 수 없음');
@@ -290,8 +290,8 @@ class KospiIndexBugFixTest extends TestCase
     // 14. applyLiveCurrentToIndexResponse 메서드: KIS 제거로 불필요, 삭제 확인
     // ──────────────────────────────────────────────────────────────────────
 
-    /** @test */
-    public function testApplyLiveCurrentToIndexResponseUpdatesLastCandleClose(): void
+    #[Test]
+    public function test_apply_live_current_to_index_response_updates_last_candle_close(): void
     {
         $controllerSrc = $this->getControllerSource();
 
@@ -299,8 +299,8 @@ class KospiIndexBugFixTest extends TestCase
         $this->assertStringNotContainsString(
             'applyLiveCurrentToIndexResponse',
             $controllerSrc,
-            "applyLiveCurrentToIndexResponse 메서드가 남아있음 — " .
-            "KIS 완전 제거 후 Yahoo 직행 구조에서는 이 메서드가 불필요하므로 삭제되어야 한다"
+            'applyLiveCurrentToIndexResponse 메서드가 남아있음 — ' .
+            'KIS 완전 제거 후 Yahoo 직행 구조에서는 이 메서드가 불필요하므로 삭제되어야 한다'
         );
     }
 
@@ -311,9 +311,10 @@ class KospiIndexBugFixTest extends TestCase
     private function getControllerSource(): string
     {
         $path = __DIR__ . '/../../app/Http/Controllers/StockController.php';
-        $src  = file_get_contents($path);
+        $src = file_get_contents($path);
         $this->assertNotFalse($src, 'StockController.php 읽기 실패');
-        return (string)$src;
+
+        return (string) $src;
     }
 
     private function extractMethodSource(string $source, string $methodName): string
@@ -327,8 +328,8 @@ class KospiIndexBugFixTest extends TestCase
             return '';
         }
 
-        $depth  = 0;
-        $end    = $openPos;
+        $depth = 0;
+        $end = $openPos;
         for ($i = $openPos, $len = strlen($source); $i < $len; $i++) {
             if ($source[$i] === '{') {
                 $depth++;
@@ -381,7 +382,7 @@ class KospiIndexBugFixTest extends TestCase
         }
 
         $depth = 0;
-        $end   = $openPos;
+        $end = $openPos;
         for ($i = $openPos, $len = strlen($src); $i < $len; $i++) {
             if ($src[$i] === '{') {
                 $depth++;
@@ -409,7 +410,7 @@ class KospiIndexBugFixTest extends TestCase
 
         // 분봉 섹션 마커 — "분봉" 주석이 포함된 줄 이후
         $marker = '// 분봉';
-        $pos    = strpos($src, $marker);
+        $pos = strpos($src, $marker);
         if ($pos === false) {
             return '';
         }
@@ -428,7 +429,7 @@ class KospiIndexBugFixTest extends TestCase
         }
 
         $marker = '$intervalSeconds = 180';
-        $pos    = strpos($src, $marker);
+        $pos = strpos($src, $marker);
         if ($pos === false) {
             return '';
         }

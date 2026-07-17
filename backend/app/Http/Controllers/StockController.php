@@ -6,16 +6,19 @@ use App\Services\MarketSessionService;
 use App\Services\Toss\TossCandleProvider;
 use App\Services\Toss\TossPriceFetcher;
 use App\Services\Toss\TossStockMaster;
+use GuzzleHttp\Client;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
-use GuzzleHttp\Client;
 
 class StockController extends Controller
 {
     private MarketSessionService $sessionService;
+
     private TossPriceFetcher $tossPriceFetcher;
+
     private TossCandleProvider $tossCandleProvider;
+
     private TossStockMaster $stockMaster;
 
     public function __construct(
@@ -24,10 +27,10 @@ class StockController extends Controller
         TossCandleProvider $tossCandleProvider,
         TossStockMaster $stockMaster
     ) {
-        $this->sessionService      = $sessionService;
-        $this->tossPriceFetcher    = $tossPriceFetcher;
-        $this->tossCandleProvider  = $tossCandleProvider;
-        $this->stockMaster         = $stockMaster;
+        $this->sessionService = $sessionService;
+        $this->tossPriceFetcher = $tossPriceFetcher;
+        $this->tossCandleProvider = $tossCandleProvider;
+        $this->stockMaster = $stockMaster;
     }
 
     public function getStockData(Request $request, $ticker)
@@ -64,12 +67,14 @@ class StockController extends Controller
             if (is_array($content)) {
                 // ticker 는 프론트가 KOSPI200 으로 식별하므로 유지
                 $content['ticker'] = 'KOSPI200';
-                $content['name']   = '코스피 지수';
+                $content['name'] = '코스피 지수';
                 $content['session'] = $this->getKrMarketSessionInfo(time());
                 // 프론트가 휴장일(주말·공휴일)에 코스피 칸을 숨기는 판단에 사용
                 $content['is_trading_day'] = $this->isKrTradingDay(time());
+
                 return response()->json($content);
             }
+
             return $response;
         }
 
@@ -108,10 +113,10 @@ class StockController extends Controller
                     && isset($content['candles'])
                     && count($content['candles']) > 0
                     && isset($content['meta']['regularMarketPrice'])
-                    && (float)$content['meta']['regularMarketPrice'] > 0
+                    && (float) $content['meta']['regularMarketPrice'] > 0
                 ) {
-                    $livePrice = round((float)$content['meta']['regularMarketPrice'], 2);
-                    $lastIdx   = count($content['candles']) - 1;
+                    $livePrice = round((float) $content['meta']['regularMarketPrice'], 2);
+                    $lastIdx = count($content['candles']) - 1;
 
                     // 마지막 봉 close 를 현재가로 갱신 (high/low 는 봉의 실제 레인지이므로 유지)
                     $content['candles'][$lastIdx]['close'] = $livePrice;
@@ -133,22 +138,24 @@ class StockController extends Controller
                     // KST 로 굳히면 서머타임에 어긋난다 — EDT 는 토 06:00~월 07:00 이지만
                     // EST(11월 첫 일요일~3월 둘째 일요일)는 토 07:00~월 08:00 이라 양 끝이 1시간씩 밀린다.
                     $now = Carbon::now('America/New_York');
-                    $dayOfWeek = (int)$now->format('N');  // 1=월 … 7=일
-                    $hour = (int)$now->format('G');
+                    $dayOfWeek = (int) $now->format('N');  // 1=월 … 7=일
+                    $hour = (int) $now->format('G');
                     $isClosed = ($dayOfWeek === 6)                    // 토: 종일 휴장
                         || ($dayOfWeek === 7 && $hour < 18)           // 일: 18:00 재개 전
                         || ($dayOfWeek === 5 && $hour >= 17)          // 금: 17:00 마감 후
                         || ($dayOfWeek <= 4 && $hour === 17);         // 월~목: 일일 유지보수
                     // ponytail: CME 공휴일(추수감사절 등 단축장) 미반영 — 캘린더 소스가 생기면 그때.
                     $content['session'] = $isClosed ? '장마감' : '거래중';
-                    $content['is_trading_day'] = !$isClosed;
+                    $content['is_trading_day'] = ! $isClosed;
                 } elseif ($ticker === 'USDKRW=X') {
                     $content['session'] = '거래중';
                 } else {
                     $content['session'] = $this->getKrMarketSessionInfo(time());
                 }
+
                 return response()->json($content);
             }
+
             return $response;
         }
 
@@ -169,14 +176,16 @@ class StockController extends Controller
                     return $this->getKOSPINightChartData($timeframe);
                 });
             }
-            
+
             $content = json_decode($response->getContent(), true);
             if (is_array($content)) {
                 // 야간선물은 개장일(거래일) 저녁~익일 새벽에만 운영 — 공휴일이면 미운영 (KIS API 기준).
                 // 새벽 연장분(전일 밤 세션)을 잘라먹지 않도록 전일 거래일 판정 포함(isKrNightFuturesActive).
                 $content['session'] = $this->isKrNightFuturesActive() ? '거래중' : '장마감';
+
                 return response()->json($content);
             }
+
             return $response;
         }
 
@@ -190,12 +199,13 @@ class StockController extends Controller
             // TTL 90초로 늘려 WS 사이클 Yahoo 만료 빈도를 1/3로 감소.
             $cacheKey = "yahoo_stock_data_{$ticker}_{$timeframe}_raw";
             $dataResponse = Cache::remember($cacheKey, 90, function () use ($ticker, $yahooSymbol, $timeframe, $isDaily) {
-                $tossData = $this->tossCandleProvider->getChartData($ticker, $timeframe, !$isDaily);
+                $tossData = $this->tossCandleProvider->getChartData($ticker, $timeframe, ! $isDaily);
                 if ($tossData !== null) {
                     return response()->json($tossData);
                 }
+
                 // 토스 실패 시 Yahoo 폴백
-                return $this->getYahooChartData($yahooSymbol, $timeframe, !$isDaily);
+                return $this->getYahooChartData($yahooSymbol, $timeframe, ! $isDaily);
             });
 
             // KIS 현재가(국내) — WS/REST 경로 분기:
@@ -206,8 +216,8 @@ class StockController extends Controller
             //     1) primary 캐시 히트 → 즉시 반환
             //     2) 미스 → 동기 fetch 로 갱신 후 primary(8초)에 저장
             //     3) fetch 실패 → 폴백(24h) 반환
-            $cacheKeyKis     = "kis_realtime_price_{$ticker}";
-            $fallbackKeyKis  = "kis_last_successful_price_{$ticker}";
+            $cacheKeyKis = "kis_realtime_price_{$ticker}";
+            $fallbackKeyKis = "kis_last_successful_price_{$ticker}";
             $kisPrice = Cache::get($cacheKeyKis);
             if ($kisPrice === null) {
                 if ($allowStale) {
@@ -228,20 +238,20 @@ class StockController extends Controller
             $session = $this->getKrMarketSessionInfo(time());
 
             $content = json_decode($dataResponse->getContent(), true);
-            if (is_array($content) && !empty($content['candles'])) {
+            if (is_array($content) && ! empty($content['candles'])) {
                 if ($kisPrice !== null) {
                     $price = $kisPrice['price'];
                     $content['current_price'] = $price;
                     $content['change_amount'] = $kisPrice['change_amount'];
                     $content['change_percent'] = $kisPrice['change_percent'];
-                    
-                    if (!$isDaily) {
-                        $lastYahooTime = (int)end($content['candles'])['time'];
+
+                    if (! $isDaily) {
+                        $lastYahooTime = (int) end($content['candles'])['time'];
                         $accumulated1m = $this->accumulateRealTimePrice($ticker, $price, $lastYahooTime);
 
                         // Filter accumulated candles to only keep those after the last Yahoo candle
-                        $filteredAccumulated = array_filter($accumulated1m, function($c) use ($lastYahooTime) {
-                            return (int)$c['time'] > $lastYahooTime;
+                        $filteredAccumulated = array_filter($accumulated1m, function ($c) use ($lastYahooTime) {
+                            return (int) $c['time'] > $lastYahooTime;
                         });
 
                         // Merge!
@@ -249,18 +259,24 @@ class StockController extends Controller
 
                         // Aggregate merged 1m candles into the target timeframe!
                         $intervalSeconds = 180;
-                        if ($timeframe === '1m') $intervalSeconds = 60;
-                        elseif ($timeframe === '5m') $intervalSeconds = 300;
-                        elseif ($timeframe === '10m') $intervalSeconds = 600;
-                        elseif ($timeframe === '30m') $intervalSeconds = 1800;
-                        elseif ($timeframe === '1h') $intervalSeconds = 3600;
-                        
+                        if ($timeframe === '1m') {
+                            $intervalSeconds = 60;
+                        } elseif ($timeframe === '5m') {
+                            $intervalSeconds = 300;
+                        } elseif ($timeframe === '10m') {
+                            $intervalSeconds = 600;
+                        } elseif ($timeframe === '30m') {
+                            $intervalSeconds = 1800;
+                        } elseif ($timeframe === '1h') {
+                            $intervalSeconds = 3600;
+                        }
+
                         $content['candles'] = $this->aggregateCandles($merged1m, $intervalSeconds);
                     } else {
                         $lastIdx = count($content['candles']) - 1;
                         $lastCandle = $content['candles'][$lastIdx];
                         $todayStr = date('Y-m-d');
-                        
+
                         // 휴장일(주말·공휴일)에는 오늘자 가짜 일봉을 생성하지 않는다 (KIS API 기준)
                         $isTradingDay = $this->isKrTradingDay(time());
 
@@ -273,7 +289,7 @@ class StockController extends Controller
                                     'high' => max($lastClose, $price),
                                     'low' => min($lastClose, $price),
                                     'close' => $price,
-                                    'volume' => 0
+                                    'volume' => 0,
                                 ];
                             }
                         } else {
@@ -291,6 +307,7 @@ class StockController extends Controller
                 // 휴장일(주말·공휴일)이면 프론트가 차트 대신 텍스트(전일 마감)로 표시
                 $content['is_trading_day'] = $this->isKrTradingDay(time());
                 $content['name'] = $this->stockMaster->getName($ticker);
+
                 return response()->json($content);
             }
 
@@ -298,8 +315,10 @@ class StockController extends Controller
             $fallbackContent = json_decode($dataResponse->getContent(), true);
             if (is_array($fallbackContent)) {
                 $fallbackContent['name'] = $this->stockMaster->getName($ticker);
+
                 return response()->json($fallbackContent);
             }
+
             return $dataResponse;
         }
 
@@ -311,7 +330,7 @@ class StockController extends Controller
         $cacheKey = "yahoo_stock_data_{$ticker}_{$timeframe}_raw";
 
         $dataResponse = Cache::remember($cacheKey, 90, function () use ($ticker, $timeframe, $isDaily) {
-            $tossData = $this->tossCandleProvider->getChartData($ticker, $timeframe, !$isDaily);
+            $tossData = $this->tossCandleProvider->getChartData($ticker, $timeframe, ! $isDaily);
             if ($tossData !== null) {
                 return response()->json($tossData);
             }
@@ -320,7 +339,8 @@ class StockController extends Controller
                 (preg_match('/^\d{4}[0-9A-Z]{2}$/', $ticker) || preg_match('/^\d+$/', $ticker))
                 ? $ticker . '.KS' : $ticker
             );
-            return $this->getYahooChartData($yahooFallbackSymbol, $timeframe, !$isDaily);
+
+            return $this->getYahooChartData($yahooFallbackSymbol, $timeframe, ! $isDaily);
         });
 
         // 토스 현재가(미국) — Phase 4: KIS→토스+Yahoo 폴백으로 전환
@@ -332,9 +352,9 @@ class StockController extends Controller
         //     1) primary 캐시 히트 → 즉시 반환
         //     2) 미스 → 토스 단건 조회(→Yahoo 폴백) 후 primary(8초)에 저장
         //     3) 모두 실패 → 폴백(24h) 반환
-        $cacheKeyKis      = "kis_realtime_price_us_{$ticker}";
+        $cacheKeyKis = "kis_realtime_price_us_{$ticker}";
         $fallbackKeyKisUs = "kis_last_successful_overseas_price_{$ticker}";
-        $kisPrice         = Cache::get($cacheKeyKis);
+        $kisPrice = Cache::get($cacheKeyKis);
         // 8초 TTL 캐시 히트 여부 — 폴백(24h) 사용 시 false 로 분봉 누적 스킵
         $isFreshKisPrice = ($kisPrice !== null);
         if ($kisPrice === null) {
@@ -348,7 +368,7 @@ class StockController extends Controller
                 if ($fresh !== null) {
                     // fetchOverseasSingle 내부에서 cacheKey·fallbackKey 모두 저장하므로
                     // 여기서는 $kisPrice 에만 할당 (이중 저장 불필요)
-                    $kisPrice        = $fresh;
+                    $kisPrice = $fresh;
                     $isFreshKisPrice = true;
                 } else {
                     $kisPrice = Cache::get($fallbackKeyKisUs);
@@ -360,7 +380,7 @@ class StockController extends Controller
         $session = $this->getUsMarketSessionInfo(time());
 
         $content = json_decode($dataResponse->getContent(), true);
-        if (is_array($content) && !empty($content['candles'])) {
+        if (is_array($content) && ! empty($content['candles'])) {
             if ($kisPrice !== null) {
                 $price = $kisPrice['price'];
                 $content['current_price'] = $price;
@@ -369,12 +389,12 @@ class StockController extends Controller
                 // US 연장세션 정규장/통합 분리 (차트 헤더 2줄). 프리페처(calculateUsSplit)가 채운 값.
                 //   change_* = 통합(현재가 vs 직전거래일 정규장 종가) · regular_* = 정규장(당일 종가 vs 직전거래일)
                 //   정규장·장마감·cold 면 regular_* 는 null → 프론트 1줄. us_session 은 아래에서 신선값으로 세팅.
-                $content['regular_change_amount']  = $kisPrice['regular_change_amount'] ?? null;
+                $content['regular_change_amount'] = $kisPrice['regular_change_amount'] ?? null;
                 $content['regular_change_percent'] = $kisPrice['regular_change_percent'] ?? null;
-                $content['regular_close']          = $kisPrice['regular_close'] ?? null;
+                $content['regular_close'] = $kisPrice['regular_close'] ?? null;
 
-                if (!$isDaily) {
-                    $lastYahooTime = (int)end($content['candles'])['time'];
+                if (! $isDaily) {
+                    $lastYahooTime = (int) end($content['candles'])['time'];
                     $accumulated1m = $this->accumulateOverseasRealTimePrice($ticker, $price, $lastYahooTime, $isFreshKisPrice);
 
                     // Yahoo 마지막 봉 시각은 초 단위로 비정렬일 수 있다(예: 10:47:09).
@@ -387,8 +407,8 @@ class StockController extends Controller
                     $alignedLastYahooTime = $lastYahooTime - ($lastYahooTime % 60);
 
                     // Filter accumulated candles
-                    $filteredAccumulated = array_filter($accumulated1m, function($c) use ($alignedLastYahooTime) {
-                        return (int)$c['time'] >= $alignedLastYahooTime;
+                    $filteredAccumulated = array_filter($accumulated1m, function ($c) use ($alignedLastYahooTime) {
+                        return (int) $c['time'] >= $alignedLastYahooTime;
                     });
 
                     // Merge!
@@ -396,23 +416,29 @@ class StockController extends Controller
 
                     // Aggregate merged 1m candles
                     $intervalSeconds = 180;
-                    if ($timeframe === '1m') $intervalSeconds = 60;
-                    elseif ($timeframe === '5m') $intervalSeconds = 300;
-                    elseif ($timeframe === '10m') $intervalSeconds = 600;
-                    elseif ($timeframe === '30m') $intervalSeconds = 1800;
-                    elseif ($timeframe === '1h') $intervalSeconds = 3600;
-                    
+                    if ($timeframe === '1m') {
+                        $intervalSeconds = 60;
+                    } elseif ($timeframe === '5m') {
+                        $intervalSeconds = 300;
+                    } elseif ($timeframe === '10m') {
+                        $intervalSeconds = 600;
+                    } elseif ($timeframe === '30m') {
+                        $intervalSeconds = 1800;
+                    } elseif ($timeframe === '1h') {
+                        $intervalSeconds = 3600;
+                    }
+
                     $content['candles'] = $this->aggregateCandles($merged1m, $intervalSeconds);
                 } else {
                     $lastIdx = count($content['candles']) - 1;
                     $lastCandle = $content['candles'][$lastIdx];
-                    
+
                     $nyDate = new \DateTime('now', new \DateTimeZone('America/New_York'));
                     $todayStr = $nyDate->format('Y-m-d');
-                    
+
                     if ($lastCandle['time'] !== $todayStr) {
                         $isClosedSession = ($session === '장마감');
-                        if (!$isClosedSession) {
+                        if (! $isClosedSession) {
                             $lastClose = $lastCandle['close'];
                             $content['candles'][] = [
                                 'time' => $todayStr,
@@ -420,7 +446,7 @@ class StockController extends Controller
                                 'high' => max($lastClose, $price),
                                 'low' => min($lastClose, $price),
                                 'close' => $price,
-                                'volume' => 0
+                                'volume' => 0,
                             ];
                         }
                     } else {
@@ -447,8 +473,8 @@ class StockController extends Controller
             //   - provider=toss & 신선      → 기존대로 차트 베이스 반영 ('Toss' / 'Yahoo + Toss (현재가)')
             //   - 신선 아님(24h stale 캐시) → '… 캐시(지연)' 로 지연 표기
             //   - $kisPrice 자체 없음        → 기존 동작 유지
-            $baseSource     = $content['source'] ?? 'Yahoo Finance';
-            $priceProvider  = is_array($kisPrice) ? ($kisPrice['provider'] ?? null) : null;
+            $baseSource = $content['source'] ?? 'Yahoo Finance';
+            $priceProvider = is_array($kisPrice) ? ($kisPrice['provider'] ?? null) : null;
             $isTossBaseline = (strncmp($baseSource, 'Toss', 4) === 0);
 
             if ($kisPrice === null) {
@@ -457,7 +483,7 @@ class StockController extends Controller
             } elseif ($priceProvider === 'yahoo') {
                 // 토스 불통 → Yahoo 폴백으로 현재가를 채우는 중임을 명시
                 $content['source'] = $isFreshKisPrice ? 'Yahoo 폴백 (현재가)' : 'Yahoo 폴백 캐시(지연)';
-            } elseif (!$isFreshKisPrice) {
+            } elseif (! $isFreshKisPrice) {
                 // 신선하지 않음 = 24h stale 폴백 캐시 사용 → 지연 표기
                 // 저장된 provider 가 있으면 접두로 붙여 출처도 함께 드러낸다(없으면 출처 없이 '캐시(지연)').
                 if ($priceProvider === 'toss') {
@@ -473,6 +499,7 @@ class StockController extends Controller
             }
             $content['is_trading_day'] = ($session !== '장마감');
             $content['name'] = $this->stockMaster->getName($ticker);
+
             return response()->json($content);
         }
 
@@ -480,8 +507,10 @@ class StockController extends Controller
         $fallbackContent = json_decode($dataResponse->getContent(), true);
         if (is_array($fallbackContent)) {
             $fallbackContent['name'] = $this->stockMaster->getName($ticker);
+
             return response()->json($fallbackContent);
         }
+
         return $dataResponse;
     }
 
@@ -489,19 +518,19 @@ class StockController extends Controller
     {
         $nqPriced = null;
         $kospiPriced = null;
-        $client = new Client();
+        $client = new Client;
 
         // 1. Fetch Nasdaq 100 Futures (NQ=F)
         try {
             $responseNq = $client->get('https://query1.finance.yahoo.com/v8/finance/chart/NQ=F?interval=1d&range=7d', [
                 'headers' => [
-                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                ]
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                ],
             ]);
             $dataNq = json_decode($responseNq->getBody()->getContents(), true);
             $nqPriced = $this->parseYahooFinanceChart($dataNq, '나스닥100 선물');
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error("Nasdaq Futures Fetch Error: " . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error('Nasdaq Futures Fetch Error: ' . $e->getMessage());
             $nqPriced = [
                 'name' => '나스닥100 선물',
                 'price' => 19482.25,
@@ -514,21 +543,21 @@ class StockController extends Controller
         try {
             $responseKs = $client->get('https://query1.finance.yahoo.com/v8/finance/chart/^KS11?interval=1d&range=7d', [
                 'headers' => [
-                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                ]
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                ],
             ]);
             $dataKs = json_decode($responseKs->getBody()->getContents(), true);
             $kospiPriced = $this->parseYahooFinanceChart($dataKs, '코스피 지수');
             $kospiPriced['source'] = 'Yahoo Finance (^KS11)';
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error("Yahoo KOSPI (^KS11) Index Fetch Error: " . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error('Yahoo KOSPI (^KS11) Index Fetch Error: ' . $e->getMessage());
 
             $kospiPriced = [
                 'name' => '코스피 지수',
                 'price' => 0.0,
                 'change' => 0.0,
                 'change_percent' => 0.0,
-                'source' => 'Mock'
+                'source' => 'Mock',
             ];
         }
 
@@ -541,19 +570,19 @@ class StockController extends Controller
                 'nasdaq_futures' => $nqPriced,
                 'kospi_futures' => $kospiPriced,
                 'kospi_night_futures' => $nightPriced,
-            ]
+            ],
         ]);
     }
 
     private function parseYahooFinanceChart($data, $name)
     {
-        if (!isset($data['chart']['result'][0])) {
+        if (! isset($data['chart']['result'][0])) {
             throw new \Exception("Invalid Yahoo Finance chart response for {$name}");
         }
-        
+
         $result = $data['chart']['result'][0];
         $meta = $result['meta'];
-        
+
         $price = $meta['regularMarketPrice'] ?? 0.0;
         // 전일종가: chartPreviousClose 는 range '시작 직전' 값이라 range=2d 면 '이틀 전'이 됨(한 칸 밀림 버그).
         // 따라서 close 배열의 직전 봉(closes[n-2])을 전일종가로 쓴다. 부족할 때만 meta 폴백.
@@ -575,10 +604,10 @@ class StockController extends Controller
         if ($prevClose == 0.0) {
             $prevClose = $meta['previousClose'] ?? $meta['chartPreviousClose'] ?? $price;
         }
-        
+
         $change = $price - $prevClose;
         $changePercent = ($prevClose > 0) ? ($change / $prevClose) * 100 : 0.0;
-        
+
         return [
             'name' => $name,
             'price' => round($price, 2),
@@ -595,7 +624,7 @@ class StockController extends Controller
         $price = $kospi['price'];
         $change = 0.0;
         $changePercent = 0.0;
-        
+
         if ($isNightActive) {
             // In Korean market, futures changes are quoted in points (p)
             // A 1.57% Nasdaq increase corresponds to ~+5.56 points in KOSPI 200 Futures.
@@ -608,7 +637,7 @@ class StockController extends Controller
             $change = $kospi['change'];
             $changePercent = $kospi['change_percent'];
         }
-        
+
         return [
             'name' => '야간 선물 (KOSPI 200)',
             'price' => round($price, 2),
@@ -642,9 +671,9 @@ class StockController extends Controller
                     'price' => 362.85,
                     'change' => 0.40,
                     'change_percent' => 0.11,
-                    'status' => '거래중'
-                ]
-            ]
+                    'status' => '거래중',
+                ],
+            ],
         ]);
     }
 
@@ -659,35 +688,42 @@ class StockController extends Controller
             'GOOGL' => 170.0,
             'MU' => 130.0,
         ];
-        
+
         $basePrice = $basePrices[$ticker] ?? 100.0;
-        
+
         $intervalSeconds = 86400; // 1d
-        if ($timeframe === '1m') $intervalSeconds = 60;
-        elseif ($timeframe === '3m') $intervalSeconds = 180;
-        elseif ($timeframe === '5m') $intervalSeconds = 300;
-        elseif ($timeframe === '10m') $intervalSeconds = 600;
-        elseif ($timeframe === '30m') $intervalSeconds = 1800;
-        elseif ($timeframe === '1h') $intervalSeconds = 3600;
+        if ($timeframe === '1m') {
+            $intervalSeconds = 60;
+        } elseif ($timeframe === '3m') {
+            $intervalSeconds = 180;
+        } elseif ($timeframe === '5m') {
+            $intervalSeconds = 300;
+        } elseif ($timeframe === '10m') {
+            $intervalSeconds = 600;
+        } elseif ($timeframe === '30m') {
+            $intervalSeconds = 1800;
+        } elseif ($timeframe === '1h') {
+            $intervalSeconds = 3600;
+        }
 
         $candles = [];
         $currentPrice = $basePrice;
-        
+
         $now = time();
         $now = $now - ($now % $intervalSeconds);
-        
+
         $tempCandles = [];
         for ($i = 119; $i >= 0; $i--) {
             $timestamp = $now - ($i * $intervalSeconds);
-            
+
             if ($timeframe === '1d') {
                 $date = new \DateTime("@{$timestamp}");
-                $dayOfWeek = (int)$date->format('N');
+                $dayOfWeek = (int) $date->format('N');
                 if ($dayOfWeek === 6 || $dayOfWeek === 7) {
                     continue;
                 }
             }
-            
+
             if ($timeframe === '1d') {
                 $change = (rand(-150, 150) / 100.0);
                 $volMin = 50000;
@@ -701,13 +737,13 @@ class StockController extends Controller
                 $highAdd = rand(0, 15) / 100.0;
                 $lowSub = rand(0, 15) / 100.0;
             }
-            
+
             $open = $currentPrice;
             $close = $currentPrice + $change;
             $high = max($open, $close) + $highAdd;
             $low = min($open, $close) - $lowSub;
             $volume = rand($volMin, $volMax);
-            
+
             $item = [
                 'open' => round($open, 2),
                 'high' => round($high, 2),
@@ -715,24 +751,24 @@ class StockController extends Controller
                 'close' => round($close, 2),
                 'volume' => $volume,
             ];
-            
+
             if ($timeframe === '1d') {
                 $date = new \DateTime("@{$timestamp}");
                 $item['time'] = $date->format('Y-m-d');
             } else {
                 $item['time'] = $timestamp;
             }
-            
+
             $tempCandles[] = $item;
             $currentPrice = $close; // Open of next candle is close of this candle
         }
-        
+
         $candles = $tempCandles;
-        
-        usort($candles, function($a, $b) {
+
+        usort($candles, function ($a, $b) {
             return $a['time'] <=> $b['time'];
         });
-        
+
         $latestCandle = end($candles);
         $current = $latestCandle['close'];
 
@@ -742,10 +778,10 @@ class StockController extends Controller
         } else {
             $prevClose = $candles[0]['close'] ?? $basePrice;
         }
-        
+
         $changeAmount = $current - $prevClose;
         $changePercent = ($prevClose > 0) ? ($changeAmount / $prevClose) * 100 : 0.0;
-        
+
         return response()->json([
             'ticker' => $ticker,
             'name' => $this->getStockName($ticker),
@@ -754,22 +790,22 @@ class StockController extends Controller
             'change_percent' => round($changePercent, 2),
             'candles' => $candles,
             'source' => 'Mock (' . $timeframe . ' chart)',
-            'error_reason' => $reason
+            'error_reason' => $reason,
         ]);
     }
-    
+
     public function getYahooChartData($ticker, $timeframe, $raw = false)
     {
         $symbol = $ticker;
         if ($ticker === 'KOSPI200') {
             $symbol = '^KS200';
         }
-        
+
         $interval = '1d';
         $range = '60d';
         $isAggregated = false;
         $intervalSeconds = 180;
-        
+
         if ($timeframe === '1m') {
             $interval = '1m';
             $range = '1d';
@@ -778,22 +814,22 @@ class StockController extends Controller
         } elseif ($timeframe === '3m') {
             $interval = '1m';
             $range = '2d';
-            $isAggregated = !$raw;
+            $isAggregated = ! $raw;
             $intervalSeconds = 180;
         } elseif ($timeframe === '5m') {
             $interval = '1m';
             $range = '2d';
-            $isAggregated = !$raw;
+            $isAggregated = ! $raw;
             $intervalSeconds = 300;
         } elseif ($timeframe === '10m') {
             $interval = '1m';
             $range = '3d';
-            $isAggregated = !$raw;
+            $isAggregated = ! $raw;
             $intervalSeconds = 600;
         } elseif ($timeframe === '30m') {
             $interval = '1m';
             $range = '5d';
-            $isAggregated = !$raw;
+            $isAggregated = ! $raw;
             $intervalSeconds = 1800;
         } elseif ($timeframe === '1h') {
             $interval = '1m';
@@ -810,23 +846,23 @@ class StockController extends Controller
         }
 
         try {
-            $client = new Client();
+            $client = new Client;
             $url = "https://query1.finance.yahoo.com/v8/finance/chart/{$symbol}?interval={$interval}&range={$range}&includePrePost=true";
             $response = $client->get($url, [
                 'headers' => [
-                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                ]
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                ],
             ]);
-            
+
             $data = json_decode($response->getBody()->getContents(), true);
-            if (!isset($data['chart']['result'][0])) {
-                throw new \Exception("Invalid Yahoo Finance response");
+            if (! isset($data['chart']['result'][0])) {
+                throw new \Exception('Invalid Yahoo Finance response');
             }
-            
+
             $result = $data['chart']['result'][0];
             $timestamps = $result['timestamp'] ?? [];
             $quote = $result['indicators']['quote'][0] ?? [];
-            
+
             $candles = [];
             $len = count($timestamps);
             for ($i = 0; $i < $len; $i++) {
@@ -840,11 +876,11 @@ class StockController extends Controller
                     continue;
                 }
 
-                $open  = round((float)$open, 2);
-                $high  = round((float)$high, 2);
-                $low   = round((float)$low, 2);
-                $close = round((float)$close, 2);
-                $volume = (int)$volume;
+                $open = round((float) $open, 2);
+                $high = round((float) $high, 2);
+                $low = round((float) $low, 2);
+                $close = round((float) $close, 2);
+                $volume = (int) $volume;
 
                 // ── Yahoo Finance bad-tick 방어 (volume=0 봉 전용) ──────────────────
                 // Yahoo는 프리마켓/애프터마켓(volume=0) 봉에 전일 정규장 세션 low/high를
@@ -876,23 +912,23 @@ class StockController extends Controller
                 }
 
                 $candles[] = [
-                    'time'   => $timeVal,
-                    'open'   => $open,
-                    'high'   => $high,
-                    'low'    => $low,
-                    'close'  => $close,
+                    'time' => $timeVal,
+                    'open' => $open,
+                    'high' => $high,
+                    'low' => $low,
+                    'close' => $close,
                     'volume' => $volume,
                 ];
             }
-            
+
             if (empty($candles)) {
-                throw new \Exception("No candles parsed");
+                throw new \Exception('No candles parsed');
             }
 
-            if ($isAggregated && !empty($candles)) {
+            if ($isAggregated && ! empty($candles)) {
                 $candles = $this->aggregateCandles($candles, $intervalSeconds);
             }
-            
+
             $meta = $result['meta'];
             $latestCandle = end($candles);
             $current = $latestCandle['close'];
@@ -907,17 +943,17 @@ class StockController extends Controller
                 $metaPrevClose = $meta['previousClose'] ?? $meta['chartPreviousClose'] ?? 0.0;
                 $prevClose = ($metaPrevClose > 0) ? $metaPrevClose : ($candles[0]['close'] ?? $current);
             }
-            
+
             $changeAmount = $current - $prevClose;
             $changePercent = ($prevClose > 0) ? ($changeAmount / $prevClose) * 100 : 0.0;
-            
+
             $displayName = $this->getStockName($ticker);
             if ($ticker === 'NQ=F') {
                 $displayName = '나스닥100 선물';
             } elseif ($ticker === 'KOSPI200' || $ticker === '^KS200' || $ticker === '^KS11') {
                 $displayName = '코스피 지수';
             }
-            
+
             return response()->json([
                 'ticker' => $ticker,
                 'name' => $displayName,
@@ -925,11 +961,12 @@ class StockController extends Controller
                 'change_amount' => round($changeAmount, 2),
                 'change_percent' => round($changePercent, 2),
                 'candles' => $candles,
-                'source' => 'Yahoo Finance (' . $timeframe . ')'
+                'source' => 'Yahoo Finance (' . $timeframe . ')',
             ]);
-            
+
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error("Yahoo Chart Error for {$ticker}: " . $e->getMessage());
+
             return $this->getMockStockData($ticker, $e->getMessage(), $timeframe);
         }
     }
@@ -944,7 +981,7 @@ class StockController extends Controller
         $kospiResponse = $this->getYahooChartData('^KS200', $timeframe);
         $kospiData = json_decode($kospiResponse->getContent(), true);
 
-        if (!isset($nqData['candles']) || !isset($kospiData['candles'])) {
+        if (! isset($nqData['candles']) || ! isset($kospiData['candles'])) {
             return $kospiResponse;
         }
 
@@ -952,24 +989,24 @@ class StockController extends Controller
         $kospiCandles = $kospiData['candles'];
 
         $lastKospiPrice = end($kospiCandles)['close'] ?? 362.45;
-        
+
         $nightCandles = [];
         $firstNqClose = $nqCandles[0]['close'] ?? 1.0;
-        
+
         foreach ($nqCandles as $nqCandle) {
             $nqChangePercent = (($nqCandle['close'] - $firstNqClose) / $firstNqClose) * 100;
             $pointMove = $nqChangePercent * 3.541;
-            
+
             $nightClose = $lastKospiPrice + $pointMove;
-            
+
             $nqOpenPct = (($nqCandle['open'] - $firstNqClose) / $firstNqClose) * 100;
             $nqHighPct = (($nqCandle['high'] - $firstNqClose) / $firstNqClose) * 100;
             $nqLowPct = (($nqCandle['low'] - $firstNqClose) / $firstNqClose) * 100;
-            
+
             $nightOpen = $lastKospiPrice + ($nqOpenPct * 3.541);
             $nightHigh = $lastKospiPrice + ($nqHighPct * 3.541);
             $nightLow = $lastKospiPrice + ($nqLowPct * 3.541);
-            
+
             $nightCandles[] = [
                 'time' => $nqCandle['time'],
                 'open' => round($nightOpen, 2),
@@ -979,7 +1016,7 @@ class StockController extends Controller
                 'volume' => $nqCandle['volume'],
             ];
         }
-        
+
         $latestCandle = end($nightCandles);
         $current = $latestCandle['close'];
 
@@ -990,10 +1027,10 @@ class StockController extends Controller
             // For intraday KOSPI night session, the daily base price is the regular session close ($lastKospiPrice)
             $prevClose = $lastKospiPrice;
         }
-        
+
         $changeAmount = $current - $prevClose;
         $changePercent = ($prevClose > 0) ? ($changeAmount / $prevClose) * 100 : 0.0;
-        
+
         return response()->json([
             'ticker' => 'KOSPI_NIGHT',
             'name' => '야간 선물 (KOSPI 200)',
@@ -1001,7 +1038,7 @@ class StockController extends Controller
             'change_amount' => round($changeAmount, 2),
             'change_percent' => round($changePercent, 2),
             'candles' => $nightCandles,
-            'source' => 'Simulated KRX Night Futures (' . $timeframe . ')'
+            'source' => 'Simulated KRX Night Futures (' . $timeframe . ')',
         ]);
     }
 
@@ -1015,6 +1052,7 @@ class StockController extends Controller
         if ($iscd === '2001') {
             return '^KS200';  // 코스피200
         }
+
         return '^KS11';  // '0001'(코스피 종합) 및 기타 → 코스피 종합
     }
 
@@ -1043,6 +1081,7 @@ class StockController extends Controller
     public function getKospiIndexData($timeframe, $iscd = '0001')
     {
         $yahooSymbol = $this->kospiYahooSymbol($iscd);
+
         return $this->getYahooChartData($yahooSymbol, $timeframe);
     }
 
@@ -1074,8 +1113,7 @@ class StockController extends Controller
      * 지수 심볼(NQ=F·KOSPI200 등)은 호출부에서 별도 처리하므로
      * 이 메서드는 폴백만 수행하면 된다.
      *
-     * @param  string $ticker  앱 내부 심볼 (접미사 포함/미포함 모두 가능)
-     * @return string
+     * @param  string  $ticker  앱 내부 심볼 (접미사 포함/미포함 모두 가능)
      */
     private function getStockName(string $ticker): string
     {
@@ -1109,7 +1147,7 @@ class StockController extends Controller
             : ($type === 'us' ? ['USA'] : ['KOR', 'USA']);
 
         try {
-            $client = new Client();
+            $client = new Client;
             $response = $client->get('https://ac.stock.naver.com/ac', [
                 'query' => ['q' => $query, 'target' => 'stock'],
                 'headers' => ['User-Agent' => 'Mozilla/5.0'],
@@ -1126,7 +1164,7 @@ class StockController extends Controller
                     continue; // 일본·중국 등 제외 + type 필터
                 }
 
-                $code     = $item['code'] ?? '';
+                $code = $item['code'] ?? '';
                 $typeCode = $item['typeCode'] ?? '';
                 if ($code === '') {
                     continue;
@@ -1141,8 +1179,8 @@ class StockController extends Controller
                 }
 
                 $results[] = [
-                    'ticker'   => $ticker,
-                    'name'     => $item['name'] ?? $code,
+                    'ticker' => $ticker,
+                    'name' => $item['name'] ?? $code,
                     'isKorean' => $nation === 'KOR',
                     'exchange' => $typeCode,
                 ];
@@ -1167,12 +1205,7 @@ class StockController extends Controller
      * 벗어나면 bad tick 으로 판단해 body 경계로 클램프한다.
      * volume>0(정규장) 봉은 신뢰하며 절대 건드리지 않는다.
      *
-     * @param float $open
-     * @param float $close
-     * @param float $low
-     * @param float $high
-     * @param int   $volume
-     * @return array{float, float}  [$low, $high] — 클램프 적용 후 값
+     * @return array{float, float} [$low, $high] — 클램프 적용 후 값
      */
     private function applyBadTickClamp(float $open, float $close, float $low, float $high, int $volume): array
     {
@@ -1183,29 +1216,29 @@ class StockController extends Controller
         $bodyMin = min($open, $close);
         $bodyMax = max($open, $close);
 
-        $originalLow  = $low;
+        $originalLow = $low;
         $originalHigh = $high;
         $clamped = false;
 
         // low가 body 최저보다 1.25% 이상 낮으면 bad tick — body 최저로 클램프
         if ($bodyMin > 0 && $low < $bodyMin * 0.9875) {
-            $low     = $bodyMin;
+            $low = $bodyMin;
             $clamped = true;
         }
         // high가 body 최고보다 1.25% 이상 높으면 bad tick — body 최고로 클램프
         if ($bodyMax > 0 && $high > $bodyMax * 1.0125) {
-            $high    = $bodyMax;
+            $high = $bodyMax;
             $clamped = true;
         }
 
         if ($clamped && \Illuminate\Support\Facades\Facade::getFacadeApplication() !== null) {
             \Illuminate\Support\Facades\Log::info('bad-tick clamp applied', [
-                'open'        => $open,
-                'close'       => $close,
-                'low_before'  => $originalLow,
-                'low_after'   => $low,
+                'open' => $open,
+                'close' => $close,
+                'low_before' => $originalLow,
+                'low_after' => $low,
                 'high_before' => $originalHigh,
-                'high_after'  => $high,
+                'high_after' => $high,
             ]);
         }
 
@@ -1220,17 +1253,17 @@ class StockController extends Controller
 
         $grouped = [];
         foreach ($candles1m as $c) {
-            $timestamp = (int)$c['time'];
+            $timestamp = (int) $c['time'];
             $periodTime = $timestamp - ($timestamp % $intervalSeconds);
-            
-            if (!isset($grouped[$periodTime])) {
+
+            if (! isset($grouped[$periodTime])) {
                 $grouped[$periodTime] = [
                     'time' => $periodTime,
                     'open' => $c['open'],
                     'high' => $c['high'],
                     'low' => $c['low'],
                     'close' => $c['close'],
-                    'volume' => $c['volume']
+                    'volume' => $c['volume'],
                 ];
             } else {
                 $grouped[$periodTime]['high'] = max($grouped[$periodTime]['high'], $c['high']);
@@ -1241,6 +1274,7 @@ class StockController extends Controller
         }
 
         ksort($grouped);
+
         return array_values($grouped);
     }
 
@@ -1252,13 +1286,14 @@ class StockController extends Controller
     private function isKrNightFuturesActive(): bool
     {
         $now = Carbon::now('Asia/Seoul');
-        $hour = (int)$now->format('H');
+        $hour = (int) $now->format('H');
         if ($hour >= 18) {
             return $this->isKrTradingDay($now->timestamp);            // 오늘 저녁 세션
         }
         if ($hour < 5) {
             return $this->isKrTradingDay($now->copy()->subDay()->timestamp); // 전일 저녁 세션의 새벽 연장
         }
+
         return false;
     }
 
@@ -1268,38 +1303,39 @@ class StockController extends Controller
      */
     private function isKrTradingDay($timestamp)
     {
-        return $this->sessionService->isKrTradingDay((int)$timestamp);
+        return $this->sessionService->isKrTradingDay((int) $timestamp);
     }
 
     private function isKrxMarketOpen($timestamp)
     {
         // 공휴일·주말이면 개장 아님 (KIS API 기준)
-        if (!$this->isKrTradingDay($timestamp)) {
+        if (! $this->isKrTradingDay($timestamp)) {
             return false;
         }
 
         $dt = new \DateTime("@{$timestamp}");
         $dt->setTimezone(new \DateTimeZone('Asia/Seoul'));
 
-        $timeVal = (int)$dt->format('Hi'); // e.g. 0900
-        return ($timeVal >= 900 && $timeVal <= 1530);
+        $timeVal = (int) $dt->format('Hi'); // e.g. 0900
+
+        return $timeVal >= 900 && $timeVal <= 1530;
     }
 
     private function accumulateRealTimePrice($ticker, $price, $lastYahooTime)
     {
         $cacheKey = "kis_accumulated_1m_{$ticker}";
         $accumulated = Cache::get($cacheKey, []);
-        
+
         $now = time();
-        if (!$this->isKrxMarketOpen($now)) {
+        if (! $this->isKrxMarketOpen($now)) {
             return $accumulated;
         }
-        
+
         $currentPeriodTime = $now - ($now % 60);
-        
+
         // Align last Yahoo time to 60s
         $alignedLastYahooTime = $lastYahooTime - ($lastYahooTime % 60);
-        
+
         // If empty and we have a last Yahoo time, bootstrap the array to fill the delay gap
         if (empty($accumulated) && $lastYahooTime > 0) {
             $tempTime = $alignedLastYahooTime + 60;
@@ -1312,13 +1348,13 @@ class StockController extends Controller
                         'high' => $lastClose,
                         'low' => $lastClose,
                         'close' => $lastClose,
-                        'volume' => 0
+                        'volume' => 0,
                     ];
                 }
                 $tempTime += 60;
             }
         }
-        
+
         if (empty($accumulated)) {
             $accumulated[] = [
                 'time' => $currentPeriodTime,
@@ -1326,19 +1362,19 @@ class StockController extends Controller
                 'high' => $price,
                 'low' => $price,
                 'close' => $price,
-                'volume' => 0
+                'volume' => 0,
             ];
         } else {
             $lastIdx = count($accumulated) - 1;
             $lastItem = $accumulated[$lastIdx];
-            
+
             if ($lastItem['time'] === $currentPeriodTime) {
                 $accumulated[$lastIdx]['close'] = $price;
                 $accumulated[$lastIdx]['high'] = max($lastItem['high'], $price);
                 $accumulated[$lastIdx]['low'] = min($lastItem['low'], $price);
             } else {
                 $prevClose = $lastItem['close'];
-                
+
                 // Fill offline gap
                 $gapTime = max($lastItem['time'] + 60, time() - 86400);
                 $gapTime = $gapTime - ($gapTime % 60); // Align to 60s
@@ -1350,28 +1386,29 @@ class StockController extends Controller
                             'high' => $prevClose,
                             'low' => $prevClose,
                             'close' => $prevClose,
-                            'volume' => 0
+                            'volume' => 0,
                         ];
                     }
                     $gapTime += 60;
                 }
-                
+
                 $accumulated[] = [
                     'time' => $currentPeriodTime,
                     'open' => $prevClose,
                     'high' => max($prevClose, $price),
                     'low' => min($prevClose, $price),
                     'close' => $price,
-                    'volume' => 0
+                    'volume' => 0,
                 ];
             }
         }
-        
+
         if (count($accumulated) > 120) {
             $accumulated = array_slice($accumulated, -120);
         }
-        
+
         Cache::put($cacheKey, $accumulated, 86400);
+
         return $accumulated;
     }
 
@@ -1386,7 +1423,7 @@ class StockController extends Controller
 
     private function getUsMarketSessionInfo($timestamp)
     {
-        return $this->sessionService->getUsSession((int)$timestamp);
+        return $this->sessionService->getUsSession((int) $timestamp);
     }
 
     /**
@@ -1396,10 +1433,10 @@ class StockController extends Controller
     private function usSessionCode(string $session): string
     {
         $map = [
-            '프리마켓'   => 'PRE',
-            '정규장'     => 'REGULAR',
+            '프리마켓' => 'PRE',
+            '정규장' => 'REGULAR',
             '애프터마켓' => 'AFT',
-            '주간거래'   => 'EXT_NIGHT',
+            '주간거래' => 'EXT_NIGHT',
         ];
 
         return $map[$session] ?? 'CLOSED';  // 장마감
@@ -1410,9 +1447,9 @@ class StockController extends Controller
         $dt = new \DateTime("@{$timestamp}");
         $dt->setTimezone(new \DateTimeZone('America/New_York'));
 
-        $dayOfWeek = (int)$dt->format('N');
-        $hour = (int)$dt->format('H');
-        $minute = (int)$dt->format('i');
+        $dayOfWeek = (int) $dt->format('N');
+        $hour = (int) $dt->format('H');
+        $minute = (int) $dt->format('i');
         $timeVal = $hour * 100 + $minute;
 
         // 주말 휴장 경계(NY): 금 20:00 ~ 일 20:00
@@ -1439,7 +1476,7 @@ class StockController extends Controller
 
     private function getKrMarketSessionInfo($timestamp)
     {
-        return $this->sessionService->getKrSession((int)$timestamp);
+        return $this->sessionService->getKrSession((int) $timestamp);
     }
 
     private function accumulateOverseasRealTimePrice($ticker, $price, $lastYahooTime, bool $isFreshKisPrice = true)
@@ -1448,14 +1485,14 @@ class StockController extends Controller
         $accumulated = Cache::get($cacheKey, []);
 
         $now = time();
-        if (!$this->isUsMarketOpen($now)) {
+        if (! $this->isUsMarketOpen($now)) {
             return $accumulated;
         }
 
         // KIS 8초 TTL 캐시 미스로 24h 폴백 사용 중 → stale 가격으로 평평봉이 연속 누적되는 것을 방지.
         // 폴백 가격은 실제 거래가 아니라 KIS 통신 단절 상태를 반영하므로, 새 분봉 누적을 스킵하고
         // 기존 accumulated 를 그대로 반환한다. 이미 시작된 현재 분봉의 close 도 갱신하지 않는다.
-        if (!$isFreshKisPrice) {
+        if (! $isFreshKisPrice) {
             return $accumulated;
         }
 
@@ -1478,13 +1515,13 @@ class StockController extends Controller
                         'high' => $lastClose,
                         'low' => $lastClose,
                         'close' => $lastClose,
-                        'volume' => 0
+                        'volume' => 0,
                     ];
                 }
                 $tempTime += 60;
             }
         }
-        
+
         if (empty($accumulated)) {
             $accumulated[] = [
                 'time' => $currentPeriodTime,
@@ -1492,19 +1529,19 @@ class StockController extends Controller
                 'high' => $price,
                 'low' => $price,
                 'close' => $price,
-                'volume' => 0
+                'volume' => 0,
             ];
         } else {
             $lastIdx = count($accumulated) - 1;
             $lastItem = $accumulated[$lastIdx];
-            
+
             if ($lastItem['time'] === $currentPeriodTime) {
                 $accumulated[$lastIdx]['close'] = $price;
                 $accumulated[$lastIdx]['high'] = max($lastItem['high'], $price);
                 $accumulated[$lastIdx]['low'] = min($lastItem['low'], $price);
             } else {
                 $prevClose = $lastItem['close'];
-                
+
                 // Fill offline gap
                 $gapTime = max($lastItem['time'] + 60, time() - 86400);
                 $gapTime = $gapTime - ($gapTime % 60);
@@ -1516,74 +1553,76 @@ class StockController extends Controller
                             'high' => $prevClose,
                             'low' => $prevClose,
                             'close' => $prevClose,
-                            'volume' => 0
+                            'volume' => 0,
                         ];
                     }
                     $gapTime += 60;
                 }
-                
+
                 $accumulated[] = [
                     'time' => $currentPeriodTime,
                     'open' => $prevClose,
                     'high' => max($prevClose, $price),
                     'low' => min($prevClose, $price),
                     'close' => $price,
-                    'volume' => 0
+                    'volume' => 0,
                 ];
             }
         }
-        
+
         if (count($accumulated) > 120) {
             $accumulated = array_slice($accumulated, -120);
         }
-        
+
         Cache::put($cacheKey, $accumulated, 86400);
+
         return $accumulated;
     }
 
     public function getEarningsDate($ticker)
     {
         $ticker = strtoupper($ticker);
-        
+
         $cacheKey = "earnings_date_{$ticker}";
+
         return Cache::remember($cacheKey, 14400, function () use ($ticker) {
             try {
-                $client = new Client();
+                $client = new Client;
                 $url = "https://finance.yahoo.com/quote/{$ticker}";
-                
+
                 $response = $client->get($url, [
                     'headers' => [
                         'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+                        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     ],
-                    'timeout' => 7
+                    'timeout' => 7,
                 ]);
-                
+
                 $html = $response->getBody()->getContents();
-                
+
                 // 1. JSON Regex (Escaped Quotes Support in state scripts)
                 if (preg_match('/\\\\?"earningsDate\\\\?":\s*\[\s*\{\s*\\\\?"raw\\\\?":\s*(\d+)/i', $html, $matches)) {
-                    $rawTime = (int)$matches[1];
+                    $rawTime = (int) $matches[1];
                     if ($rawTime > 0) {
                         $dateTime = new \DateTime("@{$rawTime}");
                         $dateTime->setTimezone(new \DateTimeZone('Asia/Seoul'));
-                        
-                        $hour = (int)$dateTime->format('H');
-                        $minute = (int)$dateTime->format('i');
+
+                        $hour = (int) $dateTime->format('H');
+                        $minute = (int) $dateTime->format('i');
                         if ($hour === 0 && $minute === 0) {
                             $formatted = $dateTime->format('Y-m-d');
                         } else {
                             $formatted = $dateTime->format('Y-m-d H:i');
                         }
-                        
+
                         return response()->json([
                             'success' => true,
                             'earnings_date' => $formatted,
-                            'raw' => $rawTime
+                            'raw' => $rawTime,
                         ]);
                     }
                 }
-                
+
                 // 2. Fallback: HTML Markup Regex (e.g. "Earnings Date </span> <span ...>Date</span>")
                 if (preg_match('/title="Earnings Date">Earnings Date\s*<\/span>\s*<span[^>]*>(.*?)<\/span>/is', $html, $matches)) {
                     $rawText = trim($matches[1]);
@@ -1591,17 +1630,17 @@ class StockController extends Controller
                         return response()->json([
                             'success' => true,
                             'earnings_date' => $rawText,
-                            'raw' => null
+                            'raw' => null,
                         ]);
                     }
                 }
             } catch (\Exception $e) {
                 \Illuminate\Support\Facades\Log::error("Failed to fetch HTML earnings for {$ticker}: " . $e->getMessage());
             }
-            
+
             return response()->json([
                 'success' => false,
-                'message' => '실적발표일 정보가 없습니다.'
+                'message' => '실적발표일 정보가 없습니다.',
             ]);
         });
     }

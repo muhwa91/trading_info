@@ -26,14 +26,14 @@ class StorePortfolioRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'stock_id'      => 'nullable|integer|exists:stocks,id',
-            'symbol'        => 'nullable|string|max:20',
-            'market'        => 'nullable|string|in:KR,US',
-            'quantity'      => 'required|numeric|min:0.000001',
+            'stock_id' => 'nullable|integer|exists:stocks,id',
+            'symbol' => 'nullable|string|max:20',
+            'market' => 'nullable|string|in:KR,US',
+            'quantity' => 'required|numeric|min:0.000001',
             'average_price' => 'required|numeric|min:0.000001',
-            'avg_fx_rate'   => 'nullable|numeric|min:0.0001',
-            'account_id'    => 'nullable|integer|exists:accounts,id',
-            'source'        => 'nullable|string|in:manual,synced',
+            'avg_fx_rate' => 'nullable|numeric|min:0.0001',
+            'account_id' => 'nullable|integer|exists:accounts,id',
+            'source' => 'nullable|string|in:manual,synced',
         ];
     }
 
@@ -43,33 +43,30 @@ class StorePortfolioRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'quantity.min'      => '수량은 0보다 커야 합니다.',
+            'quantity.min' => '수량은 0보다 커야 합니다.',
             'average_price.min' => '평균 매입가는 0보다 커야 합니다.',
-            'stock_id.exists'   => '존재하지 않는 종목 ID입니다.',
+            'stock_id.exists' => '존재하지 않는 종목 ID입니다.',
             'account_id.exists' => '존재하지 않는 계좌 ID입니다.',
         ];
     }
 
     /**
      * 기본값 주입 및 추가 검증: USD 종목인데 avg_fx_rate 누락 시 에러.
-     *
-     * @param  \Illuminate\Contracts\Validation\Validator  $validator
-     * @return void
      */
     public function withValidator(\Illuminate\Contracts\Validation\Validator $validator): void
     {
         $validator->after(function (\Illuminate\Contracts\Validation\Validator $v): void {
             $stockId = $this->input('stock_id');
-            $market  = $this->input('market', '');
+            $market = $this->input('market', '');
 
             // stock_id 로 통화 확인
             $currency = null;
             if ($stockId !== null) {
-                $stock = Stock::find((int)$stockId);
+                $stock = Stock::find((int) $stockId);
                 if ($stock !== null) {
                     $currency = $stock->currency;
                 }
-            } elseif (strtoupper((string)$market) === 'US') {
+            } elseif (strtoupper((string) $market) === 'US') {
                 $currency = 'USD';
             }
 

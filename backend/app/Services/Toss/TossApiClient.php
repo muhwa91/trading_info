@@ -61,13 +61,13 @@ class TossApiClient
      *   /api/v1/trades, /api/v1/price-limits — 기타 (기본값 500ms)
      */
     private const RATE_LIMIT_US = [
-        '/api/v1/prices'        => 100_000,  // MARKET_DATA 10TPS
-        '/api/v1/candles'       => 200_000,  // MARKET_DATA_CHART 5TPS
+        '/api/v1/prices' => 100_000,  // MARKET_DATA 10TPS
+        '/api/v1/candles' => 200_000,  // MARKET_DATA_CHART 5TPS
         '/api/v1/exchange-rate' => 500_000,  // 기타
-        '/api/v1/stocks'        => 500_000,  // 기타
-        '/api/v1/orderbook'     => 500_000,  // 기타
-        '/api/v1/trades'        => 500_000,  // 기타
-        '/api/v1/price-limits'  => 500_000,  // 기타
+        '/api/v1/stocks' => 500_000,  // 기타
+        '/api/v1/orderbook' => 500_000,  // 기타
+        '/api/v1/trades' => 500_000,  // 기타
+        '/api/v1/price-limits' => 500_000,  // 기타
     ];
 
     /** 기본 rate-limit 간격 (마이크로초) — 기타 엔드포인트 */
@@ -82,8 +82,8 @@ class TossApiClient
     {
         $this->httpClient = new Client([
             'base_uri' => rtrim((string) config('services.toss.api_url'), '/'),
-            'timeout'  => 10,
-            'headers'  => ['Accept' => 'application/json'],
+            'timeout' => 10,
+            'headers' => ['Accept' => 'application/json'],
         ]);
     }
 
@@ -97,9 +97,9 @@ class TossApiClient
      * 성공 시 JSON 배열 반환. 4xx/5xx·네트워크 예외 시 빈 배열 반환 + 로그.
      * 401(invalid-token) 발생 시 토큰 캐시 삭제 후 1회 재발급·재시도.
      *
-     * @param  string  $path   예: '/api/v1/candles'
+     * @param  string  $path  예: '/api/v1/candles'
      * @param  array<string,mixed>  $query  URL 쿼리 파라미터
-     * @param  bool    $isRetry  내부 재시도 플래그 — 무한루프 방지용, 외부 호출 시 false
+     * @param  bool  $isRetry  내부 재시도 플래그 — 무한루프 방지용, 외부 호출 시 false
      * @return array<mixed>
      */
     public function get(string $path, array $query = [], bool $isRetry = false): array
@@ -107,6 +107,7 @@ class TossApiClient
         $token = $this->getAccessToken();
         if ($token === null) {
             Log::warning('[TossApiClient] 토큰 없음 — 요청 건너뜀', ['path' => $path]);
+
             return [];
         }
 
@@ -115,7 +116,7 @@ class TossApiClient
         try {
             $response = $this->httpClient->get($path, [
                 'headers' => ['Authorization' => "Bearer {$token}"],
-                'query'   => $query,
+                'query' => $query,
             ]);
 
             $body = $response->getBody()->getContents();
@@ -124,40 +125,44 @@ class TossApiClient
             return is_array($data) ? $data : [];
         } catch (\GuzzleHttp\Exception\ClientException $e) {
             // 4xx — 요청 문제 (파라미터 오류·권한 등)
-            $resp4xx   = $e->getResponse();
-            $status    = $resp4xx ? $resp4xx->getStatusCode() : null;
+            $resp4xx = $e->getResponse();
+            $status = $resp4xx ? $resp4xx->getStatusCode() : null;
 
             // 401 invalid-token: 토스는 client당 활성 토큰이 1개이므로
             // 다른 곳에서 재발급 시 기존 토큰이 무효화될 수 있다.
             // 캐시를 비우고 새 토큰을 발급받아 1회에 한해 재시도한다.
-            if ($status === 401 && !$isRetry) {
+            if ($status === 401 && ! $isRetry) {
                 Log::warning('[TossApiClient] 401 invalid-token — 토큰 재발급 후 1회 재시도', [
                     'path' => $path,
                 ]);
                 Cache::forget(self::TOKEN_CACHE_KEY);
                 $this->getAccessToken(true);
+
                 return $this->get($path, $query, true);
             }
 
             Log::error('[TossApiClient] 4xx 오류', [
-                'path'   => $path,
+                'path' => $path,
                 'status' => $status,
-                'body'   => $resp4xx ? substr((string) $resp4xx->getBody(), 0, 300) : null,
+                'body' => $resp4xx ? substr((string) $resp4xx->getBody(), 0, 300) : null,
             ]);
+
             return [];
         } catch (\GuzzleHttp\Exception\ServerException $e) {
             // 5xx — 서버 오류
             $resp5xx = $e->getResponse();
             Log::error('[TossApiClient] 5xx 오류', [
-                'path'   => $path,
+                'path' => $path,
                 'status' => $resp5xx ? $resp5xx->getStatusCode() : null,
             ]);
+
             return [];
         } catch (\Throwable $e) {
             Log::error('[TossApiClient] 요청 예외', [
-                'path'    => $path,
+                'path' => $path,
                 'message' => $e->getMessage(),
             ]);
+
             return [];
         }
     }
@@ -185,11 +190,11 @@ class TossApiClient
         }
 
         // 동시 다발 토큰 발급 방지 — 락 획득
-        $lock     = Cache::lock(self::TOKEN_LOCK_KEY, 15);
+        $lock = Cache::lock(self::TOKEN_LOCK_KEY, 15);
         $attempts = 0;
 
         try {
-            while (!$lock->get() && $attempts < 10) {
+            while (! $lock->get() && $attempts < 10) {
                 usleep(500_000);
                 $cached = Cache::get(self::TOKEN_CACHE_KEY);
                 if ($cached !== null) {
@@ -224,19 +229,20 @@ class TossApiClient
      */
     private function issueToken(): ?string
     {
-        $clientId     = (string) config('services.toss.client_id');
+        $clientId = (string) config('services.toss.client_id');
         $clientSecret = (string) config('services.toss.client_secret');
 
         if (empty($clientId) || empty($clientSecret)) {
             Log::error('[TossApiClient] TOSS_CLIENT_ID / TOSS_CLIENT_SECRET 미설정');
+
             return null;
         }
 
         try {
             $response = $this->httpClient->post('/oauth2/token', [
                 'form_params' => [
-                    'grant_type'    => 'client_credentials',
-                    'client_id'     => $clientId,
+                    'grant_type' => 'client_credentials',
+                    'client_id' => $clientId,
                     'client_secret' => $clientSecret,
                 ],
                 'headers' => ['Content-Type' => 'application/x-www-form-urlencoded'],
@@ -244,11 +250,12 @@ class TossApiClient
 
             $data = json_decode($response->getBody()->getContents(), true);
 
-            if (!isset($data['access_token'])) {
+            if (! isset($data['access_token'])) {
                 // 오류 본문을 로그할 때 시크릿은 절대 포함하지 않는다
                 Log::error('[TossApiClient] 토큰 발급 실패 — access_token 없음', [
                     'error' => $data['error'] ?? 'unknown',
                 ]);
+
                 return null;
             }
 
@@ -266,6 +273,7 @@ class TossApiClient
         } catch (\Throwable $e) {
             // 예외 메시지에도 시크릿이 섞이지 않도록 단순 메시지만
             Log::error('[TossApiClient] 토큰 발급 예외: ' . $e->getMessage());
+
             return null;
         }
     }
@@ -286,7 +294,7 @@ class TossApiClient
             }
         }
 
-        $now  = microtime(true);
+        $now = microtime(true);
         $last = $this->lastCalledAt[$path] ?? 0.0;
         $elapsedUs = (int) (($now - $last) * 1_000_000);
 

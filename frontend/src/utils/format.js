@@ -82,7 +82,7 @@ export function formatPrice(currency, value) {
 // 숫자 열(우측정렬 tabular)과 단위 열(좌측정렬 고정폭)을 별도 그리드 트랙에
 // (2026-07-15: 8열 소수점 분리 시도 → 롤백. 숫자 전체 우측정렬 + 단위 별도 열 유지.)
 // 넣기 위해 { num, unit } 로 분리 반환. → 단위(원/$/원)의 좌측 edge가 한 열에
-// 세로 정렬되고 숫자는 우측 정렬돼 자릿수가 맞는다(02-계약 §D·§K).
+// 세로 정렬되고 숫자는 우측 정렬돼 자릿수가 맞는다(02_계약 §D·§K).
 // 겹침은 컨테이너 w-max·whitespace-nowrap·부모 overflow-x-auto 로 구조적 차단.
 // null/undefined → { num: '—', unit: '' } (단위 없이 대시만).
 

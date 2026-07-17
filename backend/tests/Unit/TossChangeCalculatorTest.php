@@ -1367,7 +1367,7 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * 폴백 경로(calculate() 경유)도 change_percent 를 소수 2자리로 정규화해 계약(02-계약)과 통일한다.
+     * 폴백 경로(calculate() 경유)도 change_percent 를 소수 2자리로 정규화해 계약(02_계약)과 통일한다.
      * calculate() 자체는 round(4) 를 반환하지만, calculateUsSplit 폴백 반환 지점에서 round(2) 로 정규화되어야 한다.
      * (985−991.64)/991.64×100 = −0.6696(round4) → 계약 −0.67(round2).
      */

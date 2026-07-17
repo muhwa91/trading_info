@@ -30,7 +30,7 @@ Laravel 8 REST API      순수 PHP Stream Socket WS 서버 (php artisan agent:se
 ## 기술적 하이라이트
 
 - **WebSocket 서버 직접 구현** — 라이브러리 없이 순수 PHP Stream Socket으로 핸드셰이크·프레이밍·브로드캐스트를 구현. long-running 프로세스의 코드 반영·재시작 운영까지 문서화
-- **외부 API 전면 마이그레이션** — 한국투자증권(KIS) API → 토스증권 Open API로 데이터 소스를 통째로 교체하면서 KIS 의존을 완전 제거. 종목 메타데이터는 DB에 넣지 않고 API+캐싱으로 처리해 스키마를 FK 중심축만 남김 (상세: [`docs/features/toss-api-migration/`](docs/features/toss-api-migration/))
+- **외부 API 전면 마이그레이션** — 한국투자증권(KIS) API → 토스증권 Open API로 데이터 소스를 통째로 교체하면서 KIS 의존을 완전 제거. 종목 메타데이터는 DB에 넣지 않고 API+캐싱으로 처리해 스키마를 FK 중심축만 남김 (상세: [`docs/기능/toss-api-migration/`](docs/기능/toss-api-migration/))
 - **다단 폴백 체인** — 시세 소스 장애 대비 토스 → Yahoo → 24h 캐시 순 폴백. 실패는 조용히 삼키지 않고 `source` 라벨로 데이터 출처를 정직하게 표기
 - **미국장 세션 대응** — 프리마켓/정규장/애프터마켓 세션 분기, 정규장 기준가를 별도 소스로 보강해 등락률 왜곡 방지
 - **테스트** — 시세 폴백·세션 판정 등 핵심 로직 PHPUnit 테스트, Pint(포맷) 게이트

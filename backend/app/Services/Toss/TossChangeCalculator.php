@@ -208,7 +208,7 @@ class TossChangeCalculator
     /**
      * US 종목 '통합'/'정규장' 등락률을 분리 계산한다 (연장세션 차트 헤더 2줄용).
      *
-     * 계약(02-계약.md, chart-regular-ext-split):
+     * 계약(02_계약.md, chart-regular-ext-split):
      *   - 통합(change_*)    = (현재가[시간외 포함] − 직전거래일 정규장 종가) / 직전거래일 정규장 종가 × 100
      *   - 정규장(regular_*) = (당일 정규장 종가        − 직전거래일 정규장 종가) / 직전거래일 정규장 종가 × 100
      *
@@ -267,7 +267,7 @@ class TossChangeCalculator
         }
 
         // 정규장·장마감(또는 연장세션 cold): 기존 등락 그대로 — 현행 유지(회귀 없음).
-        //   단, change_percent 는 계약(02-계약, 소수 2자리)에 맞춰 여기서만 재반올림한다.
+        //   단, change_percent 는 계약(02_계약, 소수 2자리)에 맞춰 여기서만 재반올림한다.
         //   calculate() 자체는 round(4) 유지(KR 등 다른 소비처가 그 정밀도에 의존) — US split 폴백 반환 지점에서만 정규화.
         //   change_amount 는 정상 연장세션 경로도 round(4)라 그대로 두면 이미 일치.
         $base = $this->calculate($tossSymbol, $lastPrice);

@@ -27,3 +27,16 @@ export function sessionBadgeTone(label) {
   if (EXT_LABELS.includes(label)) return TONE_EXT;
   return TONE_CLOSED;
 }
+
+/**
+ * US 연장세션 헤드라인 등락률 앞에 붙일 세션 라벨(토스식 "애프터마켓에서" 표기).
+ * change_percent 가 어느 세션 기준인지 알려주는 접두 라벨이며, 숫자는 백엔드값 그대로 쓴다.
+ * 정규장·장마감 등 연장세션이 아니면 '' (라벨 없음 → 헤드라인 1줄 유지).
+ * @param {string} usSession PRE | AFT | EXT_NIGHT | REGULAR | CLOSED | ''
+ */
+export function usExtHeadlineLabel(usSession) {
+  if (usSession === 'PRE') return '프리마켓에서';
+  if (usSession === 'AFT') return '애프터마켓에서';
+  if (usSession === 'EXT_NIGHT') return '주간거래에서';
+  return '';
+}

@@ -239,9 +239,22 @@ class TossChangeCalculator
             $hasTodayRegularBar = false;
             $prevRegular = $this->getUsPrevRegularClose($tossSymbol, $hasTodayRegularBar);
             if ($prevRegular !== null && $prevRegular > 0.0) {
-                // 통합 = 시간외 현재가 vs 직전거래일 정규장 종가
-                $changeAmount = $lastPrice - $prevRegular;
-                $changePercent = $changeAmount / $prevRegular * 100.0;
+                // 헤드라인 기준가 = '가장 최근 완료된 정규장 종가'(토스 앱 정렬, 2026-07-23):
+                //   애프터·주간거래 자정전(당일 정규장 봉 존재, 세션≠프리마켓) → 당일 정규장 종가($regularClose)
+                //     → 헤드라인이 '애프터 순수변동'(당일 종가 대비)이 되어 토스 "애프터마켓에서 +x%"와 일치.
+                //   프리마켓·주간거래 자정후(당일 정규장 봉 없음) → 직전거래일 종가($prevRegular) 유지
+                //     — 이때는 직전거래일 종가가 곧 '가장 최근 완료된 정규장 종가'라 토스 프리마켓 표기와 이미 일치.
+                //   regularClose cold(null) 면 prevRegular 로 graceful. regular_change_*(정규장 보조 줄)은
+                //   여전히 regularClose vs prevRegular(당일 정규장 하루 등락) — 아래 게이트와 같은 불변식.
+                // 불변식: '헤드라인 base = 당일 정규장 종가' ⟺ '정규장 보조줄 ON'. 두 조건은 항상 동기화돼야 하므로
+                //   한 번만 계산해(아래 게이트와) 공유한다 — 한쪽만 바뀌면 헤드라인·보조줄 기준이 어긋난다.
+                $useRegularBase = $session !== '프리마켓'
+                    && $hasTodayRegularBar
+                    && $regularClose !== null
+                    && $regularClose > 0.0;
+                $headlineBase = $useRegularBase ? $regularClose : $prevRegular;
+                $changeAmount = $lastPrice - $headlineBase;
+                $changePercent = $changeAmount / $headlineBase * 100.0;
 
                 // 정규장 = 당일 정규장 종가 vs 직전거래일 정규장 종가.
                 //   당일 정규장 봉이 있을 때(애프터·주간거래 자정전)만 계산한다. 당일 정규장 봉이 없으면
@@ -249,9 +262,13 @@ class TossChangeCalculator
                 //   크로스소스 잔차(정규장 −0.1%대 노이즈)만 남고, ET 자정에 기준이 candles[1]→candles[0]로
                 //   전진하며 불연속 점프도 생긴다 → regular_* = null 로 두어 프론트가 1줄로 degrade.
                 //   (regularClose cold 여도 null → 1줄.)
+                //   추가(2026-07-21): 프리마켓엔 항상 null 강제. 토스가 프리마켓 도중 오늘 일봉을
+                //   미리 생성해 두는 경우가 있어 $hasTodayRegularBar 게이트만으론 뚫린다(실측: KST 18:30~22:30
+                //   후반 "정규장 ~0%" 2줄 노출). 프리마켓엔 아직 오늘 정규장이 열리지도 않았으므로
+                //   regular_* 는 정의상 존재할 수 없다 → 세션으로 이중 게이트. 개장 시 자연소멸(session 전환).
                 $regularChangeAmount = null;
                 $regularChangePercent = null;
-                if ($hasTodayRegularBar && $regularClose !== null && $regularClose > 0.0) {
+                if ($useRegularBase) {  // 위 헤드라인 base 조건과 같은 불변식(항상 동기화)
                     $regularChangeAmount = $regularClose - $prevRegular;
                     $regularChangePercent = ($regularClose - $prevRegular) / $prevRegular * 100.0;
                 }

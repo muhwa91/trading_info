@@ -12,7 +12,6 @@
             class="w-9 h-9 bg-accent hover:opacity-90 transition-opacity duration-120 rounded-sm flex items-center justify-center text-white cursor-pointer shrink-0"
             role="button"
             tabindex="0"
-            title="메인으로"
             aria-label="메인으로 이동"
             @click="goHome"
             @keydown.enter="goHome"

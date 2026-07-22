@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { usExtHeadlineLabel } from '../utils/sessionBadge.js';
 
 // ── 타임프레임 상수 (StockChart.vue 와 동일) ─────────────────────
 const timeframes = [
@@ -374,5 +375,63 @@ describe('formattedRegularChangePercent — 정규장 등락률 포맷', () => {
 
   it('null 이면 null 반환', () => {
     expect(formattedRegularChangePercent(null)).toBeNull();
+  });
+});
+
+// ── US 연장세션 헤드라인 세션 라벨(토스식 "애프터마켓에서") ────────────────────
+// sessionBadge.usExtHeadlineLabel(원본) + StockChart 의 usSessionHeadlineLabel 게이트(KR·지수 제외)를 검증.
+
+// StockChart.vue usSessionHeadlineLabel computed 와 동일한 게이트 복제.
+function headlineLabel({ isKorean, isIndex, usSession, regularChangePercent = null }) {
+  if (isKorean || isIndex) return '';
+  // AFT/EXT_NIGHT: regularChangePercent non-null(=당일 종가 기준)일 때만 라벨. PRE는 예외로 항상 라벨.
+  if (usSession !== 'PRE' && regularChangePercent === null) return '';
+  return usExtHeadlineLabel(usSession);
+}
+
+describe('usExtHeadlineLabel — 세션 → 헤드라인 라벨 매핑', () => {
+  it('AFT → "애프터마켓에서"', () => {
+    expect(usExtHeadlineLabel('AFT')).toBe('애프터마켓에서');
+  });
+  it('PRE → "프리마켓에서"', () => {
+    expect(usExtHeadlineLabel('PRE')).toBe('프리마켓에서');
+  });
+  it('EXT_NIGHT → "주간거래에서"', () => {
+    expect(usExtHeadlineLabel('EXT_NIGHT')).toBe('주간거래에서');
+  });
+  it('정규장(REGULAR)·장마감(CLOSED)·빈값은 라벨 없음', () => {
+    expect(usExtHeadlineLabel('REGULAR')).toBe('');
+    expect(usExtHeadlineLabel('CLOSED')).toBe('');
+    expect(usExtHeadlineLabel('')).toBe('');
+  });
+});
+
+describe('usSessionHeadlineLabel — 헤드라인 라벨 노출 게이트', () => {
+  // 당일 종가 기준일 때(regularChangePercent non-null) = 순수 애프터 → 라벨 노출.
+  const usAft = { isKorean: false, isIndex: false, usSession: 'AFT', regularChangePercent: -1.17 };
+
+  it('US 연장세션(AFT) + 당일 종가 기준(regularChangePercent non-null)이면 "애프터마켓에서" 노출', () => {
+    expect(headlineLabel(usAft)).toBe('애프터마켓에서');
+  });
+
+  it('AFT + regularChangePercent=null(regular_close cold 폴백)이면 라벨 숨김 — 라벨↔숫자 불일치 방지', () => {
+    expect(headlineLabel({ ...usAft, regularChangePercent: null })).toBe('');
+  });
+
+  it('EXT_NIGHT도 regularChangePercent=null이면 라벨 숨김', () => {
+    expect(headlineLabel({ ...usAft, usSession: 'EXT_NIGHT', regularChangePercent: null })).toBe('');
+  });
+
+  it('PRE는 예외 — regularChangePercent=null(base=prevRegular 정상)이어도 "프리마켓에서" 유지', () => {
+    expect(headlineLabel({ ...usAft, usSession: 'PRE', regularChangePercent: null })).toBe('프리마켓에서');
+  });
+
+  it('US 정규장(REGULAR)이면 라벨 없음 (헤드라인 1줄 유지, 회귀 방지)', () => {
+    expect(headlineLabel({ ...usAft, usSession: 'REGULAR' })).toBe('');
+  });
+
+  it('KR 종목·지수는 연장세션 코드여도 라벨 없음', () => {
+    expect(headlineLabel({ ...usAft, isKorean: true })).toBe('');
+    expect(headlineLabel({ ...usAft, isIndex: true })).toBe('');
   });
 });

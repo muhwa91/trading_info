@@ -21,6 +21,11 @@
               {{ ticker }}
             </span>
             <span class="text-base font-semibold text-white/90 leading-tight truncate" :title="name">{{ name }}</span>
+            <!-- US 연장세션 헤드라인 세션 라벨(토스식 "애프터마켓에서") — 등락률이 어느 세션 기준인지 표기 -->
+            <span
+              v-if="usSessionHeadlineLabel"
+              class="text-2xs font-medium text-base-content/45 tracking-wide leading-tight shrink-0 whitespace-nowrap"
+            >{{ usSessionHeadlineLabel }}</span>
             <span
               v-if="formattedChangePercent !== null"
               :class="[
@@ -171,14 +176,14 @@
       <!-- 평단 태그: 아이리스 (개인 기준선) -->
       <div
         v-if="!isIndex && avgPrice !== null && avgPriceCoordinate !== null"
-        class="readout-tag absolute z-20 flex flex-col items-center justify-center px-1 pointer-events-none select-none font-mono leading-none border-y border-l rounded-l-xs bg-accent-weak border-accent-line text-accent"
+        class="readout-tag absolute z-20 flex flex-col items-center justify-center px-1 pointer-events-none select-none text-white font-mono leading-none border-y border-l rounded-l-xs bg-accent border-accent"
         :style="{
           top: avgTagCoordinate + 'px',
           right: CHART_GUTTER + 'px',
           transform: 'translateY(-50%)',
           width: priceAxisWidth + 'px',
           height: OVERLAY_HEIGHT + 'px',
-          '--readout-notch': 'var(--color-accent-line)'
+          '--readout-notch': 'var(--color-accent)'
         }"
       >
         <div class="text-2xs font-medium mb-0.5 tracking-tight opacity-90">평단</div>
@@ -264,6 +269,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { createChart, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
 import { isCoordinateVisible, resolveAvgTagCoordinate } from '../utils/chartHelpers.js';
+import { usExtHeadlineLabel } from '../utils/sessionBadge.js';
 
 // ── props ──────────────────────────────────────────────────────────────────
 const props = defineProps({
@@ -494,6 +500,17 @@ const formattedChangePercent = computed(() => {
   if (props.changePercent === null) return '0.00%';
   const sign = props.changePercent >= 0 ? '+' : '';
   return `${sign}${props.changePercent.toFixed(2)}%`;
+});
+
+// US 연장세션 헤드라인 등락률 앞 세션 라벨(토스식 "애프터마켓에서"). 헤드라인 등락률(change_percent)이
+// 어느 세션 기준인지 표기만 한다 — 숫자 재계산 없음. KR·지수·정규장·장마감은 '' (라벨 없음).
+const usSessionHeadlineLabel = computed(() => {
+  if (isKorean.value || isIndex.value) return '';
+  // AFT/EXT_NIGHT: 헤드라인 base가 실제 당일 종가일 때(=정규장 보조줄이 켜질 때, regularChangePercent non-null)만 라벨.
+  //   regular_close cold 폴백 순간엔 숫자가 '통합'이라 "애프터마켓에서" 라벨을 숨겨 라벨↔숫자 불일치 방지.
+  // PRE: base가 prevRegular인 게 정상 → 항상 라벨.
+  if (props.usSession !== 'PRE' && props.regularChangePercent === null) return '';
+  return usExtHeadlineLabel(props.usSession);
 });
 
 // US 연장 세션(프리/애프터/야간)에서만 '정규장' 등락률 보조 줄을 노출한다(HoldingsPanel.showUSExtBreakdown 과 동형).

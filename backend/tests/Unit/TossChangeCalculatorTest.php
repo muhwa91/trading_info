@@ -1260,11 +1260,11 @@ class TossChangeCalculatorTest extends TestCase
     }
 
     /**
-     * 애프터마켓: 오늘(7/14) 정규장 봉 존재 → 직전거래일 종가 = candles[1](7/13=937).
-     * 현재가 995(시간외), 당일 정규장 종가 983.12.
-     *   통합    = (995 − 937)/937 = +6.19%
-     *   정규장  = (983.12 − 937)/937 = +4.92%
-     * (기존 calculate() 의 '시간외분' 롤포워드가 아니라 '통합'으로 바뀌는 것이 요구사항.)
+     * 애프터마켓: 오늘 정규장 봉 존재 → 헤드라인 기준가 = '당일 정규장 종가'(2026-07-23, 토스 정렬).
+     * 실측(MU 애프터): 현재가 979.67, 당일 정규장 종가 959.48, 직전거래일 종가 candles[1]=970.82.
+     *   헤드라인(통합) = (979.67 − 959.48)/959.48 = +2.10%  ← 토스 "애프터마켓에서 +2.10%"와 일치(당일 종가 대비 순수변동)
+     *   정규장(보조)   = (959.48 − 970.82)/970.82 = −1.17%  ← 당일 정규장 하루 등락(prevRegular 기준, 무변경)
+     * (2026-07-23 이전엔 헤드라인이 prevRegular 기준 '통합'이었다 — 토스와 기준가가 달라 어긋났다.)
      */
     #[Test]
     public function test_calculate_us_split_after_market_splits_unified_and_regular(): void
@@ -1272,14 +1272,15 @@ class TossChangeCalculatorTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-14 17:00:00', 'America/New_York'));  // 애프터
         $this->sessionMock->method('getUsSession')->willReturn('애프터마켓');
 
-        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-14', '983.12', '2026-07-13', '937.00'));
+        // 오늘봉(7/14) 존재 → prevRegular = candles[1] = 970.82. latest close 는 무관(regularClose 는 인자로 주입).
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-14', '959.48', '2026-07-13', '970.82'));
 
-        $split = $this->calculator->calculateUsSplit('MU', 995.0, 983.12);
+        $split = $this->calculator->calculateUsSplit('MU', 979.67, 959.48);
 
-        $this->assertEqualsWithDelta(6.19, $split['change_percent'], 0.02);          // 통합
-        $this->assertEqualsWithDelta(4.92, $split['regular_change_percent'], 0.02);  // 정규장
-        $this->assertEqualsWithDelta(58.0, $split['change_amount'], 0.01);           // 995 − 937
-        $this->assertEqualsWithDelta(46.12, $split['regular_change_amount'], 0.01);  // 983.12 − 937
+        $this->assertEqualsWithDelta(2.10, $split['change_percent'], 0.02);           // 헤드라인 = 당일 종가 대비
+        $this->assertEqualsWithDelta(-1.17, $split['regular_change_percent'], 0.02);  // 정규장 = prevRegular 대비(무변경)
+        $this->assertEqualsWithDelta(20.19, $split['change_amount'], 0.01);           // 979.67 − 959.48
+        $this->assertEqualsWithDelta(-11.34, $split['regular_change_amount'], 0.01);  // 959.48 − 970.82
     }
 
     /**
@@ -1305,6 +1306,35 @@ class TossChangeCalculatorTest extends TestCase
         $this->assertLessThan(0, $split['change_percent']);
         $this->assertEqualsWithDelta(-2.28, $split['change_percent'], 0.02);          // 통합
         $this->assertNull($split['regular_change_percent'], '당일 정규장 봉 없음(프리마켓) → 정규장 줄 null(노이즈 차단)');
+        $this->assertNull($split['regular_change_amount']);
+    }
+
+    /**
+     * 프리마켓인데 토스가 오늘 정규장 일봉을 미리 생성한 경우($hasTodayRegularBar=true) — 세션 이중 게이트 검증.
+     *
+     * 배경(2026-07-21 수정): 토스가 프리마켓 도중 오늘 일봉을 선반영해 두면 isTodayBar=true 라
+     *   $hasTodayRegularBar 게이트만으론 뚫린다(실측 KST 18:30~22:30 "정규장 ~0%" 2줄 오노출).
+     *   프리마켓엔 오늘 정규장이 열리지도 않았으므로 regular_* 는 정의상 존재할 수 없다 →
+     *   calculateUsSplit 이 `$session !== '프리마켓'` 로 세션 게이트를 하나 더 건다.
+     *
+     * 이 케이스가 그 세션 게이트를 짚는다(=뮤테이션 확인): 오늘봉 존재(isTodayBar=true) +
+     *   regularClose(985.00) ≠ prevRegular(candles[1]=991.64) 를 주입한다. 세션 게이트를 지우면
+     *   $hasTodayRegularBar 만 남아 regular_*(≈−0.67%)가 새어나가 이 단언이 깨진다.
+     */
+    #[Test]
+    public function test_calculate_us_split_pre_market_with_today_regular_bar_still_null(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-10 08:00:00', 'America/New_York'));  // 프리마켓
+        $this->sessionMock->method('getUsSession')->willReturn('프리마켓');
+
+        // 최신 봉 = 오늘(7/10) → 토스가 프리마켓 중 미리 생성 → isTodayBar=true → prevRegular=candles[1]=991.64
+        $this->clientMock->method('get')->willReturn($this->usDaily('2026-07-10', '983.00', '2026-07-09', '991.64'));
+
+        // regularClose=985.00 ≠ prevRegular=991.64 → 세션 게이트 없으면 regular_*(=(985−991.64)/991.64≈−0.67%)가 계산된다
+        $split = $this->calculator->calculateUsSplit('MU', 969.03, 985.00);
+
+        $this->assertEqualsWithDelta(-2.28, $split['change_percent'], 0.02);  // 통합 (969.03−991.64)/991.64
+        $this->assertNull($split['regular_change_percent'], '프리마켓은 오늘봉이 있어도 세션 게이트로 정규장 줄 null');
         $this->assertNull($split['regular_change_amount']);
     }
 
@@ -1462,8 +1492,9 @@ class TossChangeCalculatorTest extends TestCase
 
         $split = $this->calculator->calculateUsSplit('MU', 995.0, 983.12);
 
-        $this->assertEqualsWithDelta(6.19, $split['change_percent'], 0.02);          // 통합 (995−937)/937
-        $this->assertEqualsWithDelta(4.92, $split['regular_change_percent'], 0.02);  // 정규장 (983.12−937)/937
+        // 헤드라인 기준가 = 당일 정규장 종가(983.12) → (995−983.12)/983.12 = +1.21% (2026-07-23, 토스 정렬)
+        $this->assertEqualsWithDelta(1.21, $split['change_percent'], 0.02);          // 헤드라인 = 당일 종가 대비
+        $this->assertEqualsWithDelta(4.92, $split['regular_change_percent'], 0.02);  // 정규장 (983.12−937)/937 (무변경)
         $this->assertNotNull($split['regular_change_percent'], '주간거래도 연장세션이라 2줄이어야 한다');
     }
 
